@@ -1,0 +1,21 @@
+Esse aplicativo é uma aplicação web que precisa de autenticação. Eu quero usar o módulo de autenticação do Supabase. Quero conectar com Supabase externo, que eu vou criar o projeto ainda. Por enquanto, deixe tudo pronto para integração, mas a gente vai fazer, por enquanto, somente com dados Moc.
+Essa aplicação web é para escolas de futebol, para uma rede de franquias de escolinhas de futebol. Cada escola tem vários alunos, então vai funcionar assim: um usuário responsável ali na escola vai cadastrar os alunos com fotos e, para cada aluno, detalhes como posição, altura, peso e dados opcionais. O único dado obrigatório é o nome e o número de telefone, WhatsApp. Inclusive, os inputs todos têm que usar validação e máscaras.
+Ao fazer o upload de imagens, eu quero um componente multi-upload para que possa subir várias imagens ao mesmo tempo, tanto no upload de arquivos quanto ao arrastar arquivos para uma área. Assim que fizer o upload, eu quero miniaturas que possam ser ampliadas ou excluídas com o ícone de X.
+O armazenamento dessas imagens vai ser via storage do Supabase. Eu quero otimização dessas imagens no upload, para economia de espaço e tempo indeterminado.
+A ideia consiste em fazer o upload da foto do aluno ou selecionar uma foto que já existe no banco. O próximo passo é escolher se vai querer exibir o logo de um clube de futebol, sim ou não. Tem que ter uma seção também para gerenciamento de logos, por exemplo, São Paulo Futebol Clube, Corinthians, Santos, entre outros.
+Para cadastro de clubes, vai ter:
+- upload de logo
+- upload de uniformes, que pode ser uma ou mais imagens
+- imagem do uniforme
+- seção de branding, onde vai ter a opção de colocar três cores do clube via seletor de cores hexadecimal ou RGB
+Voltando para a seção de geração de imagens no estilo Wizard:
+1. Selecionar o aluno.
+2. Selecionar se quer ali o ícone, o logo de um clube, o brasão.
+3. Selecionar em um checkbox se vai querer exibir o logo da R9 ou não. R9 é o nome dessa rede de escolas.
+4. Caso queira, selecionar uniforme.
+5. Selecionar uma referência. Essas referências são imagens estáticas, posts de Instagram. Assim que eu, como super admin e desenvolvedor, vou colocar ali essas referências através de uma seção de gerenciamento de referências, onde posso subir várias imagens. O usuário também da escola vai poder subir imagens que ele quiser. Essa imagem vai ser usada como referência na geração de imagens através da API da OpenAI, usando o modelo GPT image2.
+6. Após selecionar a referência, vai ter o botão "Gerar imagem".
+7. Após escolher a referência, vai ter uma seção de métricas, onde vai poder colocar as métricas em um formulário manualmente ou gerar com IA. Na verdade, pode ser randômico. Essa parte não precisa nem ser IA, mas a gente pode chamar na interface, fingindo que é uma IA.
+8. Essas métricas são as estatísticas, por exemplo: chute, gol, passes, roubo de bola, finalizações, gols, entre outros. Eu quero 10 métricas pré-definidas, e o administrador pode incluir métricas também à vontade, incluindo novos campos. Esses campos que ele incluir uma vez já vão aparecer nas outras vezes também. São métricas personalizadas.
+9. Gerar imagem: enquanto gera, eu quero uma animação com frases ali de tempo em tempo para uma boa experiência e para não parecer que está demorando tanto.
+10. Quando a imagem ficar pronta, vai dar para ampliar, baixar ou compartilhar. Eu quero que seja compartilhada via WhatsApp, para ser enviada para aquele aluno.
