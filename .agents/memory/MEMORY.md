@@ -1,0 +1,2 @@
+- [Attached-asset unicode paths](attached-asset-unicode-paths.md) — filenames with accents (e.g. "às") fail ReadFile due to NFC/NFD; copy via shell glob to an ASCII path first.
+- [IAsport brand decisions](iasport-brand.md) — palette #2e2e2e/#7e8a97/#39ff14, Prometo (Trial) embedded base64 in theme-template.css, dark mode default.
