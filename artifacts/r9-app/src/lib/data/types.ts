@@ -132,7 +132,30 @@ export interface PendingRegistration {
   schoolName?: string;
   /** Nome da escola escolhida (para alunos). */
   schoolLabel?: string;
+  /** Para alunos: id do registro students já vinculado (se houver). */
+  studentRecordId?: string;
+  /** Para alunos: nome do registro students vinculado (se houver). */
+  studentRecordLabel?: string;
   createdAt: string;
+}
+
+/** Conta de aluno aprovada e ainda sem vínculo com um registro de students. */
+export interface LinkableStudentAccount {
+  id: string;
+  name: string;
+  email: string;
+}
+
+/** Conta de aluno aprovada com o estado do vínculo (visão do super_admin). */
+export interface StudentAccountOverview {
+  id: string;
+  name: string;
+  email: string;
+  /** Nome da escola do aluno (se houver). */
+  schoolLabel?: string;
+  studentRecordId?: string;
+  /** Nome do registro students vinculado (se houver). */
+  studentRecordLabel?: string;
 }
 
 /** Dados do cadastro público (escola ou aluno). */

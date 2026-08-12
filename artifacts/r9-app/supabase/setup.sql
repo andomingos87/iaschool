@@ -46,6 +46,12 @@ alter table public.profiles drop constraint if exists profiles_approval_status_c
 alter table public.profiles add constraint profiles_approval_status_check
   check (approval_status in ('pending', 'approved', 'rejected'));
 
+-- Um registro students só pode ter UMA conta vinculada (garantido no banco,
+-- não apenas na aplicação — evita corrida entre duas vinculações simultâneas).
+create unique index if not exists profiles_student_record_id_key
+  on public.profiles (student_record_id)
+  where student_record_id is not null;
+
 create table if not exists public.students (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users (id) on delete cascade,
@@ -61,6 +67,28 @@ create table if not exists public.students (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Integridade do vínculo conta ↔ registro: se o registro students for
+-- excluído, o vínculo é desfeito automaticamente (a conta volta a aparecer
+-- no seletor de vínculo). Criada aqui porque students precisa existir antes.
+do $$
+begin
+  -- Limpa referências órfãs de bases existentes antes de criar a FK.
+  update public.profiles p
+  set student_record_id = null
+  where p.student_record_id is not null
+    and not exists (
+      select 1 from public.students s where s.id = p.student_record_id
+    );
+  if not exists (
+    select 1 from pg_constraint where conname = 'profiles_student_record_id_fkey'
+  ) then
+    alter table public.profiles
+      add constraint profiles_student_record_id_fkey
+      foreign key (student_record_id) references public.students (id)
+      on delete set null;
+  end if;
+end $$;
 
 create table if not exists public.clubs (
   id uuid primary key default gen_random_uuid(),
@@ -180,6 +208,66 @@ language sql stable security definer set search_path = public as $$
   select student_record_id from public.profiles
   where id = auth.uid() and role = 'student' and approval_status = 'approved';
 $$;
+
+-- Contas de aluno aprovadas e ainda sem vínculo com um registro de students.
+-- school_user vê apenas alunos da própria escola; super_admin vê todos.
+-- (security definer porque a RLS de profiles só permite ler o próprio perfil.)
+create or replace function public.list_linkable_student_accounts()
+returns table (id uuid, name text, email text)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.name, p.email
+  from public.profiles p
+  where public.is_school_user()
+    and p.role = 'student'
+    and p.approval_status = 'approved'
+    and p.student_record_id is null
+    and (p.school_id = auth.uid() or public.is_super_admin())
+  order by p.name;
+$$;
+grant execute on function public.list_linkable_student_accounts() to authenticated;
+
+-- Vincula manualmente uma conta de aluno a um registro da tabela students
+-- (profiles.student_record_id). Usado pela escola quando o vínculo automático
+-- por nome falha na aprovação. security definer em vez de política RLS de
+-- update em profiles: RLS não restringe a UMA coluna, e a escola não pode
+-- alterar mais nada no perfil do aluno.
+create or replace function public.link_student_account(
+  p_profile_id uuid,
+  p_student_record_id uuid
+)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_school_user() then
+    raise exception 'Apenas escolas podem vincular contas de aluno.';
+  end if;
+  -- O registro students precisa pertencer à escola que está vinculando.
+  if not exists (
+    select 1 from public.students s
+    where s.id = p_student_record_id
+      and (s.owner_id = auth.uid() or public.is_super_admin())
+  ) then
+    raise exception 'Registro de aluno não encontrado.';
+  end if;
+  -- O índice único parcial profiles_student_record_id_key garante no banco
+  -- que um registro students só tem UMA conta vinculada (mesmo sob corrida).
+  begin
+    update public.profiles
+    set student_record_id = p_student_record_id
+    where id = p_profile_id
+      and role = 'student'
+      and approval_status = 'approved'
+      and student_record_id is null -- só vincula contas ainda sem vínculo
+      and (school_id = auth.uid() or public.is_super_admin());
+  exception when unique_violation then
+    raise exception 'Este registro de aluno já tem uma conta vinculada.';
+  end;
+  if not found then
+    raise exception 'Conta de aluno não encontrada, já vinculada ou não pertence à sua escola.';
+  end if;
+end;
+$$;
+grant execute on function public.link_student_account(uuid, uuid) to authenticated;
 
 -- Escolas aprovadas para o seletor do cadastro de aluno (acessível sem login;
 -- expõe apenas id e nome — nunca e-mail).

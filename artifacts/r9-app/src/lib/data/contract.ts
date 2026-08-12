@@ -13,6 +13,7 @@ import type {
   Club,
   GeneratedPost,
   GenerationRequest,
+  LinkableStudentAccount,
   Metric,
   PendingRegistration,
   PromptTemplateSetting,
@@ -22,6 +23,7 @@ import type {
   SignUpInput,
   StoredImage,
   Student,
+  StudentAccountOverview,
 } from "./types";
 
 export interface AuthService {
@@ -116,6 +118,21 @@ export interface ApprovalRepository {
   listPending(): Promise<PendingRegistration[]>;
   approve(profileId: string): Promise<void>;
   reject(profileId: string): Promise<void>;
+  /**
+   * Contas de aluno aprovadas e ainda sem vínculo com um registro de students.
+   * Para school_user: apenas alunos da própria escola. super_admin vê todas.
+   */
+  listLinkableStudentAccounts(): Promise<LinkableStudentAccount[]>;
+  /**
+   * Vincula manualmente uma conta de aluno (profiles.student_record_id) a um
+   * registro da tabela students. Falha se o registro já tiver conta vinculada.
+   */
+  linkStudentAccount(profileId: string, studentRecordId: string): Promise<void>;
+  /**
+   * Contas de aluno aprovadas com o estado do vínculo — visão do super_admin
+   * na tela de Aprovações (o vínculo em si é feito pela escola).
+   */
+  listStudentAccounts(): Promise<StudentAccountOverview[]>;
 }
 
 /**

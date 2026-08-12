@@ -8,6 +8,7 @@ import {
   Trash2,
   Phone,
   Shield,
+  Link2,
 } from "lucide-react";
 import { Button } from "@workspace/iasport/components/ui/button";
 import { Input } from "@workspace/iasport/components/ui/input";
@@ -32,6 +33,7 @@ import { PageHeader } from "@/components/app-shell";
 import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { StudentFormDialog } from "@/components/student-form-dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { LinkStudentAccountDialog } from "@/components/link-student-account-dialog";
 import { useStudents, useDeleteStudent } from "@/hooks/use-students";
 import { useClubs } from "@/hooks/use-clubs";
 import type { Student } from "@/lib/data";
@@ -45,6 +47,7 @@ export default function StudentsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [toDelete, setToDelete] = useState<Student | null>(null);
+  const [toLink, setToLink] = useState<Student | null>(null);
 
   const clubName = useMemo(() => {
     const map = new Map((clubs.data ?? []).map((c) => [c.id, c.name]));
@@ -184,6 +187,12 @@ export default function StudentsPage() {
                           <Pencil className="size-4" /> Editar
                         </DropdownMenuItem>
                         <DropdownMenuItem
+                          onClick={() => setToLink(s)}
+                          data-testid={`button-link-student-${s.id}`}
+                        >
+                          <Link2 className="size-4" /> Vincular conta de aluno
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
                           className="text-destructive"
                           onClick={() => setToDelete(s)}
                           data-testid={`button-delete-student-${s.id}`}
@@ -216,6 +225,10 @@ export default function StudentsPage() {
         onOpenChange={setDialogOpen}
         student={editing}
         clubs={clubs.data ?? []}
+      />
+      <LinkStudentAccountDialog
+        student={toLink}
+        onOpenChange={(o) => !o && setToLink(null)}
       />
       <ConfirmDelete
         open={!!toDelete}

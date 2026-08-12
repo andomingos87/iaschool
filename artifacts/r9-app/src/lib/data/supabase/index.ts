@@ -535,11 +535,27 @@ export function createSupabaseDataLayer(): DataLayer {
     async listPending() {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, email, name, role, school_name, school_id, created_at")
+        .select(
+          "id, email, name, role, school_name, school_id, student_record_id, created_at",
+        )
         .eq("approval_status", "pending")
         .order("created_at", { ascending: true });
       if (error) fail("Falha ao listar cadastros pendentes", error);
       const rows = data ?? [];
+      // Nome do registro students vinculado (se houver — vínculo é feito pela
+      // escola, mas o admin vê o estado atual na tela de Aprovações).
+      const recordIds = [
+        ...new Set(rows.map((r) => r.student_record_id).filter(Boolean)),
+      ] as string[];
+      const recordNames = new Map<string, string>();
+      if (recordIds.length > 0) {
+        const { data: recs, error: recsErr } = await supabase
+          .from("students")
+          .select("id, name")
+          .in("id", recordIds);
+        if (recsErr) fail("Falha ao carregar registros de alunos", recsErr);
+        for (const rec of recs ?? []) recordNames.set(rec.id, rec.name);
+      }
       // Nome da escola escolhida pelos alunos pendentes.
       const schoolIds = [
         ...new Set(rows.map((r) => r.school_id).filter(Boolean)),
@@ -565,6 +581,10 @@ export function createSupabaseDataLayer(): DataLayer {
           schoolLabel: r.school_id
             ? (schoolNames.get(r.school_id) ?? undefined)
             : undefined,
+          studentRecordId: r.student_record_id ?? undefined,
+          studentRecordLabel: r.student_record_id
+            ? (recordNames.get(r.student_record_id) ?? undefined)
+            : undefined,
           createdAt: r.created_at,
         }),
       );
@@ -587,6 +607,74 @@ export function createSupabaseDataLayer(): DataLayer {
         .eq("id", profileId);
       if (error) fail("Falha ao recusar cadastro", error);
       profileCache.delete(profileId);
+    },
+    async listLinkableStudentAccounts() {
+      // RPC security definer (setup.sql): school_user vê só os alunos da
+      // própria escola; super_admin vê todos.
+      const { data, error } = await supabase.rpc(
+        "list_linkable_student_accounts",
+      );
+      if (error) fail("Falha ao listar contas de aluno sem vínculo", error);
+      return (
+        (data ?? []) as Array<{ id: string; name: string; email: string }>
+      ).map((r) => ({ id: r.id, name: r.name, email: r.email }));
+    },
+    async linkStudentAccount(profileId, studentRecordId) {
+      // RPC security definer (setup.sql) valida escola, registro e duplicidade.
+      const { error } = await supabase.rpc("link_student_account", {
+        p_profile_id: profileId,
+        p_student_record_id: studentRecordId,
+      });
+      if (error) fail("Falha ao vincular conta de aluno", error);
+      profileCache.delete(profileId);
+    },
+    async listStudentAccounts() {
+      // Visão do super_admin (RLS de profiles permite ler todos).
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, email, name, school_id, student_record_id")
+        .eq("role", "student")
+        .eq("approval_status", "approved")
+        .order("name", { ascending: true });
+      if (error) fail("Falha ao listar contas de aluno", error);
+      const rows = data ?? [];
+      const schoolIds = [
+        ...new Set(rows.map((r) => r.school_id).filter(Boolean)),
+      ] as string[];
+      const schoolNames = new Map<string, string>();
+      if (schoolIds.length > 0) {
+        const { data: schools, error: schoolsErr } = await supabase
+          .from("profiles")
+          .select("id, school_name, name")
+          .in("id", schoolIds);
+        if (schoolsErr) fail("Falha ao carregar escolas", schoolsErr);
+        for (const s of schools ?? [])
+          schoolNames.set(s.id, s.school_name ?? s.name);
+      }
+      const recordIds = [
+        ...new Set(rows.map((r) => r.student_record_id).filter(Boolean)),
+      ] as string[];
+      const recordNames = new Map<string, string>();
+      if (recordIds.length > 0) {
+        const { data: recs, error: recsErr } = await supabase
+          .from("students")
+          .select("id, name")
+          .in("id", recordIds);
+        if (recsErr) fail("Falha ao carregar registros de alunos", recsErr);
+        for (const rec of recs ?? []) recordNames.set(rec.id, rec.name);
+      }
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        schoolLabel: r.school_id
+          ? (schoolNames.get(r.school_id) ?? undefined)
+          : undefined,
+        studentRecordId: r.student_record_id ?? undefined,
+        studentRecordLabel: r.student_record_id
+          ? (recordNames.get(r.student_record_id) ?? undefined)
+          : undefined,
+      }));
     },
   };
 

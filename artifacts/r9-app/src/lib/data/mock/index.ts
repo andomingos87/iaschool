@@ -64,8 +64,17 @@ function writeRegistrations(items: MockRegistration[]): void {
   writeCollection("registrations", items);
 }
 
+// Vínculos conta de aluno → registro students (profiles.student_record_id).
+// Guardados à parte para também cobrir os usuários seed (MOCK_USERS).
+function readStudentLinks(): Record<string, string> {
+  return readValue<Record<string, string>>("student-links") ?? {};
+}
+
 function allUsers(): AppUser[] {
-  return [...MOCK_USERS, ...readRegistrations().map((r) => r.user)];
+  const links = readStudentLinks();
+  return [...MOCK_USERS, ...readRegistrations().map((r) => r.user)].map((u) =>
+    links[u.id] ? { ...u, studentRecordId: links[u.id] } : u,
+  );
 }
 
 const auth: AuthService = {
@@ -235,7 +244,30 @@ function makeCrud<T extends { id: string; createdAt: string }>(key: string) {
   };
 }
 
-const students = makeCrud<Student>("students") as StudentRepository;
+// Espelha o owner_id do Supabase: registros criados guardam a escola dona,
+// para que o vínculo de conta valide a posse também no modo mock.
+type OwnedStudent = Student & { ownerId?: string };
+const studentsCrud = makeCrud<OwnedStudent>("students");
+const students: StudentRepository = {
+  list: () => studentsCrud.list(),
+  get: (id) => studentsCrud.get(id),
+  create: (input) => {
+    const session = readValue<Session>("session");
+    return studentsCrud.create({ ...input, ownerId: session?.user.id });
+  },
+  update: (id, patch) => studentsCrud.update(id, patch),
+  delete: async (id) => {
+    await studentsCrud.delete(id);
+    // Espelha a FK on delete set null do Supabase: excluir o registro
+    // desfaz o vínculo, e a conta volta a aparecer no seletor.
+    const links = readStudentLinks();
+    const orphaned = Object.keys(links).filter((pid) => links[pid] === id);
+    if (orphaned.length > 0) {
+      for (const pid of orphaned) delete links[pid];
+      writeValue("student-links", links);
+    }
+  },
+};
 const clubs = makeCrud<Club>("clubs") as ClubRepository;
 
 const referencesCrud = makeCrud<ReferencePost>("references");
@@ -312,6 +344,82 @@ const approvals: ApprovalRepository = {
     if (!reg) throw new Error("Cadastro não encontrado");
     reg.user.approvalStatus = "rejected";
     writeRegistrations(regs);
+  },
+  async listLinkableStudentAccounts() {
+    await delay(300);
+    const session = readValue<Session>("session");
+    const me = session?.user;
+    if (!me || (me.role !== "school_user" && me.role !== "super_admin")) {
+      throw new Error("Apenas escolas podem vincular contas de aluno.");
+    }
+    return allUsers()
+      .filter(
+        (u) =>
+          u.role === "student" &&
+          u.approvalStatus === "approved" &&
+          !u.studentRecordId &&
+          (me.role === "super_admin" || u.schoolId === me.id),
+      )
+      .map((u) => ({ id: u.id, name: u.name, email: u.email }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  },
+  async linkStudentAccount(profileId, studentRecordId) {
+    await delay(400);
+    const session = readValue<Session>("session");
+    const me = session?.user;
+    if (!me || (me.role !== "school_user" && me.role !== "super_admin")) {
+      throw new Error("Apenas escolas podem vincular contas de aluno.");
+    }
+    const target = allUsers().find((u) => u.id === profileId);
+    if (
+      !target ||
+      target.role !== "student" ||
+      target.approvalStatus !== "approved" ||
+      (me.role !== "super_admin" && target.schoolId !== me.id)
+    ) {
+      throw new Error("Conta de aluno não encontrada ou não pertence à sua escola.");
+    }
+    const student = readCollection<OwnedStudent>("students", []).find(
+      (s) => s.id === studentRecordId,
+    );
+    if (!student) throw new Error("Registro de aluno não encontrado.");
+    // Posse do registro (mesma regra da RPC do Supabase): a escola só vincula
+    // registros criados por ela. Registros antigos sem ownerId são permitidos.
+    if (me.role !== "super_admin" && student.ownerId && student.ownerId !== me.id) {
+      throw new Error("Registro de aluno não encontrado.");
+    }
+    const links = readStudentLinks();
+    if (Object.values(links).includes(studentRecordId)) {
+      throw new Error("Este registro de aluno já tem uma conta vinculada.");
+    }
+    links[profileId] = studentRecordId;
+    writeValue("student-links", links);
+  },
+  async listStudentAccounts() {
+    await delay(300);
+    const session = readValue<Session>("session");
+    if (session?.user.role !== "super_admin") {
+      throw new Error("Apenas administradores podem ver as contas de aluno.");
+    }
+    const users = allUsers();
+    const schoolName = (id?: string) => {
+      const school = id ? users.find((u) => u.id === id) : undefined;
+      return school ? (school.schoolName ?? school.name) : undefined;
+    };
+    const records = readCollection<OwnedStudent>("students", []);
+    return users
+      .filter((u) => u.role === "student" && u.approvalStatus === "approved")
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        schoolLabel: schoolName(u.schoolId),
+        studentRecordId: u.studentRecordId,
+        studentRecordLabel: u.studentRecordId
+          ? records.find((s) => s.id === u.studentRecordId)?.name
+          : undefined,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   },
 };
 

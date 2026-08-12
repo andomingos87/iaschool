@@ -9,4 +9,5 @@ export const qk = {
   metrics: ["metrics"] as const,
   generatedPosts: ["generated-posts"] as const,
   promptTemplate: ["prompt-template"] as const,
+  linkableStudentAccounts: ["linkable-student-accounts"] as const,
 };
