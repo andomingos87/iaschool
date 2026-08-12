@@ -35,6 +35,160 @@ export const PLACEHOLDER_DOCS: Array<{ token: string; description: string }> = [
   { token: "{{#prompt_auxiliar}}...{{/prompt_auxiliar}}", description: "Bloco: só entra se houver instruções extras" },
 ];
 
+/** Placeholders simples reconhecidos pelo motor. */
+export const KNOWN_PLACEHOLDERS = [
+  "nome_aluno",
+  "posicao",
+  "metricas",
+  "nome_clube",
+  "cores_clube",
+  "prompt_auxiliar",
+] as const;
+
+/** Blocos condicionais reconhecidos pelo motor. */
+export const KNOWN_BLOCKS = [
+  "posicao",
+  "metricas",
+  "brasao",
+  "cores_clube",
+  "uniforme",
+  "logo_r9",
+  "prompt_auxiliar",
+] as const;
+
+export interface TemplateWarning {
+  /** Trecho exatamente como digitado no template. */
+  token: string;
+  /** Mensagem curta em pt-BR explicando o problema. */
+  message: string;
+}
+
+/**
+ * Valida o texto do template com exatamente a mesma gramática do renderer
+ * (nomes em minúsculas `[a-z0-9_]+`, sem espaços dentro das chaves).
+ * Retorna avisos (não bloqueantes) para:
+ * - placeholders desconhecidos ({{nome_alluno}}) — viram texto vazio
+ * - blocos desconhecidos ({{#xpto}}...{{/xpto}}) — o conteúdo é removido
+ * - blocos abertos sem fechamento ({{#x}} sem {{/x}}) e vice-versa — a tag
+ *   fica como texto literal no prompt
+ * - sintaxe inválida ({{ nome }}, {{Nome-Aluno}}) — o motor ignora e o trecho
+ *   fica como texto literal no prompt
+ */
+export function validatePromptTemplate(template: string): TemplateWarning[] {
+  const warnings: TemplateWarning[] = [];
+  const seen = new Set<string>();
+  const add = (token: string, message: string) => {
+    const key = `${token}|${message}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      warnings.push({ token, message });
+    }
+  };
+
+  const knownPlaceholders = new Set<string>(KNOWN_PLACEHOLDERS);
+  const knownBlocks = new Set<string>(KNOWN_BLOCKS);
+
+  // 1) Tokeniza qualquer construção {{...}} (válida ou não) na ordem em que
+  //    aparece, classificando com a mesma gramática do renderer.
+  type Token =
+    | { kind: "open" | "close"; name: string; raw: string }
+    | { kind: "placeholder"; name: string; raw: string }
+    | { kind: "invalid"; raw: string };
+  const tokens: Token[] = [];
+  const re = /\{\{([^{}]*)\}\}/g;
+  let m: RegExpExecArray | null;
+  // Cópia com os tokens apagados, para achar delimitadores soltos depois.
+  let residue = template;
+  while ((m = re.exec(template)) !== null) {
+    const raw = m[0];
+    const inner = m[1];
+    residue =
+      residue.slice(0, m.index) +
+      " ".repeat(raw.length) +
+      residue.slice(m.index + raw.length);
+    if (/^#[a-z0-9_]+$/.test(inner)) {
+      tokens.push({ kind: "open", name: inner.slice(1), raw });
+    } else if (/^\/[a-z0-9_]+$/.test(inner)) {
+      tokens.push({ kind: "close", name: inner.slice(1), raw });
+    } else if (/^[a-z0-9_]+$/.test(inner)) {
+      tokens.push({ kind: "placeholder", name: inner, raw });
+    } else {
+      tokens.push({ kind: "invalid", raw });
+    }
+  }
+
+  // 2) Delimitadores incompletos/soltos fora de qualquer token completo
+  //    (ex.: "{{nome_aluno" sem "}}", ou "}}" sozinho) ficam literais no prompt.
+  const strayOpen = residue.match(/\{\{[^\n{}]*/);
+  if (strayOpen) {
+    add(
+      strayOpen[0].trim(),
+      "Abertura {{ sem fechamento }} — o trecho ficará como texto literal no prompt.",
+    );
+  }
+  const strayClose = /\}\}/.test(residue.replace(/\{\{[^\n{}]*/g, ""));
+  if (strayClose) {
+    add("}}", "Fechamento }} sem abertura {{ — o trecho ficará como texto literal no prompt.");
+  }
+
+  // 3) Valida nomes e o pareamento/ordem dos blocos.
+  //    O renderer não suporta aninhamento, então bloco dentro de bloco também
+  //    gera aviso.
+  const stack: string[] = [];
+  for (const t of tokens) {
+    if (t.kind === "placeholder") {
+      if (!knownPlaceholders.has(t.name)) {
+        add(t.raw, "Placeholder desconhecido — será substituído por texto vazio na geração.");
+      }
+    } else if (t.kind === "invalid") {
+      add(
+        t.raw,
+        "Sintaxe inválida — use letras minúsculas, números e _ sem espaços (ex.: {{nome_aluno}}); do contrário o trecho fica como texto literal no prompt.",
+      );
+    } else if (t.kind === "open") {
+      if (!knownBlocks.has(t.name)) {
+        add(t.raw, `Bloco desconhecido — "${t.name}" não está na lista de blocos disponíveis.`);
+      }
+      if (stack.length > 0) {
+        add(
+          t.raw,
+          `Bloco aninhado dentro de {{#${stack[stack.length - 1]}}} — o motor não suporta blocos dentro de blocos e o resultado será incorreto.`,
+        );
+      }
+      stack.push(t.name);
+    } else {
+      // close
+      if (!knownBlocks.has(t.name)) {
+        add(t.raw, `Fechamento de bloco desconhecido — "${t.name}" não é um bloco disponível.`);
+      }
+      const idx = stack.lastIndexOf(t.name);
+      if (idx === -1) {
+        add(
+          t.raw,
+          `Fechamento sem abertura — falta {{#${t.name}}}; a tag ficará como texto literal no prompt.`,
+        );
+      } else {
+        // Blocos cruzados: tudo acima do par correspondente ficou fora de ordem.
+        for (let i = stack.length - 1; i > idx; i--) {
+          add(
+            `{{#${stack[i]}}}`,
+            `Blocos cruzados — {{#${stack[i]}}} foi aberto dentro de {{#${t.name}}} mas não foi fechado antes de {{/${t.name}}}; o resultado será incorreto.`,
+          );
+        }
+        stack.length = idx;
+      }
+    }
+  }
+  for (const name of stack) {
+    add(
+      `{{#${name}}}`,
+      `Bloco aberto sem fechamento — falta {{/${name}}}; a tag ficará como texto literal no prompt.`,
+    );
+  }
+
+  return warnings;
+}
+
 export interface PromptContext {
   /** valores dos placeholders */
   values: Record<string, string>;

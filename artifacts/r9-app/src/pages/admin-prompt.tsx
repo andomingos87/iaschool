@@ -3,8 +3,18 @@
 // condicional no app-shell).
 
 import { useEffect, useMemo, useState } from "react";
-import { Eye, RotateCcw, Save, Terminal } from "lucide-react";
+import { AlertTriangle, Eye, RotateCcw, Save, Terminal } from "lucide-react";
 import { Button } from "@workspace/iasport/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@workspace/iasport/components/ui/alert-dialog";
 import {
   Card,
   CardContent,
@@ -27,6 +37,7 @@ import {
   PLACEHOLDER_DOCS,
   SAMPLE_CONTEXT,
   renderPromptTemplate,
+  validatePromptTemplate,
 } from "@/lib/prompt-template";
 
 export default function AdminPromptPage() {
@@ -35,6 +46,7 @@ export default function AdminPromptPage() {
   const reset = useResetPromptTemplate();
 
   const [draft, setDraft] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Pré-preenche com o salvo ou com o padrão embutido.
   useEffect(() => {
@@ -48,10 +60,11 @@ export default function AdminPromptPage() {
     () => renderPromptTemplate(value, SAMPLE_CONTEXT),
     [value],
   );
+  const warnings = useMemo(() => validatePromptTemplate(value), [value]);
   const dirty = value !== (query.data?.template ?? DEFAULT_PROMPT_TEMPLATE);
   const busy = save.isPending || reset.isPending;
 
-  async function onSave() {
+  function onSave() {
     if (!value.trim()) {
       toast({
         variant: "destructive",
@@ -60,6 +73,14 @@ export default function AdminPromptPage() {
       });
       return;
     }
+    if (warnings.length > 0) {
+      setConfirmOpen(true);
+      return;
+    }
+    void doSave();
+  }
+
+  async function doSave() {
     try {
       await save.mutateAsync(value);
       toast({
@@ -166,6 +187,32 @@ export default function AdminPromptPage() {
               placeholder="Escreva o template do prompt..."
               data-testid="input-template"
             />
+            {warnings.length > 0 && (
+              <div
+                className="space-y-1.5 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3"
+                data-testid="alert-avisos-template"
+              >
+                <p className="flex items-center gap-2 text-sm font-medium text-yellow-500">
+                  <AlertTriangle className="size-4" />
+                  {warnings.length === 1
+                    ? "1 possível problema no template"
+                    : `${warnings.length} possíveis problemas no template`}
+                </p>
+                <ul className="space-y-1">
+                  {warnings.map((w) => (
+                    <li
+                      key={`${w.token}-${w.message}`}
+                      className="flex items-start gap-2 text-xs text-muted-foreground"
+                    >
+                      <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-yellow-500">
+                        {w.token}
+                      </code>
+                      <span>{w.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div>
               <p className="mb-2 text-sm font-medium">Placeholders disponíveis</p>
               <div className="grid gap-1.5 sm:grid-cols-2">
@@ -208,6 +255,38 @@ export default function AdminPromptPage() {
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent data-testid="dialog-confirmar-avisos">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Salvar mesmo com avisos?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O template tem{" "}
+              {warnings.length === 1
+                ? "1 possível problema"
+                : `${warnings.length} possíveis problemas`}
+              : placeholders desconhecidos viram texto vazio na geração, e
+              blocos sem fechamento ou trechos com sintaxe inválida ficam como
+              texto literal no prompt. Você pode salvar assim mesmo ou voltar e
+              corrigir.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancelar-salvar">
+              Voltar e corrigir
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmOpen(false);
+                void doSave();
+              }}
+              data-testid="button-salvar-mesmo-assim"
+            >
+              Salvar mesmo assim
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
