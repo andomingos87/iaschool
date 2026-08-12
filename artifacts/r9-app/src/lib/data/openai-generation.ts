@@ -1,20 +1,47 @@
 // Geração real via backend (/api/generation/post-image → OpenAI GPT Image).
 // Substitui o mock de canvas. A chave da OpenAI vive apenas no servidor.
 
+import imageCompression from "browser-image-compression";
 import type { ImageGenerationService } from "./contract";
 import { buildGenerationPrompt } from "../prompt-template";
 
-async function toDataUrl(url: string): Promise<string> {
-  if (url.startsWith("data:")) return url;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Falha ao carregar imagem para envio");
-  const blob = await res.blob();
+// Acima disso, redimensiona/comprime antes de enviar (payload menor = mais rápido
+// e bem abaixo dos limites do servidor).
+const COMPRESS_THRESHOLD_BYTES = 1 * 1024 * 1024;
+const COMPRESS_OPTIONS = {
+  maxWidthOrHeight: 1600,
+  maxSizeMB: 0.8,
+  useWebWorker: true,
+};
+
+function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = () => reject(new Error("Falha ao ler imagem"));
     reader.readAsDataURL(blob);
   });
+}
+
+async function toDataUrl(url: string, name: string): Promise<string> {
+  let blob: Blob;
+  if (url.startsWith("data:")) {
+    const res = await fetch(url);
+    blob = await res.blob();
+  } else {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Falha ao carregar imagem para envio");
+    blob = await res.blob();
+  }
+  if (blob.size > COMPRESS_THRESHOLD_BYTES && blob.type.startsWith("image/")) {
+    try {
+      const file = new File([blob], name, { type: blob.type });
+      blob = await imageCompression(file, COMPRESS_OPTIONS);
+    } catch {
+      // se a compressão falhar, envia o original (servidor ainda valida limites)
+    }
+  }
+  return blobToDataUrl(blob);
 }
 
 export function createOpenAIGenerationService(
@@ -28,22 +55,22 @@ export function createOpenAIGenerationService(
 
       // Ordem importa: a referência é sempre a primeira imagem.
       images.push({
-        dataUrl: await toDataUrl(request.reference.image.url),
+        dataUrl: await toDataUrl(request.reference.image.url, "referencia.png"),
         name: "referencia.png",
       });
       images.push({
-        dataUrl: await toDataUrl(request.studentPhoto.url),
+        dataUrl: await toDataUrl(request.studentPhoto.url, "foto-aluno.png"),
         name: "foto-aluno.png",
       });
       if (request.showClubLogo && request.club?.logo) {
         images.push({
-          dataUrl: await toDataUrl(request.club.logo.url),
+          dataUrl: await toDataUrl(request.club.logo.url, "brasao-clube.png"),
           name: "brasao-clube.png",
         });
       }
       if (request.uniform) {
         images.push({
-          dataUrl: await toDataUrl(request.uniform.url),
+          dataUrl: await toDataUrl(request.uniform.url, "uniforme.png"),
           name: "uniforme.png",
         });
       }
@@ -52,6 +79,7 @@ export function createOpenAIGenerationService(
           images.push({
             dataUrl: await toDataUrl(
               `${import.meta.env.BASE_URL}iasport-logo-color.png`,
+              "logo-iasport.png",
             ),
             name: "logo-iasport.png",
           });
@@ -102,6 +130,11 @@ export function createOpenAIGenerationService(
         | null;
 
       if (!res.ok || !body?.imageUrl) {
+        if (res.status === 413) {
+          throw new Error(
+            "As imagens enviadas são grandes demais. Use imagens menores (ou re-envie as fotos) e tente novamente.",
+          );
+        }
         throw new Error(
           body?.error ?? `Falha na geração (HTTP ${res.status}). Tente novamente.`,
         );

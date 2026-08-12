@@ -26,8 +26,15 @@ app.use(
   }),
 );
 app.use(cors());
-// Limite global conservador; a rota de geração define seu próprio limite maior.
-app.use(express.json({ limit: "1mb" }));
+// Limite global conservador; a rota de geração define seu próprio limite maior
+// (o parser global precisa PULAR essa rota, senão o limite de 1 MB vence e
+// qualquer corpo maior devolve 413 antes de chegar à rota).
+const GENERATION_PATH = "/api/generation/post-image";
+const globalJson = express.json({ limit: "1mb" });
+app.use((req, res, next) => {
+  if (req.path === GENERATION_PATH) return next();
+  return globalJson(req, res, next);
+});
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 app.use("/api", router);
