@@ -32,7 +32,7 @@ import {
   writeCollection,
   writeValue,
 } from "./store";
-import { composePostImage } from "./generation";
+import { createOpenAIGenerationService } from "../openai-generation";
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -183,14 +183,8 @@ const generatedPosts: GeneratedPostRepository = {
     generatedPostsCrud.create(input as Record<string, unknown>),
 };
 
-const generation: ImageGenerationService = {
-  async generate(request) {
-    // Simula o tempo de geração da IA (a UI mostra frases rotativas).
-    await delay(6000 + Math.random() * 3000);
-    const imageUrl = await composePostImage(request);
-    return { imageUrl };
-  },
-};
+// Geração é REAL (OpenAI GPT Image via backend), mesmo com o resto mock.
+const generation: ImageGenerationService = createOpenAIGenerationService();
 
 export function createMockDataLayer(): DataLayer {
   return {

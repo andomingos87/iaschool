@@ -180,12 +180,21 @@ export default function GeneratePage() {
     try {
       const { imageUrl } = await getDataLayer().generation.generate(request);
       setResultUrl(imageUrl);
-      await createPost.mutateAsync({
-        studentId: student.id,
-        imageUrl,
-        metrics: metricValues,
-      });
       setPhase("result");
+      // Se salvar no histórico falhar, a imagem gerada continua visível.
+      try {
+        await createPost.mutateAsync({
+          studentId: student.id,
+          imageUrl,
+          metrics: metricValues,
+        });
+      } catch {
+        toast({
+          variant: "destructive",
+          title: "Imagem gerada, mas não foi salva no histórico",
+          description: "Você ainda pode baixar ou compartilhar esta imagem.",
+        });
+      }
     } catch (err) {
       setPhase("form");
       toast({
