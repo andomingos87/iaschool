@@ -183,9 +183,26 @@ export default function GeneratePage() {
       setPhase("result");
       // Se salvar no histórico falhar, a imagem gerada continua visível.
       try {
+        // Persiste a imagem no Storage (bucket "generated") em vez de gravar
+        // a data URL base64 gigante direto no banco. Se o upload falhar,
+        // salva a data URL mesmo assim para não perder o post.
+        let savedUrl = imageUrl;
+        if (imageUrl.startsWith("data:")) {
+          try {
+            const blob = await (await fetch(imageUrl)).blob();
+            const stored = await getDataLayer().storage.upload(
+              "generated",
+              blob,
+              `${student.name.replace(/\s+/g, "-").toLowerCase()}.png`,
+            );
+            savedUrl = stored.url;
+          } catch {
+            // mantém a data URL como fallback
+          }
+        }
         await createPost.mutateAsync({
           studentId: student.id,
-          imageUrl,
+          imageUrl: savedUrl,
           metrics: metricValues,
         });
       } catch {

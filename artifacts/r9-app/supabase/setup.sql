@@ -249,7 +249,8 @@ insert into storage.buckets (id, name, public)
 values
   ('students',   'students',   false),
   ('clubs',      'clubs',      false),
-  ('references', 'references', false)
+  ('references', 'references', false),
+  ('generated',  'generated',  false)
 on conflict (id) do update set public = false;
 
 -- Upload: qualquer usuário logado com perfil pode enviar.
@@ -258,7 +259,7 @@ drop policy if exists "r9_storage_insert" on storage.objects;
 create policy "r9_storage_insert" on storage.objects
   for insert to authenticated
   with check (
-    bucket_id in ('students','clubs','references')
+    bucket_id in ('students','clubs','references','generated')
     and public.has_profile()
     and (storage.foldername(name))[1] = auth.uid()::text
   );
@@ -268,7 +269,7 @@ drop policy if exists "r9_storage_select" on storage.objects;
 create policy "r9_storage_select" on storage.objects
   for select to authenticated
   using (
-    bucket_id in ('students','clubs','references')
+    bucket_id in ('students','clubs','references','generated')
     and (
       (storage.foldername(name))[1] = auth.uid()::text
       or public.is_super_admin()
@@ -280,7 +281,7 @@ drop policy if exists "r9_storage_delete" on storage.objects;
 create policy "r9_storage_delete" on storage.objects
   for delete to authenticated
   using (
-    bucket_id in ('students','clubs','references')
+    bucket_id in ('students','clubs','references','generated')
     and (
       (storage.foldername(name))[1] = auth.uid()::text
       or public.is_super_admin()

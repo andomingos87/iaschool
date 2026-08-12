@@ -28,7 +28,7 @@ intencional para evitar abuso da chave sem autenticação.
    - políticas RLS: `super_admin` acessa todos os dados; `school_user` acessa
      apenas os próprios registros (`owner_id = auth.uid()`);
    - seed das 10 métricas pré-definidas;
-   - buckets **privados** `students`, `clubs`, `references` — imagens são
+   - buckets **privados** `students`, `clubs`, `references`, `generated` — imagens são
      servidas via URLs assinadas (1 ano de validade), nunca como URLs públicas.
 2. **Desabilite o cadastro público** no Supabase: Authentication → Settings →
    "Enable email signups" → desativar. Usuários são criados apenas pelo
@@ -46,7 +46,7 @@ Novos usuários de escolinha: mesmo fluxo com `role = 'school_user'` e
 | Interface (`contract.ts`) | Supabase |
 | --- | --- |
 | `AuthService` | `supabase.auth` (signInWithPassword, signOut, getSession, onAuthStateChange); papel/nome vêm da tabela `profiles` |
-| `StorageService` | `supabase.storage` — buckets privados `students`, `clubs`, `references`; paths prefixados com `{uid}/`; URLs assinadas (TTL 1 ano) |
+| `StorageService` | `supabase.storage` — buckets privados `students`, `clubs`, `references`, `generated`; paths prefixados com `{uid}/`; URLs assinadas (TTL 1 ano) |
 | Repositórios | Tabelas acima; colunas snake_case mapeadas em `src/lib/data/supabase/index.ts`; `owner_id` injetado automaticamente no insert |
 | `ImageGenerationService` | api-server `POST /api/generation/post-image` (OpenAI GPT Image) — exige `Authorization: Bearer <access_token>` **e** uma linha válida em `profiles` |
 
