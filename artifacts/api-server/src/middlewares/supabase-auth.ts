@@ -80,11 +80,12 @@ export async function requireSupabaseUser(
       return;
     }
 
-    // 2. Confirmar que o usuário tem perfil cadastrado (profiles row).
+    // 2. Confirmar que o usuário tem perfil cadastrado, APROVADO e com papel
+    // que pode gerar imagens (alunos não geram — somente visualizam).
     // A consulta usa o JWT do usuário como Authorization, garantindo que
     // a RLS do Supabase se aplique (o usuário só enxerga o próprio perfil).
     const profileResp = await fetch(
-      `${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=id&limit=1`,
+      `${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=id,role,approval_status&limit=1`,
       {
         headers: {
           apikey: config.anonKey,
@@ -101,11 +102,31 @@ export async function requireSupabaseUser(
       });
       return;
     }
-    const profiles = (await profileResp.json()) as unknown[];
-    if (!Array.isArray(profiles) || profiles.length === 0) {
+    const profiles = (await profileResp.json()) as Array<{
+      id?: string;
+      role?: string;
+      approval_status?: string;
+    }>;
+    const profile = Array.isArray(profiles) ? profiles[0] : undefined;
+    if (!profile) {
       res.status(403).json({
         error:
           "Seu usuário não tem perfil cadastrado. Peça ao administrador para criar seu acesso.",
+      });
+      return;
+    }
+    // Bases antigas podem não ter a coluna approval_status preenchida — trata
+    // ausência como aprovado (contas criadas manualmente pelo admin).
+    if (profile.approval_status && profile.approval_status !== "approved") {
+      res.status(403).json({
+        error:
+          "Seu cadastro ainda não foi aprovado pelo administrador.",
+      });
+      return;
+    }
+    if (profile.role === "student") {
+      res.status(403).json({
+        error: "Contas de aluno não podem gerar imagens.",
       });
       return;
     }

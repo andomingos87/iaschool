@@ -2,16 +2,29 @@
 // Estes tipos espelham as futuras tabelas do Supabase (snake_case nas colunas
 // será mapeado nos repositórios reais; aqui usamos camelCase no domínio).
 
-export type UserRole = "super_admin" | "school_user";
+export type UserRole = "super_admin" | "school_user" | "student";
 
+/** Status de aprovação do cadastro (novos cadastros nascem "pending"). */
+export type ApprovalStatus = "pending" | "approved" | "rejected";
 export interface AppUser {
   id: string;
   email: string;
   name: string;
   role: UserRole;
   schoolName?: string;
+  /** Contas antigas (criadas pelo admin) são tratadas como aprovadas. */
+  approvalStatus: ApprovalStatus;
+  /** Para alunos: id do usuário da escola à qual pertence. */
+  schoolId?: string;
+  /** Para alunos: id do registro na tabela students vinculado (se houver). */
+  studentRecordId?: string;
 }
 
+/** Escola aprovada, exibida no seletor do cadastro de aluno. */
+export interface SchoolOption {
+  id: string;
+  name: string;
+}
 export interface Session {
   user: AppUser;
   /** ISO timestamp de expiração (mock: sem expiração real) */
@@ -109,3 +122,26 @@ export interface GeneratedPost {
   metrics: MetricValue[];
   createdAt: string;
 }
+
+/** Cadastro aguardando aprovação, listado na tela do admin. */
+export interface PendingRegistration {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  schoolName?: string;
+  /** Nome da escola escolhida (para alunos). */
+  schoolLabel?: string;
+  createdAt: string;
+}
+
+/** Dados do cadastro público (escola ou aluno). */
+export type SignUpInput =
+  | { kind: "school"; schoolName: string; email: string; password: string }
+  | {
+      kind: "student";
+      name: string;
+      email: string;
+      password: string;
+      schoolId: string;
+    };

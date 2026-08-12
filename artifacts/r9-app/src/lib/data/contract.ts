@@ -14,9 +14,12 @@ import type {
   GeneratedPost,
   GenerationRequest,
   Metric,
+  PendingRegistration,
   PromptTemplateSetting,
   ReferencePost,
+  SchoolOption,
   Session,
+  SignUpInput,
   StoredImage,
   Student,
 } from "./types";
@@ -28,6 +31,17 @@ export interface AuthService {
   signIn(email: string, password: string): Promise<Session>;
   /** Equivalente a supabase.auth.signOut(). */
   signOut(): Promise<void>;
+  /**
+   * Cadastro público (escola ou aluno). A conta nasce com status "pending"
+   * e só ganha acesso após aprovação do super_admin.
+   * Equivalente a supabase.auth.signUp() + profile pendente (via trigger).
+   */
+  signUp(input: SignUpInput): Promise<void>;
+  /**
+   * Escolas aprovadas para o seletor do cadastro de aluno.
+   * Acessível sem login (RPC pública no Supabase).
+   */
+  listApprovedSchools(): Promise<SchoolOption[]>;
   /**
    * Dispara o e-mail de recuperação de senha.
    * Equivalente a supabase.auth.resetPasswordForEmail(email, { redirectTo }).
@@ -97,6 +111,13 @@ export interface ImageGenerationService {
   generate(request: GenerationRequest): Promise<{ imageUrl: string }>;
 }
 
+/** Aprovação de cadastros pendentes — apenas super_admin. */
+export interface ApprovalRepository {
+  listPending(): Promise<PendingRegistration[]>;
+  approve(profileId: string): Promise<void>;
+  reject(profileId: string): Promise<void>;
+}
+
 /**
  * Configuração global do template do prompt de geração.
  * Leitura: qualquer usuário autenticado. Escrita: apenas super_admin
@@ -113,6 +134,7 @@ export interface PromptTemplateRepository {
 
 export interface DataLayer {
   auth: AuthService;
+  approvals: ApprovalRepository;
   storage: StorageService;
   students: StudentRepository;
   clubs: ClubRepository;

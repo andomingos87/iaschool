@@ -30,16 +30,36 @@ intencional para evitar abuso da chave sem autenticação.
    - seed das 10 métricas pré-definidas;
    - buckets **privados** `students`, `clubs`, `references`, `generated` — imagens são
      servidas via URLs assinadas (1 ano de validade), nunca como URLs públicas.
-2. **Desabilite o cadastro público** no Supabase: Authentication → Settings →
-   "Enable email signups" → desativar. Usuários são criados apenas pelo
-   administrador (painel + insert manual em `profiles`).
-3. Crie o primeiro usuário em Authentication → Users → "Add user"
+2. **Habilite o cadastro por e-mail** no Supabase: Authentication →
+   Sign In / Up → Email → "Enable email signups" (ativado). O cadastro
+   público do app depende disso; a segurança fica garantida pelo fluxo de
+   aprovação (contas novas nascem pendentes e não leem nenhum dado).
+3. Crie o super admin em Authentication → Users → "Add user"
    (marque *Auto confirm user*).
-4. Insira o perfil dele na tabela `profiles` com `role = 'super_admin'`
-   (instruções no fim do `setup.sql`).
+4. No SQL Editor, rode o script [`supabase/create-super-admin.sql`](./supabase/create-super-admin.sql).
+   Ele localiza o usuário pelo e-mail e insere/atualiza o perfil com
+   `role = 'super_admin'` e `approval_status = 'approved'` automaticamente.
+   ⚠️ Recomendamos trocar a senha após o primeiro login.
 
-Novos usuários de escolinha: mesmo fluxo com `role = 'school_user'` e
-`school_name` preenchido.
+## Cadastro público e aprovação
+
+- Na tela de login há "Criar conta": escolas (`role = 'school_user'`) e
+  alunos (`role = 'student'`, com escolha da escola) se cadastram sozinhos.
+- O `signUp` envia metadados (`signup_role`, `signup_name`,
+  `signup_school_name`/`signup_school_id`); o trigger `handle_new_user`
+  (setup.sql) cria a linha em `profiles` com `approval_status = 'pending'`.
+- Contas pendentes/recusadas: veem apenas a tela "Aguardando aprovação"
+  no app; a RLS (`is_approved()`) impede qualquer leitura de dados e o
+  api-server recusa a rota de geração (HTTP 403).
+- O super_admin aprova/recusa na tela **Aprovações** do app (update em
+  `profiles.approval_status`). Ao aprovar um aluno, o app tenta vincular o
+  registro da tabela `students` da escola pelo nome
+  (`profiles.student_record_id`).
+- Aluno aprovado: área própria somente leitura (perfil + posts gerados
+  sobre ele — políticas `students_select`/`generated_posts_select` via
+  `my_student_record_id()`). Alunos não geram imagens.
+- A lista de escolas do cadastro de aluno vem da RPC pública
+  `list_approved_schools()` (só expõe id e nome).
 
 
 ## Recuperação de senha e convite
@@ -98,7 +118,9 @@ Observações:
 | Repositórios | Tabelas acima; colunas snake_case mapeadas em `src/lib/data/supabase/index.ts`; `owner_id` injetado automaticamente no insert |
 | `ImageGenerationService` | api-server `POST /api/generation/post-image` (OpenAI GPT Image) — exige `Authorization: Bearer <access_token>` **e** uma linha válida em `profiles` |
 
-Papéis: `super_admin` e `school_user` (coluna `role` em `profiles`).
+Papéis: `super_admin`, `school_user` e `student` (coluna `role` em
+`profiles`); `approval_status` controla o acesso (`pending`/`approved`/
+`rejected`).
 Usuário logado sem linha em `profiles` é tratado como deslogado no frontend
 e bloqueado na rota de geração (HTTP 403) no backend.
 

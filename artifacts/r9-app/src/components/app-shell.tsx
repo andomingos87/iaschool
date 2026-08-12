@@ -11,6 +11,7 @@ import {
   LogOut,
   Moon,
   Sun,
+  UserCheck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -47,7 +48,14 @@ import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import { initials } from "@/lib/format";
 
-const NAV = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof Home;
+  highlight?: boolean;
+}
+
+const NAV: NavItem[] = [
   { href: "/", label: "Início", icon: Home },
   { href: "/gerar", label: "Gerar imagem", icon: Sparkles, highlight: true },
   { href: "/alunos", label: "Alunos", icon: Users },
@@ -57,12 +65,19 @@ const NAV = [
 ];
 
 /** Itens visíveis apenas para super_admin. */
-const ADMIN_NAV = [
+const ADMIN_NAV: NavItem[] = [
+  { href: "/aprovacoes", label: "Aprovações", icon: UserCheck },
   { href: "/admin/prompt", label: "Prompt de geração", icon: Settings2 },
 ];
 
+const STUDENT_NAV: NavItem[] = [
+  { href: "/", label: "Meu perfil", icon: Home },
+];
+
 function roleLabel(role: string) {
-  return role === "super_admin" ? "Administrador" : "Escolinha";
+  if (role === "super_admin") return "Administrador";
+  if (role === "student") return "Aluno";
+  return "Escolinha";
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -70,6 +85,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { session, signOut } = useAuth();
   const { theme, toggle } = useTheme();
   const user = session?.user;
+  const nav =
+    user?.role === "student"
+      ? STUDENT_NAV
+      : user?.role === "super_admin"
+        ? [...NAV, ...ADMIN_NAV]
+        : NAV;
 
   return (
     <SidebarProvider>
@@ -84,7 +105,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <SidebarGroupLabel>Menu</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {NAV.map((item) => {
+                {nav.map((item) => {
                   const active =
                     item.href === "/"
                       ? location === "/"
@@ -117,37 +138,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-          {user?.role === "super_admin" && (
-            <SidebarGroup>
-              <SidebarGroupLabel>Admin</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {ADMIN_NAV.map((item) => {
-                    const active = location.startsWith(item.href);
-                    const Icon = item.icon;
-                    return (
-                      <SidebarMenuItem key={item.href}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={active}
-                          tooltip={item.label}
-                        >
-                          <Link
-                            href={item.href}
-                            className="flex items-center gap-2"
-                            data-testid={`link-nav-${item.label.toLowerCase().replace(/\s/g, "-")}`}
-                          >
-                            <Icon className="size-4" />
-                            <span>{item.label}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          )}
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border p-3">
           <div className="flex items-center gap-2">

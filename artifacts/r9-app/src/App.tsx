@@ -23,6 +23,9 @@ import ReferencesPage from '@/pages/references';
 import MetricsPage from '@/pages/metrics';
 import GeneratePage from '@/pages/generate';
 import AdminPromptPage from '@/pages/admin-prompt';
+import ApprovalsPage from '@/pages/approvals';
+import StudentAreaPage from '@/pages/student-area';
+import PendingApprovalPage from '@/pages/pending-approval';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient({
@@ -33,7 +36,20 @@ const queryClient = new QueryClient({
 
 function Pages() {
   const { session } = useAuth();
-  const isSuperAdmin = session?.user.role === 'super_admin';
+  const role = session?.user.role;
+
+  // Área do aluno: somente visualização (perfil + posts).
+  if (role === 'student') {
+    return (
+      <Switch>
+        <Route path="/" component={StudentAreaPage} />
+        <Route component={NotFound} />
+      </Switch>
+    );
+  }
+
+  const isSuperAdmin = role === 'super_admin';
+
   return (
     <Switch>
       <Route path="/" component={DashboardPage} />
@@ -42,10 +58,13 @@ function Pages() {
       <Route path="/clubes" component={ClubsPage} />
       <Route path="/referencias" component={ReferencesPage} />
       <Route path="/metricas" component={MetricsPage} />
-      {/* Rota de admin: usuários sem papel super_admin caem no 404. */}
+      {/* Rotas de super_admin */}
       <Route path="/admin/prompt">
         {isSuperAdmin ? <AdminPromptPage /> : <NotFound />}
       </Route>
+      {isSuperAdmin && (
+        <Route path="/aprovacoes" component={ApprovalsPage} />
+      )}
       <Route component={NotFound} />
     </Switch>
   );
@@ -67,6 +86,11 @@ function AuthGate() {
 
   if (!session) {
     return <LoginPage />;
+  }
+
+  // Conta cadastrada mas ainda não aprovada (ou recusada): sem acesso ao app.
+  if (session.user.approvalStatus && session.user.approvalStatus !== 'approved') {
+    return <PendingApprovalPage />;
   }
 
   // Sessão criada pelo link de recuperação de senha do e-mail:

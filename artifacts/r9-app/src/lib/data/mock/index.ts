@@ -3,6 +3,7 @@
 // em ../index.ts, mantendo as mesmas interfaces.
 
 import type {
+  ApprovalRepository,
   AuthService,
   ClubRepository,
   DataLayer,
@@ -15,9 +16,11 @@ import type {
   StudentRepository,
 } from "../contract";
 import type {
+  AppUser,
   Club,
   GeneratedPost,
   Metric,
+  PendingRegistration,
   PromptTemplateSetting,
   ReferencePost,
   Session,
@@ -45,14 +48,43 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+// Cadastros feitos pelo fluxo público (modo demo): ficam em localStorage
+// com o mesmo ciclo pendente → aprovado/recusado do Supabase real.
+interface MockRegistration {
+  user: AppUser;
+  schoolLabel?: string;
+  createdAt: string;
+}
+
+function readRegistrations(): MockRegistration[] {
+  return readCollection<MockRegistration>("registrations", []);
+}
+
+function writeRegistrations(items: MockRegistration[]): void {
+  writeCollection("registrations", items);
+}
+
+function allUsers(): AppUser[] {
+  return [...MOCK_USERS, ...readRegistrations().map((r) => r.user)];
+}
+
 const auth: AuthService = {
   async getSession() {
     await delay(200);
-    return readValue<Session>("session");
+    const session = readValue<Session>("session");
+    if (!session) return null;
+    // Reflete aprovação/recusa feita após o login (dados sempre frescos).
+    const fresh = allUsers().find((u) => u.id === session.user.id);
+    if (fresh) {
+      const updated: Session = { ...session, user: fresh };
+      writeValue("session", updated);
+      return updated;
+    }
+    return session;
   },
   async signIn(email, password) {
     await delay(600);
-    const user = MOCK_USERS.find(
+    const user = allUsers().find(
       (u) => u.email.toLowerCase() === email.trim().toLowerCase(),
     );
     if (!user || password.length < 4) {
@@ -66,9 +98,57 @@ const auth: AuthService = {
     listeners.forEach((cb) => cb(session));
     return session;
   },
+  async signUp(input) {
+    await delay(700);
+    const email = input.email.trim().toLowerCase();
+    if (allUsers().some((u) => u.email.toLowerCase() === email)) {
+      throw new Error("Este e-mail já está cadastrado.");
+    }
+    if (input.password.length < 4) {
+      throw new Error("A senha deve ter ao menos 4 caracteres");
+    }
+    const regs = readRegistrations();
+    if (input.kind === "school") {
+      regs.unshift({
+        user: {
+          id: newId(),
+          email,
+          name: input.schoolName.trim(),
+          role: "school_user",
+          schoolName: input.schoolName.trim(),
+          approvalStatus: "pending",
+        },
+        createdAt: nowIso(),
+      });
+    } else {
+      const school = (await auth.listApprovedSchools()).find(
+        (s) => s.id === input.schoolId,
+      );
+      if (!school) throw new Error("Escola não encontrada.");
+      regs.unshift({
+        user: {
+          id: newId(),
+          email,
+          name: input.name.trim(),
+          role: "student",
+          approvalStatus: "pending",
+          schoolId: input.schoolId,
+        },
+        schoolLabel: school.name,
+        createdAt: nowIso(),
+      });
+    }
+    writeRegistrations(regs);
+  },
+  async listApprovedSchools() {
+    await delay(300);
+    return allUsers()
+      .filter((u) => u.role === "school_user" && u.approvalStatus === "approved")
+      .map((u) => ({ id: u.id, name: u.schoolName ?? u.name }));
+  },
   async resetPassword(email) {
     await delay(600);
-    const exists = MOCK_USERS.some(
+    const exists = allUsers().some(
       (u) => u.email.toLowerCase() === email.trim().toLowerCase(),
     );
     if (!exists) throw new Error("E-mail não cadastrado");
@@ -200,6 +280,41 @@ const generatedPosts: GeneratedPostRepository = {
     generatedPostsCrud.create(input as Record<string, unknown>),
 };
 
+const approvals: ApprovalRepository = {
+  async listPending(): Promise<PendingRegistration[]> {
+    await delay(300);
+    return readRegistrations()
+      .filter((r) => r.user.approvalStatus === "pending")
+      .map((r) => ({
+        id: r.user.id,
+        email: r.user.email,
+        name: r.user.name,
+        role: r.user.role,
+        schoolName: r.user.schoolName,
+        schoolLabel: r.schoolLabel,
+        createdAt: r.createdAt,
+      }));
+  },
+  async approve(profileId: string): Promise<void> {
+    await delay(400);
+    const regs = readRegistrations();
+    const reg = regs.find((r) => r.user.id === profileId);
+    if (!reg) throw new Error("Cadastro não encontrado");
+    reg.user.approvalStatus = "approved";
+    // student_record_id é deixado null: a escola vincula manualmente após a
+    // aprovação (tarefa #20), evitando colisões de nome e exposição de PII.
+    writeRegistrations(regs);
+  },
+  async reject(profileId: string): Promise<void> {
+    await delay(400);
+    const regs = readRegistrations();
+    const reg = regs.find((r) => r.user.id === profileId);
+    if (!reg) throw new Error("Cadastro não encontrado");
+    reg.user.approvalStatus = "rejected";
+    writeRegistrations(regs);
+  },
+};
+
 // Escrita restrita a super_admin, espelhando as políticas RLS do Supabase.
 function assertSuperAdmin(): void {
   const session = readValue<Session>("session");
@@ -238,6 +353,7 @@ const generation: ImageGenerationService = createOpenAIGenerationService(
 export function createMockDataLayer(): DataLayer {
   return {
     auth,
+    approvals,
     storage,
     students,
     clubs,

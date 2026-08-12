@@ -25,6 +25,7 @@ import { R9Logo } from "@/components/r9-logo";
 import { DemoIndicator } from "@/components/demo-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { getDataLayer } from "@/lib/data";
+import { SignupCard } from "@/pages/signup";
 
 const schema = z.object({
   email: z.string().email("Informe um e-mail válido"),
@@ -40,13 +41,16 @@ type ForgotValues = z.infer<typeof forgotSchema>;
 const DEMO_USERS = [
   { email: "admin@r9.com.br", role: "Administrador R9" },
   { email: "escola@r9.com.br", role: "Escolinha R9 Osasco" },
+  { email: "aluno@r9.com.br", role: "Aluno Demo" },
 ];
 
 export default function LoginPage() {
   const { signIn } = useAuth();
   const isMock = getDataLayer().isMock;
   const [submitting, setSubmitting] = useState(false);
-  const [mode, setMode] = useState<"login" | "forgot" | "sent">("login");
+  const [mode, setMode] = useState<"login" | "forgot" | "sent" | "signup">(
+    "login",
+  );
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { email: "", password: "" },
@@ -115,7 +119,9 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {mode === "sent" ? (
+        {mode === "signup" ? (
+          <SignupCard onBack={() => setMode("login")} />
+        ) : mode === "sent" ? (
           <Card className="border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -268,6 +274,17 @@ export default function LoginPage() {
                 >
                   Esqueci minha senha
                 </button>
+                <p className="text-center text-sm text-muted-foreground">
+                  Não tem conta?{" "}
+                  <button
+                    type="button"
+                    onClick={() => setMode("signup")}
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                    data-testid="button-create-account"
+                  >
+                    Criar conta
+                  </button>
+                </p>
               </form>
             </Form>
           </CardContent>

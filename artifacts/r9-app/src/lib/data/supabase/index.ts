@@ -10,6 +10,7 @@ import {
   type Session as SbSession,
 } from "@supabase/supabase-js";
 import type {
+  ApprovalRepository,
   AuthService,
   ClubRepository,
   DataLayer,
@@ -25,6 +26,7 @@ import type {
   Club,
   GeneratedPost,
   Metric,
+  PendingRegistration,
   PromptTemplateSetting,
   ReferencePost,
   Session,
@@ -149,7 +151,9 @@ export function createSupabaseDataLayer(): DataLayer {
     if (cached) return cached;
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, email, name, role, school_name")
+      .select(
+        "id, email, name, role, school_name, approval_status, school_id, student_record_id",
+      )
       .eq("id", userId)
       .maybeSingle();
     if (error) fail("Falha ao carregar perfil", error);
@@ -164,8 +168,12 @@ export function createSupabaseDataLayer(): DataLayer {
       name: data.name,
       role: data.role,
       schoolName: data.school_name ?? undefined,
+      approvalStatus: data.approval_status ?? "approved",
+      schoolId: data.school_id ?? undefined,
+      studentRecordId: data.student_record_id ?? undefined,
     };
-    profileCache.set(userId, user);
+    // Não cachear perfis pendentes: o status pode mudar a qualquer momento.
+    if (user.approvalStatus === "approved") profileCache.set(userId, user);
     return user;
   }
 
@@ -218,6 +226,43 @@ export function createSupabaseDataLayer(): DataLayer {
         await supabase.auth.signOut();
         throw err;
       }
+    },
+    async signUp(input) {
+      // O trigger handle_new_user (setup.sql) cria o profile pendente a
+      // partir dos metadados — funciona mesmo com confirmação de e-mail ativa.
+      const metadata =
+        input.kind === "school"
+          ? {
+              signup_role: "school_user",
+              signup_name: input.schoolName.trim(),
+              signup_school_name: input.schoolName.trim(),
+            }
+          : {
+              signup_role: "student",
+              signup_name: input.name.trim(),
+              signup_school_id: input.schoolId,
+            };
+      const { data, error } = await supabase.auth.signUp({
+        email: input.email.trim(),
+        password: input.password,
+        options: { data: metadata },
+      });
+      if (error) {
+        throw new Error(
+          error.message.includes("already registered")
+            ? "Este e-mail já está cadastrado."
+            : `Falha ao criar conta: ${error.message}`,
+        );
+      }
+      // Cadastro fica pendente: não manter a sessão criada pelo signUp.
+      if (data.session) await supabase.auth.signOut();
+    },
+    async listApprovedSchools() {
+      const { data, error } = await supabase.rpc("list_approved_schools");
+      if (error) fail("Falha ao listar escolas", error);
+      return ((data ?? []) as Array<{ id: string; name: string }>).map(
+        (s) => ({ id: s.id, name: s.name }),
+      );
     },
     async resetPassword(email) {
       // O link do e-mail volta para o app com `type=recovery` no hash;
@@ -484,7 +529,69 @@ export function createSupabaseDataLayer(): DataLayer {
     },
   };
 
-  // Template global do prompt de geração (tabela prompt_settings, linha única).
+  // ---------- Aprovações (apenas super_admin — RLS garante) ----------
+
+  const approvals: ApprovalRepository = {
+    async listPending() {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, email, name, role, school_name, school_id, created_at")
+        .eq("approval_status", "pending")
+        .order("created_at", { ascending: true });
+      if (error) fail("Falha ao listar cadastros pendentes", error);
+      const rows = data ?? [];
+      // Nome da escola escolhida pelos alunos pendentes.
+      const schoolIds = [
+        ...new Set(rows.map((r) => r.school_id).filter(Boolean)),
+      ] as string[];
+      const schoolNames = new Map<string, string>();
+      if (schoolIds.length > 0) {
+        const { data: schools, error: schoolsErr } = await supabase
+          .from("profiles")
+          .select("id, school_name, name")
+          .in("id", schoolIds);
+        if (schoolsErr) fail("Falha ao carregar escolas", schoolsErr);
+        for (const s of schools ?? []) {
+          schoolNames.set(s.id, s.school_name ?? s.name);
+        }
+      }
+      return rows.map(
+        (r): PendingRegistration => ({
+          id: r.id,
+          email: r.email,
+          name: r.name,
+          role: r.role,
+          schoolName: r.school_name ?? undefined,
+          schoolLabel: r.school_id
+            ? (schoolNames.get(r.school_id) ?? undefined)
+            : undefined,
+          createdAt: r.created_at,
+        }),
+      );
+    },
+    async approve(profileId) {
+      // student_record_id é deixado null: a escola vincula manualmente após a
+      // aprovação (para evitar que nomes ambíguos ou com wildcards exponham
+      // dados de outro aluno — veja task #20 "vincular manualmente").
+      const { error } = await supabase
+        .from("profiles")
+        .update({ approval_status: "approved" })
+        .eq("id", profileId);
+      if (error) fail("Falha ao aprovar cadastro", error);
+      profileCache.delete(profileId);
+    },
+    async reject(profileId) {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ approval_status: "rejected" })
+        .eq("id", profileId);
+      if (error) fail("Falha ao recusar cadastro", error);
+      profileCache.delete(profileId);
+    },
+  };
+
+  // ---------- Prompt template ----------
+
   const promptTemplate: PromptTemplateRepository = {
     async get() {
       const { data, error } = await supabase
@@ -536,6 +643,7 @@ export function createSupabaseDataLayer(): DataLayer {
 
   return {
     auth,
+    approvals,
     storage,
     students,
     clubs,

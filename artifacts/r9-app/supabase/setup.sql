@@ -11,10 +11,40 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   email text not null,
   name text not null,
-  role text not null check (role in ('super_admin', 'school_user')),
+  role text not null,
   school_name text,
+  -- Cadastros públicos nascem 'pending'; contas criadas pelo admin, 'approved'.
+  approval_status text not null default 'approved',
+  -- Para alunos: uid do usuário da escola escolhida no cadastro.
+  school_id uuid references public.profiles (id) on delete set null,
+  -- Para alunos: registro na tabela students vinculado na aprovação.
+  student_record_id uuid,
   created_at timestamptz not null default now()
 );
+
+-- Migração de bases existentes: novas colunas + role 'student'.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+    where table_schema='public' and table_name='profiles' and column_name='approval_status') then
+    alter table public.profiles add column approval_status text not null default 'approved';
+  end if;
+  if not exists (select 1 from information_schema.columns
+    where table_schema='public' and table_name='profiles' and column_name='school_id') then
+    alter table public.profiles add column school_id uuid references public.profiles (id) on delete set null;
+  end if;
+  if not exists (select 1 from information_schema.columns
+    where table_schema='public' and table_name='profiles' and column_name='student_record_id') then
+    alter table public.profiles add column student_record_id uuid;
+  end if;
+end $$;
+
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('super_admin', 'school_user', 'student'));
+alter table public.profiles drop constraint if exists profiles_approval_status_check;
+alter table public.profiles add constraint profiles_approval_status_check
+  check (approval_status in ('pending', 'approved', 'rejected'));
 
 create table if not exists public.students (
   id uuid primary key default gen_random_uuid(),
@@ -115,9 +145,82 @@ returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.profiles
-    where id = auth.uid() and role = 'super_admin'
+    where id = auth.uid() and role = 'super_admin' and approval_status = 'approved'
   );
 $$;
+
+-- Perfil existente E aprovado — contas pendentes/recusadas não leem nada.
+create or replace function public.is_approved()
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and approval_status = 'approved'
+  );
+$$;
+
+-- Aprovado E com papel que pode escrever dados de escola (school_user ou super_admin).
+-- Alunos são somente leitura no nível do banco — esta função bloqueia todas as
+-- escritas de domínio (students, clubs, etc.) para o role student.
+create or replace function public.is_school_user()
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid()
+      and approval_status = 'approved'
+      and role in ('school_user', 'super_admin')
+  );
+$$;
+
+-- Registro de aluno vinculado ao usuário atual (null se não houver / não aprovado).
+create or replace function public.my_student_record_id()
+returns uuid
+language sql stable security definer set search_path = public as $$
+  select student_record_id from public.profiles
+  where id = auth.uid() and role = 'student' and approval_status = 'approved';
+$$;
+
+-- Escolas aprovadas para o seletor do cadastro de aluno (acessível sem login;
+-- expõe apenas id e nome — nunca e-mail).
+create or replace function public.list_approved_schools()
+returns table (id uuid, name text)
+language sql stable security definer set search_path = public as $$
+  select id, coalesce(school_name, name) as name
+  from public.profiles
+  where role = 'school_user' and approval_status = 'approved'
+  order by 2;
+$$;
+grant execute on function public.list_approved_schools() to anon, authenticated;
+
+-- Trigger: cria o profile pendente na hora do signUp (metadados do cliente).
+-- Funciona mesmo com confirmação de e-mail ativa (sem sessão no cliente).
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.raw_user_meta_data ? 'signup_role'
+     and new.raw_user_meta_data->>'signup_role' in ('school_user', 'student') then
+    insert into public.profiles (id, email, name, role, school_name, school_id, approval_status)
+    values (
+      new.id,
+      new.email,
+      coalesce(new.raw_user_meta_data->>'signup_name', new.email),
+      new.raw_user_meta_data->>'signup_role',
+      new.raw_user_meta_data->>'signup_school_name',
+      nullif(new.raw_user_meta_data->>'signup_school_id', '')::uuid,
+      'pending'
+    )
+    on conflict (id) do nothing;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
 
 -- ---------- 3. RLS com isolamento de tenant ----------
 -- Regra:
@@ -132,12 +235,11 @@ alter table public.metrics enable row level security;
 alter table public.generated_posts enable row level security;
 alter table public.prompt_settings enable row level security;
 
--- prompt_settings: leitura para todos autenticados com perfil;
--- escrita (insert/update/delete) apenas para super_admin.
+-- prompt_settings: leitura apenas para aprovados; escrita apenas para super_admin.
 drop policy if exists "prompt_settings_select" on public.prompt_settings;
 create policy "prompt_settings_select" on public.prompt_settings
   for select to authenticated
-  using (public.has_profile());
+  using (public.is_approved());
 
 drop policy if exists "prompt_settings_insert" on public.prompt_settings;
 create policy "prompt_settings_insert" on public.prompt_settings
@@ -155,85 +257,102 @@ create policy "prompt_settings_delete" on public.prompt_settings
   for delete to authenticated
   using (public.is_super_admin());
 
--- profiles: cada um lê o próprio; super_admin lê todos.
+-- profiles: cada um lê o próprio (inclusive pendente, para ver o status);
+-- super_admin lê todos.
 drop policy if exists "profiles_select" on public.profiles;
 create policy "profiles_select" on public.profiles
   for select to authenticated
   using (id = auth.uid() or public.is_super_admin());
 
+-- Apenas super_admin altera perfis (aprovar/recusar cadastros).
+drop policy if exists "profiles_update" on public.profiles;
+create policy "profiles_update" on public.profiles
+  for update to authenticated
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
 -- Helper: dado registro pertence ao usuário atual OU ele é super_admin.
 -- Usado nas políticas de domínio abaixo.
 
--- students
+-- students: dono aprovado, super_admin, ou o próprio aluno (registro vinculado).
 drop policy if exists "students_select" on public.students;
 create policy "students_select" on public.students
   for select to authenticated
-  using (owner_id = auth.uid() or public.is_super_admin());
+  using (
+    (owner_id = auth.uid() and public.is_approved())
+    or public.is_super_admin()
+    or id = public.my_student_record_id()
+  );
 
 drop policy if exists "students_insert" on public.students;
 create policy "students_insert" on public.students
   for insert to authenticated
-  with check (owner_id = auth.uid() and public.has_profile());
+  with check (owner_id = auth.uid() and public.is_school_user());
 
 drop policy if exists "students_update" on public.students;
 create policy "students_update" on public.students
   for update to authenticated
-  using (owner_id = auth.uid() or public.is_super_admin())
-  with check (owner_id = auth.uid() or public.is_super_admin());
+  using ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin())
+  with check ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin());
 
 drop policy if exists "students_delete" on public.students;
 create policy "students_delete" on public.students
   for delete to authenticated
-  using (owner_id = auth.uid() or public.is_super_admin());
+  using ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin());
 
 -- clubs
 drop policy if exists "clubs_select" on public.clubs;
 create policy "clubs_select" on public.clubs
   for select to authenticated
-  using (owner_id = auth.uid() or public.is_super_admin());
+  using ((owner_id = auth.uid() and public.is_approved()) or public.is_super_admin());
 
 drop policy if exists "clubs_insert" on public.clubs;
 create policy "clubs_insert" on public.clubs
   for insert to authenticated
-  with check (owner_id = auth.uid() and public.has_profile());
+  with check (owner_id = auth.uid() and public.is_school_user());
 
 drop policy if exists "clubs_update" on public.clubs;
 create policy "clubs_update" on public.clubs
   for update to authenticated
-  using (owner_id = auth.uid() or public.is_super_admin())
-  with check (owner_id = auth.uid() or public.is_super_admin());
+  using ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin())
+  with check ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin());
 
 drop policy if exists "clubs_delete" on public.clubs;
 create policy "clubs_delete" on public.clubs
   for delete to authenticated
-  using (owner_id = auth.uid() or public.is_super_admin());
+  using ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin());
 
 -- reference_posts
 drop policy if exists "reference_posts_select" on public.reference_posts;
 create policy "reference_posts_select" on public.reference_posts
   for select to authenticated
-  using (owner_id = auth.uid() or public.is_super_admin());
+  using ((owner_id = auth.uid() and public.is_approved()) or public.is_super_admin());
 
 drop policy if exists "reference_posts_insert" on public.reference_posts;
 create policy "reference_posts_insert" on public.reference_posts
   for insert to authenticated
-  with check (owner_id = auth.uid() and public.has_profile());
+  with check (owner_id = auth.uid() and public.is_school_user());
 
 drop policy if exists "reference_posts_delete" on public.reference_posts;
 create policy "reference_posts_delete" on public.reference_posts
   for delete to authenticated
-  using (owner_id = auth.uid() or public.is_super_admin());
+  using ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin());
 
 -- generated_posts
+-- generated_posts: dono aprovado, super_admin, ou o aluno retratado no post.
 drop policy if exists "generated_posts_select" on public.generated_posts;
 create policy "generated_posts_select" on public.generated_posts
   for select to authenticated
-  using (owner_id = auth.uid() or public.is_super_admin());
+  using (
+    (owner_id = auth.uid() and public.is_approved())
+    or public.is_super_admin()
+    or student_id = public.my_student_record_id()
+  );
 
 drop policy if exists "generated_posts_insert" on public.generated_posts;
 create policy "generated_posts_insert" on public.generated_posts
   for insert to authenticated
-  with check (owner_id = auth.uid() and public.has_profile());
+  with check (owner_id = auth.uid() and public.is_school_user());
 
 -- metrics: pré-definidas (owner_id IS NULL) são visíveis a todos logados com perfil.
 -- Métricas personalizadas são visíveis/editáveis apenas pelo criador (ou super_admin).
@@ -241,7 +360,7 @@ drop policy if exists "metrics_select" on public.metrics;
 create policy "metrics_select" on public.metrics
   for select to authenticated
   using (
-    public.has_profile() and (
+    public.is_approved() and (
       predefined = true
       or owner_id = auth.uid()
       or public.is_super_admin()
@@ -251,7 +370,7 @@ create policy "metrics_select" on public.metrics
 drop policy if exists "metrics_insert" on public.metrics;
 create policy "metrics_insert" on public.metrics
   for insert to authenticated
-  with check (public.has_profile() and predefined = false and owner_id = auth.uid());
+  with check (public.is_school_user() and predefined = false and owner_id = auth.uid());
 
 drop policy if exists "metrics_delete" on public.metrics;
 create policy "metrics_delete" on public.metrics
@@ -284,37 +403,37 @@ values
   ('generated',  'generated',  false)
 on conflict (id) do update set public = false;
 
--- Upload: qualquer usuário logado com perfil pode enviar.
--- O caminho é sempre prefixado com o uid do usuário (ex: "{uid}/{timestamp}-{nome}").
+-- Upload: apenas school_user e super_admin aprovados podem enviar.
+-- Alunos não podem fazer upload (somente leitura no banco e no Storage).
 drop policy if exists "r9_storage_insert" on storage.objects;
 create policy "r9_storage_insert" on storage.objects
   for insert to authenticated
   with check (
     bucket_id in ('students','clubs','references','generated')
-    and public.has_profile()
+    and public.is_school_user()
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
--- Leitura: apenas o dono do arquivo ou super_admin.
+-- Leitura: apenas o dono aprovado ou super_admin.
 drop policy if exists "r9_storage_select" on storage.objects;
 create policy "r9_storage_select" on storage.objects
   for select to authenticated
   using (
     bucket_id in ('students','clubs','references','generated')
     and (
-      (storage.foldername(name))[1] = auth.uid()::text
+      ((storage.foldername(name))[1] = auth.uid()::text and public.is_approved())
       or public.is_super_admin()
     )
   );
 
--- Remoção: apenas o dono ou super_admin.
+-- Remoção: apenas o dono school_user aprovado ou super_admin.
 drop policy if exists "r9_storage_delete" on storage.objects;
 create policy "r9_storage_delete" on storage.objects
   for delete to authenticated
   using (
     bucket_id in ('students','clubs','references','generated')
     and (
-      (storage.foldername(name))[1] = auth.uid()::text
+      ((storage.foldername(name))[1] = auth.uid()::text and public.is_school_user())
       or public.is_super_admin()
     )
   );
@@ -326,11 +445,12 @@ create policy "r9_storage_delete" on storage.objects
 --    (marque "Auto confirm user").
 -- b) Copie o UUID do usuário criado e rode (trocando os valores):
 --
---   insert into public.profiles (id, email, name, role)
---   values ('COLE-O-UUID-AQUI', 'seu@email.com', 'Seu Nome', 'super_admin');
+--   insert into public.profiles (id, email, name, role, approval_status)
+--   values ('COLE-O-UUID-AQUI', 'seu@email.com', 'Seu Nome', 'super_admin', 'approved');
 --
--- Para usuários de escolinha, use role = 'school_user' e preencha school_name:
---
---   insert into public.profiles (id, email, name, role, school_name)
---   values ('UUID', 'escola@email.com', 'Nome', 'school_user', 'R9 Osasco');
+-- Escolas e alunos agora se cadastram pelo app ("Criar conta") e entram como
+-- pendentes; o super_admin aprova em "Aprovações". Para isso o cadastro por
+-- e-mail precisa estar HABILITADO no Supabase:
+--   Authentication → Sign In / Up → Email → "Enable email signups" (ativado).
+-- Contas pendentes/recusadas não leem nenhum dado (RLS acima).
 -- ============================================================
