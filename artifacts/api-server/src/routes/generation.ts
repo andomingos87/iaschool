@@ -13,21 +13,30 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // por imagem, decodificada
 const MAX_TOTAL_BYTES = 24 * 1024 * 1024; // total decodificado
 const ALLOWED_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
-// Rate limit simples em memória por IP (geração é cara: paga por chamada).
+// Limites em memória (geração é cara: paga por chamada).
+// - Rajada: por usuário autenticado (fallback: IP) numa janela curta.
+// - Cota diária: por usuário autenticado.
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX_REQUESTS = 10;
+const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DAILY_MAX_REQUESTS = Number(
+  process.env["GENERATION_DAILY_QUOTA"] ?? 50,
+);
 const rateBuckets = new Map<string, number[]>();
-function isRateLimited(ip: string): boolean {
+
+function consumeBucket(
+  key: string,
+  windowMs: number,
+  maxRequests: number,
+): boolean {
   const now = Date.now();
-  const hits = (rateBuckets.get(ip) ?? []).filter(
-    (t) => now - t < RATE_WINDOW_MS,
-  );
-  if (hits.length >= RATE_MAX_REQUESTS) {
-    rateBuckets.set(ip, hits);
-    return true;
+  const hits = (rateBuckets.get(key) ?? []).filter((t) => now - t < windowMs);
+  if (hits.length >= maxRequests) {
+    rateBuckets.set(key, hits);
+    return true; // limite atingido
   }
   hits.push(now);
-  rateBuckets.set(ip, hits);
+  rateBuckets.set(key, hits);
   return false;
 }
 
@@ -66,9 +75,28 @@ router.post(
       images?: Array<{ dataUrl: string; name: string }>;
     };
 
-    if (isRateLimited(req.ip ?? "unknown")) {
+    // Rajada: por usuário autenticado; sem usuário (modo dev), por IP.
+    const burstKey = req.supabaseUserId
+      ? `burst:user:${req.supabaseUserId}`
+      : `burst:ip:${req.ip ?? "unknown"}`;
+    if (consumeBucket(burstKey, RATE_WINDOW_MS, RATE_MAX_REQUESTS)) {
       res.status(429).json({
         error: "Muitas gerações em pouco tempo. Aguarde alguns minutos e tente de novo.",
+      });
+      return;
+    }
+
+    // Cota diária por usuário autenticado.
+    if (
+      req.supabaseUserId &&
+      consumeBucket(
+        `daily:user:${req.supabaseUserId}`,
+        DAILY_WINDOW_MS,
+        DAILY_MAX_REQUESTS,
+      )
+    ) {
+      res.status(429).json({
+        error: `Você atingiu a cota diária de ${DAILY_MAX_REQUESTS} gerações. Tente novamente amanhã.`,
       });
       return;
     }

@@ -22,4 +22,4 @@ The R9 Escolinhas app (artifacts/r9-app) can run on mocks (localStorage) or real
 
 **Why the profiles check in the backend matters:** Supabase allows self-signup by default. An attacker could create an Auth account and bypass the app's profile gate, calling the paid endpoint. The middleware blocks this by verifying a profiles row exists.
 
-**How to apply:** When adding new paid/sensitive backend routes, always require both a valid JWT and a profiles row via `requireSupabaseUser`.
+**How to apply:** When adding new paid/sensitive backend routes, always require both a valid JWT and a profiles row via `requireSupabaseUser`. The middleware sets `req.supabaseUserId`; the generation route uses it for per-user burst + daily quotas (in-memory, `GENERATION_DAILY_QUOTA` env var, default 50/day).

@@ -1,5 +1,15 @@
 import type { NextFunction, Request, Response } from "express";
 
+// Uid do usuário autenticado, preenchido pelo middleware para uso nas rotas
+// (ex.: cota de geração por usuário).
+declare global {
+  namespace Express {
+    interface Request {
+      supabaseUserId?: string;
+    }
+  }
+}
+
 // Validação de sessão do Supabase (app R9 Escolinhas).
 // Quando SUPABASE_URL/SUPABASE_ANON_KEY estão configuradas, o endpoint exige
 // um access token válido (Authorization: Bearer <jwt>) e o valida chamando
@@ -100,6 +110,7 @@ export async function requireSupabaseUser(
       return;
     }
 
+    req.supabaseUserId = user.id;
     next();
   } catch (err) {
     req.log.error({ err }, "Falha ao validar sessão Supabase");
