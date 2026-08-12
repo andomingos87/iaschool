@@ -27,6 +27,17 @@ export interface AuthService {
   signIn(email: string, password: string): Promise<Session>;
   /** Equivalente a supabase.auth.signOut(). */
   signOut(): Promise<void>;
+  /**
+   * Dispara o e-mail de recuperação de senha.
+   * Equivalente a supabase.auth.resetPasswordForEmail(email, { redirectTo }).
+   */
+  resetPassword(email: string): Promise<void>;
+  /**
+   * Define uma nova senha para o usuário logado (inclusive na sessão de
+   * recuperação criada pelo link do e-mail).
+   * Equivalente a supabase.auth.updateUser({ password }).
+   */
+  updatePassword(newPassword: string): Promise<void>;
   /** Equivalente a supabase.auth.onAuthStateChange(). Retorna unsubscribe. */
   onAuthStateChange(cb: (session: Session | null) => void): () => void;
 }

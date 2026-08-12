@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, LogIn, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Loader2, LogIn, MailCheck, ShieldCheck } from "lucide-react";
 import {
   Form,
   FormControl,
@@ -32,6 +32,11 @@ const schema = z.object({
 });
 type FormValues = z.infer<typeof schema>;
 
+const forgotSchema = z.object({
+  email: z.string().email("Informe um e-mail válido"),
+});
+type ForgotValues = z.infer<typeof forgotSchema>;
+
 const DEMO_USERS = [
   { email: "admin@r9.com.br", role: "Administrador R9" },
   { email: "escola@r9.com.br", role: "Escolinha R9 Osasco" },
@@ -41,10 +46,31 @@ export default function LoginPage() {
   const { signIn } = useAuth();
   const isMock = getDataLayer().isMock;
   const [submitting, setSubmitting] = useState(false);
+  const [mode, setMode] = useState<"login" | "forgot" | "sent">("login");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { email: "", password: "" },
   });
+  const forgotForm = useForm<ForgotValues>({
+    resolver: zodResolver(forgotSchema),
+    defaultValues: { email: "" },
+  });
+
+  async function onForgotSubmit(values: ForgotValues) {
+    setSubmitting(true);
+    try {
+      await getDataLayer().auth.resetPassword(values.email);
+      setMode("sent");
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Não foi possível enviar o e-mail",
+        description: err instanceof Error ? err.message : "Tente novamente.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
@@ -89,6 +115,92 @@ export default function LoginPage() {
           </div>
         </div>
 
+        {mode === "sent" ? (
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MailCheck className="size-5 text-primary" />
+                E-mail enviado
+              </CardTitle>
+              <CardDescription>
+                Se o e-mail estiver cadastrado, você receberá um link para
+                definir uma nova senha. Confira também a caixa de spam.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setMode("login")}
+                data-testid="button-back-to-login"
+              >
+                <ArrowLeft className="size-4" />
+                Voltar ao login
+              </Button>
+            </CardContent>
+          </Card>
+        ) : mode === "forgot" ? (
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle>Recuperar senha</CardTitle>
+              <CardDescription>
+                Informe seu e-mail e enviaremos um link para você definir uma
+                nova senha.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Form {...forgotForm}>
+                <form
+                  onSubmit={forgotForm.handleSubmit(onForgotSubmit)}
+                  className="space-y-4"
+                >
+                  <FormField
+                    control={forgotForm.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>E-mail</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="email"
+                            placeholder="voce@r9.com.br"
+                            autoComplete="email"
+                            data-testid="input-forgot-email"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={submitting}
+                    data-testid="button-send-recovery"
+                  >
+                    {submitting ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <MailCheck className="size-4" />
+                    )}
+                    Enviar link de recuperação
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => setMode("login")}
+                    data-testid="button-cancel-forgot"
+                  >
+                    <ArrowLeft className="size-4" />
+                    Voltar ao login
+                  </Button>
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
+        ) : (
         <Card className="border-border">
           <CardHeader>
             <CardTitle>Entrar</CardTitle>
@@ -148,10 +260,19 @@ export default function LoginPage() {
                   )}
                   Entrar
                 </Button>
+                <button
+                  type="button"
+                  onClick={() => setMode("forgot")}
+                  className="block w-full text-center text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                  data-testid="button-forgot-password"
+                >
+                  Esqueci minha senha
+                </button>
               </form>
             </Form>
           </CardContent>
         </Card>
+        )}
 
         {isMock && (
         <Card className="border-dashed border-border bg-muted/40">

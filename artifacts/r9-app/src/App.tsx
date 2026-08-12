@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@workspace/iasport/components/ui/toaster';
@@ -14,6 +14,8 @@ import { AuthProvider, useAuth } from '@/hooks/use-auth';
 import { ThemeProvider } from '@/hooks/use-theme';
 import { AppShell } from '@/components/app-shell';
 import LoginPage from '@/pages/login';
+import ResetPasswordPage from '@/pages/reset-password';
+import { isRecoveryPending } from '@/lib/recovery';
 import DashboardPage from '@/pages/dashboard';
 import StudentsPage from '@/pages/students';
 import ClubsPage from '@/pages/clubs';
@@ -44,6 +46,9 @@ function Pages() {
 
 function AuthGate() {
   const { session, loading } = useAuth();
+  const [recovering, setRecovering] = useState(
+    () => isRecoveryPending(),
+  );
 
   if (loading) {
     return (
@@ -55,6 +60,12 @@ function AuthGate() {
 
   if (!session) {
     return <LoginPage />;
+  }
+
+  // Sessão criada pelo link de recuperação de senha do e-mail:
+  // exige definir a nova senha antes de entrar no app.
+  if (recovering) {
+    return <ResetPasswordPage onDone={() => setRecovering(false)} />;
   }
 
   return (

@@ -64,6 +64,21 @@ const auth: AuthService = {
     listeners.forEach((cb) => cb(session));
     return session;
   },
+  async resetPassword(email) {
+    await delay(600);
+    const exists = MOCK_USERS.some(
+      (u) => u.email.toLowerCase() === email.trim().toLowerCase(),
+    );
+    if (!exists) throw new Error("E-mail não cadastrado");
+    // Modo demo: nenhum e-mail é enviado de fato.
+  },
+  async updatePassword(newPassword) {
+    await delay(400);
+    if (newPassword.length < 4) {
+      throw new Error("A senha deve ter ao menos 4 caracteres");
+    }
+    // Modo demo: qualquer senha com 4+ caracteres continua válida no login.
+  },
   async signOut() {
     await delay(200);
     writeValue("session", null);

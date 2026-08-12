@@ -217,6 +217,28 @@ export function createSupabaseDataLayer(): DataLayer {
         throw err;
       }
     },
+    async resetPassword(email) {
+      // O link do e-mail volta para o app com `type=recovery` no hash;
+      // src/lib/recovery.ts detecta e abre a tela de nova senha.
+      const redirectTo = new URL(import.meta.env.BASE_URL, window.location.origin)
+        .href;
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo,
+      });
+      if (error) fail("Falha ao enviar e-mail de recuperação", error);
+    },
+    async updatePassword(newPassword) {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (error) {
+        throw new Error(
+          error.message.includes("different from the old password")
+            ? "A nova senha deve ser diferente da anterior."
+            : `Falha ao atualizar senha: ${error.message}`,
+        );
+      }
+    },
     async signOut() {
       profileCache.clear();
       const { error } = await supabase.auth.signOut();

@@ -41,6 +41,23 @@ intencional para evitar abuso da chave sem autenticação.
 Novos usuários de escolinha: mesmo fluxo com `role = 'school_user'` e
 `school_name` preenchido.
 
+
+## Recuperação de senha e convite
+
+- **Esqueci minha senha:** o link na tela de login chama
+  `supabase.auth.resetPasswordForEmail(email, { redirectTo: <URL do app> })`.
+  O e-mail leva o usuário de volta ao app com `type=recovery` na URL; o app
+  detecta isso (`src/lib/recovery.ts`) e abre a tela de definição de nova
+  senha antes de liberar o acesso.
+- **Convite (primeiro acesso):** em vez de "Add user" com senha, o admin pode
+  usar Authentication → Users → **"Invite user"**. O Supabase envia o e-mail
+  de convite; o link (`type=invite`) abre a mesma tela de definição de senha
+  no app. Lembre de inserir a linha correspondente em `profiles` — sem ela o
+  usuário é tratado como deslogado.
+- **URLs de redirecionamento:** em Authentication → URL Configuration,
+  cadastre a URL do app (produção e, se quiser testar, a de desenvolvimento)
+  em **Redirect URLs**, senão o Supabase ignora o `redirectTo`.
+
 ## Mapeamento
 
 | Interface (`contract.ts`) | Supabase |
