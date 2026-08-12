@@ -63,6 +63,7 @@ export default function ApprovalsPage() {
             : "O usuário verá que o cadastro não foi aprovado.",
       });
       void queryClient.invalidateQueries({ queryKey: ["pending-registrations"] });
+      void queryClient.invalidateQueries({ queryKey: ["pending-count"] });
     },
     onError: (err) => {
       toast({

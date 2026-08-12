@@ -60,8 +60,13 @@ function readRegistrations(): MockRegistration[] {
   return readCollection<MockRegistration>("registrations", []);
 }
 
+const PENDING_CHANGED_EVENT = "r9:pending-registrations-changed";
+
 function writeRegistrations(items: MockRegistration[]): void {
   writeCollection("registrations", items);
+  // Notifica o badge de aprovações (mesma aba). Entre abas, o evento
+  // nativo "storage" do localStorage cumpre o mesmo papel.
+  window.dispatchEvent(new Event(PENDING_CHANGED_EVENT));
 }
 
 // Vínculos conta de aluno → registro students (profiles.student_record_id).
@@ -326,6 +331,23 @@ const approvals: ApprovalRepository = {
         schoolLabel: r.schoolLabel,
         createdAt: r.createdAt,
       }));
+  },
+  async countPending(): Promise<number> {
+    await delay(150);
+    return readRegistrations().filter(
+      (r) => r.user.approvalStatus === "pending",
+    ).length;
+  },
+  onPendingCountChange(cb: () => void): () => void {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key.includes("registrations")) cb();
+    };
+    window.addEventListener(PENDING_CHANGED_EVENT, cb);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(PENDING_CHANGED_EVENT, cb);
+      window.removeEventListener("storage", onStorage);
+    };
   },
   async approve(profileId: string): Promise<void> {
     await delay(400);

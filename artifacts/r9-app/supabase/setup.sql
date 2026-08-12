@@ -465,6 +465,21 @@ create policy "metrics_delete" on public.metrics
   for delete to authenticated
   using (predefined = false and (owner_id = auth.uid() or public.is_super_admin()));
 
+-- ---------- 3b. Realtime para o badge de aprovações ----------
+-- O app assina mudanças em `profiles` para atualizar em tempo real o
+-- contador de cadastros pendentes no menu do super_admin. O Realtime
+-- respeita as políticas RLS acima (apenas super_admin recebe as linhas).
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public' and tablename = 'profiles'
+  ) then
+    alter publication supabase_realtime add table public.profiles;
+  end if;
+end $$;
+
 -- ---------- 4. Seed das 10 métricas pré-definidas ----------
 -- owner_id NULL = métrica global (pré-definida); não podem ser removidas via app.
 

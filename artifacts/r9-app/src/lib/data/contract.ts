@@ -116,6 +116,15 @@ export interface ImageGenerationService {
 /** Aprovação de cadastros pendentes — apenas super_admin. */
 export interface ApprovalRepository {
   listPending(): Promise<PendingRegistration[]>;
+  /** Quantidade de cadastros aguardando aprovação (para o badge do menu). */
+  countPending(): Promise<number>;
+  /**
+   * Notifica quando a quantidade de pendências pode ter mudado
+   * (novo cadastro, aprovação ou recusa). No Supabase usa Realtime
+   * (postgres_changes em `profiles`); no mock, eventos locais.
+   * Retorna a função de unsubscribe.
+   */
+  onPendingCountChange(cb: () => void): () => void;
   approve(profileId: string): Promise<void>;
   reject(profileId: string): Promise<void>;
   /**

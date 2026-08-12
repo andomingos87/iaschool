@@ -589,6 +589,31 @@ export function createSupabaseDataLayer(): DataLayer {
         }),
       );
     },
+    async countPending() {
+      const { count, error } = await supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("approval_status", "pending");
+      if (error) fail("Falha ao contar cadastros pendentes", error);
+      return count ?? 0;
+    },
+    onPendingCountChange(cb) {
+      // Realtime: qualquer INSERT/UPDATE/DELETE em profiles pode mudar a
+      // contagem de pendências. Requer a tabela na publicação
+      // supabase_realtime (ver supabase/setup.sql). Se o Realtime estiver
+      // indisponível, o badge segue atualizando por polling.
+      const channel = supabase
+        .channel("pending-registrations")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "profiles" },
+          () => cb(),
+        )
+        .subscribe();
+      return () => {
+        void supabase.removeChannel(channel);
+      };
+    },
     async approve(profileId) {
       // student_record_id é deixado null: a escola vincula manualmente após a
       // aprovação (para evitar que nomes ambíguos ou com wildcards exponham

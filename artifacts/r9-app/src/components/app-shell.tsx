@@ -1,4 +1,5 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
   Home,
@@ -47,6 +48,31 @@ import { DemoIndicator } from "@/components/demo-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import { initials } from "@/lib/format";
+import { getDataLayer } from "@/lib/data";
+
+/**
+ * Contador de cadastros pendentes para o badge do menu "Aprovações".
+ * Atualiza em tempo real (Supabase Realtime / eventos locais no mock),
+ * com polling de segurança a cada 60s.
+ */
+function usePendingCount(enabled: boolean) {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["pending-count"],
+    queryFn: () => getDataLayer().approvals.countPending(),
+    enabled,
+    refetchInterval: 60_000,
+  });
+
+  useEffect(() => {
+    if (!enabled) return;
+    return getDataLayer().approvals.onPendingCountChange(() => {
+      void queryClient.invalidateQueries({ queryKey: ["pending-count"] });
+    });
+  }, [enabled, queryClient]);
+
+  return enabled ? (data ?? 0) : 0;
+}
 
 interface NavItem {
   href: string;
@@ -91,6 +117,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       : user?.role === "super_admin"
         ? [...NAV, ...ADMIN_NAV]
         : NAV;
+  const pendingCount = usePendingCount(user?.role === "super_admin");
 
   return (
     <SidebarProvider>
@@ -128,6 +155,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                           {item.highlight && (
                             <Badge className="ml-auto h-5 px-1.5 text-[10px]">
                               IA
+                            </Badge>
+                          )}
+                          {item.href === "/aprovacoes" && pendingCount > 0 && (
+                            <Badge
+                              className="ml-auto h-5 min-w-5 justify-center px-1.5 text-[10px]"
+                              data-testid="badge-pending-approvals"
+                            >
+                              {pendingCount > 99 ? "99+" : pendingCount}
                             </Badge>
                           )}
                         </Link>
