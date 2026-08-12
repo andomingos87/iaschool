@@ -9,6 +9,7 @@ import type {
   GeneratedPostRepository,
   ImageGenerationService,
   MetricRepository,
+  PromptTemplateRepository,
   ReferenceRepository,
   StorageService,
   StudentRepository,
@@ -17,6 +18,7 @@ import type {
   Club,
   GeneratedPost,
   Metric,
+  PromptTemplateSetting,
   ReferencePost,
   Session,
   StoredImage,
@@ -198,8 +200,40 @@ const generatedPosts: GeneratedPostRepository = {
     generatedPostsCrud.create(input as Record<string, unknown>),
 };
 
+// Escrita restrita a super_admin, espelhando as políticas RLS do Supabase.
+function assertSuperAdmin(): void {
+  const session = readValue<Session>("session");
+  if (session?.user.role !== "super_admin") {
+    throw new Error("Apenas administradores podem alterar o template do prompt.");
+  }
+}
+
+const promptTemplate: PromptTemplateRepository = {
+  async get() {
+    await delay(200);
+    return readValue<PromptTemplateSetting>("prompt-template");
+  },
+  async save(template) {
+    await delay(350);
+    assertSuperAdmin();
+    if (!template.trim()) throw new Error("O template não pode ficar vazio.");
+    const setting: PromptTemplateSetting = { template, updatedAt: nowIso() };
+    writeValue("prompt-template", setting);
+    return setting;
+  },
+  async reset() {
+    await delay(250);
+    assertSuperAdmin();
+    writeValue("prompt-template", null);
+  },
+};
+
 // Geração é REAL (OpenAI GPT Image via backend), mesmo com o resto mock.
-const generation: ImageGenerationService = createOpenAIGenerationService();
+const generation: ImageGenerationService = createOpenAIGenerationService(
+  undefined,
+  async () =>
+    readValue<PromptTemplateSetting>("prompt-template")?.template ?? null,
+);
 
 export function createMockDataLayer(): DataLayer {
   return {
@@ -210,6 +244,7 @@ export function createMockDataLayer(): DataLayer {
     references,
     metrics,
     generatedPosts,
+    promptTemplate,
     generation,
     isMock: true,
   };

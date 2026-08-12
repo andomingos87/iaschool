@@ -8,4 +8,5 @@ export const qk = {
   references: ["references"] as const,
   metrics: ["metrics"] as const,
   generatedPosts: ["generated-posts"] as const,
+  promptTemplate: ["prompt-template"] as const,
 };

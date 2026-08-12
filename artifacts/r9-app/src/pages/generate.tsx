@@ -20,6 +20,7 @@ import { SiWhatsapp } from "react-icons/si";
 import { cn } from "@workspace/iasport/lib/utils";
 import { Button } from "@workspace/iasport/components/ui/button";
 import { Input } from "@workspace/iasport/components/ui/input";
+import { Textarea } from "@workspace/iasport/components/ui/textarea";
 import { Checkbox } from "@workspace/iasport/components/ui/checkbox";
 import { Badge } from "@workspace/iasport/components/ui/badge";
 import {
@@ -82,6 +83,7 @@ export default function GeneratePage() {
   const [uniform, setUniform] = useState<StoredImage | null>(null);
   const [reference, setReference] = useState<ReferencePost | null>(null);
   const [selectedMetrics, setSelectedMetrics] = useState<Record<string, string>>({});
+  const [auxiliaryPrompt, setAuxiliaryPrompt] = useState("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);
 
@@ -127,6 +129,7 @@ export default function GeneratePage() {
     setUniform(null);
     setReference(null);
     setSelectedMetrics({});
+    setAuxiliaryPrompt("");
     setResultUrl(null);
   }
 
@@ -174,6 +177,7 @@ export default function GeneratePage() {
       uniform: uniform ?? undefined,
       reference,
       metrics: metricValues,
+      auxiliaryPrompt: auxiliaryPrompt.trim() || undefined,
     };
 
     setPhase("generating");
@@ -642,6 +646,21 @@ export default function GeneratePage() {
                       </div>
                     );
                   })}
+                </div>
+                <div>
+                  <p className="mb-1 text-sm font-medium">
+                    Instruções adicionais (opcional)
+                  </p>
+                  <Textarea
+                    value={auxiliaryPrompt}
+                    onChange={(e) => setAuxiliaryPrompt(e.target.value)}
+                    rows={3}
+                    placeholder="Ex.: fundo com clima de final de campeonato, tom mais sóbrio, destacar o número 9..."
+                    data-testid="input-instrucoes-adicionais"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Essas instruções entram no prompt enviado à IA apenas nesta geração.
+                  </p>
                 </div>
               </div>
             )}

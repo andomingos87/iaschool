@@ -90,6 +90,15 @@ export interface GenerationRequest {
   uniform?: StoredImage;
   reference: ReferencePost;
   metrics: MetricValue[];
+  /** instruções extras digitadas na tela de geração (opcional) */
+  auxiliaryPrompt?: string;
+}
+
+/** Configuração global do template do prompt de geração (editada pelo admin). */
+export interface PromptTemplateSetting {
+  /** texto do template com placeholders/blocos; null = usar o padrão embutido */
+  template: string;
+  updatedAt: string;
 }
 
 export interface GeneratedPost {

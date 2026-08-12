@@ -22,6 +22,7 @@ import ClubsPage from '@/pages/clubs';
 import ReferencesPage from '@/pages/references';
 import MetricsPage from '@/pages/metrics';
 import GeneratePage from '@/pages/generate';
+import AdminPromptPage from '@/pages/admin-prompt';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient({
@@ -31,6 +32,8 @@ const queryClient = new QueryClient({
 });
 
 function Pages() {
+  const { session } = useAuth();
+  const isSuperAdmin = session?.user.role === 'super_admin';
   return (
     <Switch>
       <Route path="/" component={DashboardPage} />
@@ -39,6 +42,10 @@ function Pages() {
       <Route path="/clubes" component={ClubsPage} />
       <Route path="/referencias" component={ReferencesPage} />
       <Route path="/metricas" component={MetricsPage} />
+      {/* Rota de admin: usuários sem papel super_admin caem no 404. */}
+      <Route path="/admin/prompt">
+        {isSuperAdmin ? <AdminPromptPage /> : <NotFound />}
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

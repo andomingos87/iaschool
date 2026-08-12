@@ -70,6 +70,13 @@ create table if not exists public.generated_posts (
   created_at timestamptz not null default now()
 );
 
+-- Template global do prompt de geração (linha única, editada pelo admin).
+create table if not exists public.prompt_settings (
+  id text primary key default 'default',
+  template text not null,
+  updated_at timestamptz not null default now()
+);
+
 -- Adiciona owner_id a tabelas existentes se a coluna ainda não existir.
 do $$
 begin
@@ -123,6 +130,30 @@ alter table public.clubs enable row level security;
 alter table public.reference_posts enable row level security;
 alter table public.metrics enable row level security;
 alter table public.generated_posts enable row level security;
+alter table public.prompt_settings enable row level security;
+
+-- prompt_settings: leitura para todos autenticados com perfil;
+-- escrita (insert/update/delete) apenas para super_admin.
+drop policy if exists "prompt_settings_select" on public.prompt_settings;
+create policy "prompt_settings_select" on public.prompt_settings
+  for select to authenticated
+  using (public.has_profile());
+
+drop policy if exists "prompt_settings_insert" on public.prompt_settings;
+create policy "prompt_settings_insert" on public.prompt_settings
+  for insert to authenticated
+  with check (public.is_super_admin());
+
+drop policy if exists "prompt_settings_update" on public.prompt_settings;
+create policy "prompt_settings_update" on public.prompt_settings
+  for update to authenticated
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+drop policy if exists "prompt_settings_delete" on public.prompt_settings;
+create policy "prompt_settings_delete" on public.prompt_settings
+  for delete to authenticated
+  using (public.is_super_admin());
 
 -- profiles: cada um lê o próprio; super_admin lê todos.
 drop policy if exists "profiles_select" on public.profiles;

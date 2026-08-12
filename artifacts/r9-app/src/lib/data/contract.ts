@@ -14,6 +14,7 @@ import type {
   GeneratedPost,
   GenerationRequest,
   Metric,
+  PromptTemplateSetting,
   ReferencePost,
   Session,
   StoredImage,
@@ -96,6 +97,20 @@ export interface ImageGenerationService {
   generate(request: GenerationRequest): Promise<{ imageUrl: string }>;
 }
 
+/**
+ * Configuração global do template do prompt de geração.
+ * Leitura: qualquer usuário autenticado. Escrita: apenas super_admin
+ * (garantido por RLS no Supabase e pelo papel da sessão no mock).
+ */
+export interface PromptTemplateRepository {
+  /** Template salvo, ou null (usar o padrão embutido). */
+  get(): Promise<PromptTemplateSetting | null>;
+  /** Salva (upsert) o template global. */
+  save(template: string): Promise<PromptTemplateSetting>;
+  /** Remove o template salvo (voltar ao padrão embutido). */
+  reset(): Promise<void>;
+}
+
 export interface DataLayer {
   auth: AuthService;
   storage: StorageService;
@@ -104,6 +119,7 @@ export interface DataLayer {
   references: ReferenceRepository;
   metrics: MetricRepository;
   generatedPosts: GeneratedPostRepository;
+  promptTemplate: PromptTemplateRepository;
   generation: ImageGenerationService;
   /** true enquanto o app roda com dados mock (exibir aviso discreto na UI) */
   readonly isMock: boolean;

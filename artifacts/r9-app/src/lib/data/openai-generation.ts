@@ -2,7 +2,7 @@
 // Substitui o mock de canvas. A chave da OpenAI vive apenas no servidor.
 
 import type { ImageGenerationService } from "./contract";
-import type { GenerationRequest } from "./types";
+import { buildGenerationPrompt } from "../prompt-template";
 
 async function toDataUrl(url: string): Promise<string> {
   if (url.startsWith("data:")) return url;
@@ -17,51 +17,10 @@ async function toDataUrl(url: string): Promise<string> {
   });
 }
 
-function buildPrompt(request: GenerationRequest): string {
-  const parts: string[] = [];
-  parts.push(
-    "Crie uma arte de post de Instagram (1080x1080) para uma escolinha de futebol, seguindo fielmente o estilo, composição, tipografia e clima da PRIMEIRA imagem enviada (a referência).",
-    `Use a foto do aluno enviada como imagem principal do post. Nome do aluno: ${request.student.name.toUpperCase()}.`,
-  );
-  if (request.student.position) {
-    parts.push(`Posição do aluno: ${request.student.position}.`);
-  }
-  if (request.metrics.length > 0) {
-    const metricas = request.metrics
-      .map((m) => `${m.name}: ${m.value}`)
-      .join(", ");
-    parts.push(
-      `Exiba com destaque estas estatísticas do aluno, com números grandes e legíveis: ${metricas}.`,
-    );
-  }
-  if (request.showClubLogo && request.club) {
-    parts.push(
-      `Inclua o brasão do clube ${request.club.name} (imagem enviada) em posição de destaque discreto.`,
-    );
-    if (request.club.colors?.length) {
-      parts.push(
-        `Use as cores oficiais do clube na composição: ${request.club.colors.join(", ")}.`,
-      );
-    }
-  }
-  if (request.uniform) {
-    parts.push(
-      "Uma das imagens enviadas mostra o uniforme do clube — use-o como referência de vestuário/cores.",
-    );
-  }
-  if (request.includeR9Logo) {
-    parts.push(
-      "Inclua a marca 'R9 ESCOLINHAS' de forma discreta (selo/rodapé), usando o logotipo IAsport enviado como referência de marca.",
-    );
-  }
-  parts.push(
-    "Texto em português do Brasil, sem erros de ortografia. Resultado profissional, pronto para publicação.",
-  );
-  return parts.join(" ");
-}
-
 export function createOpenAIGenerationService(
   getAccessToken?: () => Promise<string | null>,
+  /** Carrega o template salvo pelo admin; null/erro → padrão embutido. */
+  getTemplate?: () => Promise<string | null>,
 ): ImageGenerationService {
   return {
     async generate(request) {
@@ -112,10 +71,23 @@ export function createOpenAIGenerationService(
         headers["Authorization"] = `Bearer ${token}`;
       }
 
+      // Template salvo pelo admin; se falhar ao carregar, usa o padrão.
+      let template: string | null = null;
+      if (getTemplate) {
+        try {
+          template = await getTemplate();
+        } catch {
+          template = null;
+        }
+      }
+
       const res = await fetch("/api/generation/post-image", {
         method: "POST",
         headers,
-        body: JSON.stringify({ prompt: buildPrompt(request), images }),
+        body: JSON.stringify({
+          prompt: buildGenerationPrompt(request, template),
+          images,
+        }),
         // Evita loader infinito se a geração travar.
         signal: AbortSignal.timeout(180_000),
       }).catch((err: unknown) => {

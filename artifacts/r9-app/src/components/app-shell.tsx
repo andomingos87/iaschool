@@ -7,6 +7,7 @@ import {
   Images,
   BarChart3,
   Sparkles,
+  Settings2,
   LogOut,
   Moon,
   Sun,
@@ -53,6 +54,11 @@ const NAV = [
   { href: "/clubes", label: "Clubes", icon: Shield },
   { href: "/referencias", label: "Referências", icon: Images },
   { href: "/metricas", label: "Métricas", icon: BarChart3 },
+];
+
+/** Itens visíveis apenas para super_admin. */
+const ADMIN_NAV = [
+  { href: "/admin/prompt", label: "Prompt de geração", icon: Settings2 },
 ];
 
 function roleLabel(role: string) {
@@ -111,6 +117,37 @@ export function AppShell({ children }: { children: ReactNode }) {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
+          {user?.role === "super_admin" && (
+            <SidebarGroup>
+              <SidebarGroupLabel>Admin</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {ADMIN_NAV.map((item) => {
+                    const active = location.startsWith(item.href);
+                    const Icon = item.icon;
+                    return (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={active}
+                          tooltip={item.label}
+                        >
+                          <Link
+                            href={item.href}
+                            className="flex items-center gap-2"
+                            data-testid={`link-nav-${item.label.toLowerCase().replace(/\s/g, "-")}`}
+                          >
+                            <Icon className="size-4" />
+                            <span>{item.label}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border p-3">
           <div className="flex items-center gap-2">

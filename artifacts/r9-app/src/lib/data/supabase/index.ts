@@ -15,6 +15,7 @@ import type {
   DataLayer,
   GeneratedPostRepository,
   MetricRepository,
+  PromptTemplateRepository,
   ReferenceRepository,
   StorageService,
   StudentRepository,
@@ -24,6 +25,7 @@ import type {
   Club,
   GeneratedPost,
   Metric,
+  PromptTemplateSetting,
   ReferencePost,
   Session,
   StoredImage,
@@ -482,11 +484,55 @@ export function createSupabaseDataLayer(): DataLayer {
     },
   };
 
+  // Template global do prompt de geração (tabela prompt_settings, linha única).
+  const promptTemplate: PromptTemplateRepository = {
+    async get() {
+      const { data, error } = await supabase
+        .from("prompt_settings")
+        .select("template, updated_at")
+        .eq("id", "default")
+        .maybeSingle();
+      if (error) fail("Falha ao carregar o template do prompt", error);
+      if (!data) return null;
+      return {
+        template: data.template as string,
+        updatedAt: data.updated_at as string,
+      } satisfies PromptTemplateSetting;
+    },
+    async save(template) {
+      if (!template.trim()) throw new Error("O template não pode ficar vazio.");
+      const { data, error } = await supabase
+        .from("prompt_settings")
+        .upsert({
+          id: "default",
+          template,
+          updated_at: new Date().toISOString(),
+        })
+        .select("template, updated_at")
+        .single();
+      if (error) fail("Falha ao salvar o template do prompt", error);
+      return {
+        template: data.template as string,
+        updatedAt: data.updated_at as string,
+      };
+    },
+    async reset() {
+      const { error } = await supabase
+        .from("prompt_settings")
+        .delete()
+        .eq("id", "default");
+      if (error) fail("Falha ao restaurar o template padrão", error);
+    },
+  };
+
   // Geração continua no api-server (OpenAI), autenticada com o access token.
-  const generation = createOpenAIGenerationService(async () => {
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token ?? null;
-  });
+  const generation = createOpenAIGenerationService(
+    async () => {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token ?? null;
+    },
+    async () => (await promptTemplate.get())?.template ?? null,
+  );
 
   return {
     auth,
@@ -496,6 +542,7 @@ export function createSupabaseDataLayer(): DataLayer {
     references,
     metrics,
     generatedPosts,
+    promptTemplate,
     generation,
     isMock: false,
   };
