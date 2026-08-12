@@ -1,6 +1,7 @@
 import express, { Router, type IRouter } from "express";
 import OpenAI, { toFile } from "openai";
 import { requireSupabaseUser } from "../middlewares/supabase-auth";
+import { consumeDailyQuota } from "../lib/generation-quota";
 
 // Geração da arte de post (R9 Escolinhas) com a OpenAI GPT Image.
 // A chave OPENAI_API_KEY fica somente no backend — nunca no navegador.
@@ -13,9 +14,13 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // por imagem, decodificada
 const MAX_TOTAL_BYTES = 24 * 1024 * 1024; // total decodificado
 const ALLOWED_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
-// Limites em memória (geração é cara: paga por chamada).
-// - Rajada: por usuário autenticado (fallback: IP) numa janela curta.
-// - Cota diária: por usuário autenticado.
+// Limites (geração é cara: paga por chamada).
+// - Rajada: por usuário autenticado (fallback: IP) numa janela curta,
+//   contada em memória (janela curta — perder no restart é aceitável).
+// - Cota diária: por usuário autenticado, persistida no Supabase
+//   (lib/generation-quota.ts) para resistir a reinícios e valer entre
+//   instâncias; cai no contador em memória só se o banco não estiver
+//   disponível/configurado.
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX_REQUESTS = 10;
 const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -86,19 +91,38 @@ router.post(
       return;
     }
 
-    // Cota diária por usuário autenticado.
-    if (
-      req.supabaseUserId &&
-      consumeBucket(
-        `daily:user:${req.supabaseUserId}`,
-        DAILY_WINDOW_MS,
+    // Cota diária por usuário autenticado (persistida no banco).
+    if (req.supabaseUserId) {
+      const quota = await consumeDailyQuota(
+        req.supabaseUserId,
         DAILY_MAX_REQUESTS,
-      )
-    ) {
-      res.status(429).json({
-        error: `Você atingiu a cota diária de ${DAILY_MAX_REQUESTS} gerações. Tente novamente amanhã.`,
-      });
-      return;
+      );
+      if (quota.kind === "exceeded") {
+        res.status(429).json({
+          error: `Você atingiu a cota diária de ${DAILY_MAX_REQUESTS} gerações. Tente novamente amanhã.`,
+        });
+        return;
+      }
+      if (quota.kind === "unavailable") {
+        // Fallback: contador em memória (comportamento antigo), para não
+        // negar o serviço quando o banco não estiver acessível.
+        req.log.warn(
+          { reason: quota.reason },
+          "Cota diária persistida indisponível — usando contador em memória",
+        );
+        if (
+          consumeBucket(
+            `daily:user:${req.supabaseUserId}`,
+            DAILY_WINDOW_MS,
+            DAILY_MAX_REQUESTS,
+          )
+        ) {
+          res.status(429).json({
+            error: `Você atingiu a cota diária de ${DAILY_MAX_REQUESTS} gerações. Tente novamente amanhã.`,
+          });
+          return;
+        }
+      }
     }
 
     if (!prompt || typeof prompt !== "string") {

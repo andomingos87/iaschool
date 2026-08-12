@@ -11,6 +11,7 @@ app volta ao modo demonstração (mock em localStorage, com indicador na UI).
 | --- | --- | --- |
 | `VITE_SUPABASE_URL` | frontend + api-server | URL do projeto (Settings → API) |
 | `VITE_SUPABASE_ANON_KEY` | frontend + api-server | Chave anônima pública (Settings → API Keys) |
+| `SUPABASE_SERVICE_ROLE_KEY` | api-server (somente) | Chave service_role (Settings → API Keys) — usada para persistir a cota diária de gerações no banco. Nunca exponha no frontend. |
 
 O api-server também aceita `SUPABASE_URL`/`SUPABASE_ANON_KEY` (têm prioridade)
 para validar o token do usuário na rota de geração de imagem.
@@ -30,6 +31,9 @@ intencional para evitar abuso da chave sem autenticação.
    - seed das 10 métricas pré-definidas;
    - buckets **privados** `students`, `clubs`, `references`, `generated` — imagens são
      servidas via URLs assinadas (1 ano de validade), nunca como URLs públicas.
+   - tabela `generation_usage` + função `consume_generation_quota` (cota
+     diária de gerações persistida — bases criadas antes desta funcionalidade
+     devem rodar [`supabase/generation-quota.sql`](./supabase/generation-quota.sql)).
 2. **Habilite o cadastro por e-mail** no Supabase: Authentication →
    Sign In / Up → Email → "Enable email signups" (ativado). O cadastro
    público do app depende disso; a segurança fica garantida pelo fluxo de

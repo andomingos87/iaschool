@@ -542,7 +542,51 @@ create policy "r9_storage_delete" on storage.objects
   );
 
 -- ============================================================
--- 6. Primeiro usuário super_admin (faça DEPOIS de rodar o script)
+-- 6. Cota diária de gerações de imagem (persistida no banco)
+--
+-- O api-server chama consume_generation_quota() com a chave service_role a
+-- cada geração; a contagem por usuário/dia é atômica e resiste a reinícios.
+-- ============================================================
+
+create table if not exists public.generation_usage (
+  user_id    uuid        not null,
+  day        date        not null,
+  count      integer     not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, day)
+);
+
+-- Somente o backend (service_role, que ignora RLS) acessa esta tabela.
+alter table public.generation_usage enable row level security;
+
+-- Consome 1 geração da cota do dia (UTC). Retorna o total do dia após o
+-- consumo, ou NULL se a cota (p_limit) já foi atingida — nada é consumido
+-- nesse caso. Operação atômica (INSERT ... ON CONFLICT com condição).
+create or replace function public.consume_generation_quota(
+  p_user_id uuid,
+  p_limit   integer
+)
+returns integer
+language sql
+security definer
+set search_path = public
+as $$
+  insert into public.generation_usage as gu (user_id, day, count)
+  values (p_user_id, current_date, 1)
+  on conflict (user_id, day) do update
+    set count = gu.count + 1, updated_at = now()
+    where gu.count < p_limit
+  returning count;
+$$;
+
+-- Apenas o service_role pode executar (o backend); nunca o cliente.
+revoke execute on function public.consume_generation_quota(uuid, integer)
+  from public, anon, authenticated;
+grant execute on function public.consume_generation_quota(uuid, integer)
+  to service_role;
+
+-- ============================================================
+-- 7. Primeiro usuário super_admin (faça DEPOIS de rodar o script)
 --
 -- a) No painel: Authentication → Users → "Add user" → e-mail + senha
 --    (marque "Auto confirm user").
