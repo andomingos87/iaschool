@@ -58,6 +58,37 @@ Novos usuários de escolinha: mesmo fluxo com `role = 'school_user'` e
   cadastre a URL do app (produção e, se quiser testar, a de desenvolvimento)
   em **Redirect URLs**, senão o Supabase ignora o `redirectTo`.
 
+### Templates de e-mail com a marca R9
+
+Por padrão o Supabase envia e-mails em inglês e sem identidade visual. Os
+templates prontos em português, com a marca IAsport/R9 (fundo escuro, destaque
+verde neon), estão em
+[`supabase/email-templates/`](./supabase/email-templates/):
+
+| Arquivo | Template no painel | Assunto sugerido |
+| --- | --- | --- |
+| `reset-password.html` | Reset Password | Redefina sua senha — R9 Escolinhas |
+| `invite.html` | Invite user | Você foi convidado para o R9 Escolinhas |
+
+Para aplicar (uma vez, no painel do Supabase):
+
+1. Abra **Authentication → Email Templates**.
+2. Selecione o template (**Reset Password** ou **Invite user**).
+3. Substitua o campo **Subject** pelo assunto sugerido acima.
+4. Apague o conteúdo do **Message body** e cole o HTML do arquivo
+   correspondente (modo "Source"/código, não o editor visual).
+5. Salve. Repita para o outro template.
+
+Observações:
+
+- Os templates usam a variável `{{ .ConfirmationURL }}`, que o Supabase
+  substitui pelo link de recuperação/convite — não a remova nem edite.
+- O visual usa apenas HTML inline (compatível com Gmail/Outlook); os
+  e-mails não carregam fontes ou imagens externas de propósito, para não
+  cair em spam.
+- Para testar: use "Esqueci minha senha" na tela de login (Reset Password)
+  ou Authentication → Users → "Invite user" (Invite).
+
 ## Mapeamento
 
 | Interface (`contract.ts`) | Supabase |
