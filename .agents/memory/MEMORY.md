@@ -1,2 +1,3 @@
 - [Attached-asset unicode paths](attached-asset-unicode-paths.md) — filenames with accents (e.g. "às") fail ReadFile due to NFC/NFD; copy via shell glob to an ASCII path first.
 - [IAsport brand decisions](iasport-brand.md) — palette #2e2e2e/#7e8a97/#39ff14, Prometo (Trial) embedded base64 in theme-template.css, dark mode default.
+- [R9 app data-layer swap points](r9-data-layer.md) — all data/auth/storage behind Supabase-shaped interfaces in src/lib/data/contract.ts; AI image generation mocked (canvas); swap docs in artifacts/r9-app/SUPABASE.md.

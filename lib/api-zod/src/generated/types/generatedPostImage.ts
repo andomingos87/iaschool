@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface GeneratedPostImage {
+  /** Generated PNG image encoded as base64 (no data URL prefix) */
+  imageBase64: string;
 }

@@ -5,18 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-export interface HealthStatus {
-  status: string;
-}
-
-export interface ApiErrorMessage {
-  error: string;
-}
-
-export interface MetricValue {
-  name: string;
-  value: string;
-}
+import type { MetricValue } from './metricValue';
 
 export interface PostImageInput {
   /** Student display name to feature on the post */
@@ -49,9 +38,3 @@ export interface PostImageInput {
   /** Metric name/value pairs to display on the post */
   metrics: MetricValue[];
 }
-
-export interface GeneratedPostImage {
-  /** Generated PNG image encoded as base64 (no data URL prefix) */
-  imageBase64: string;
-}
-
