@@ -646,7 +646,7 @@ grant execute on function public.consume_generation_quota(uuid, integer)
 -- b) Copie o UUID do usuário criado e rode (trocando os valores):
 --
 --   insert into public.profiles (id, email, name, role, approval_status)
---   values ('ea24f6d7-a439-4254-a3b7-6e66b053bfa7', 'iasport@andersondomingos.com.br', 'Anderson Domingos', 'super_admin', 'approved');
+--   values ('<UUID do usuário criado>', '<email>', '<nome>', 'super_admin', 'approved');
 --
 -- Escolas e alunos agora se cadastram pelo app ("Criar conta") e entram como
 -- pendentes; o super_admin aprova em "Aprovações". Para isso o cadastro por
