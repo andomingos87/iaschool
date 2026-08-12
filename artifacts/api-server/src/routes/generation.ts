@@ -1,5 +1,6 @@
 import express, { Router, type IRouter } from "express";
 import OpenAI, { toFile } from "openai";
+import { requireSupabaseUser } from "../middlewares/supabase-auth";
 
 // Geração da arte de post (R9 Escolinhas) com a OpenAI GPT Image.
 // A chave OPENAI_API_KEY fica somente no backend — nunca no navegador.
@@ -48,6 +49,7 @@ function dataUrlToBuffer(dataUrl: string): { buffer: Buffer; mime: string } {
 router.post(
   "/generation/post-image",
   express.json({ limit: "40mb" }),
+  requireSupabaseUser,
   async (req, res) => {
   try {
     const apiKey = process.env["OPENAI_API_KEY"];

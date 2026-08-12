@@ -9,16 +9,17 @@
 
 import type { DataLayer } from "./contract";
 import { createMockDataLayer } from "./mock";
+import { createSupabaseDataLayer } from "./supabase";
 
 let instance: DataLayer | null = null;
 
 export function getDataLayer(): DataLayer {
   if (!instance) {
-    // Quando o Supabase estiver configurado:
-    // instance = import.meta.env.VITE_SUPABASE_URL
-    //   ? createSupabaseDataLayer()
-    //   : createMockDataLayer();
-    instance = createMockDataLayer();
+    const hasSupabase = Boolean(
+      import.meta.env.VITE_SUPABASE_URL &&
+        import.meta.env.VITE_SUPABASE_ANON_KEY,
+    );
+    instance = hasSupabase ? createSupabaseDataLayer() : createMockDataLayer();
   }
   return instance;
 }

@@ -24,6 +24,7 @@ import { toast } from "@workspace/iasport/hooks/use-toast";
 import { R9Logo } from "@/components/r9-logo";
 import { DemoIndicator } from "@/components/demo-indicator";
 import { useAuth } from "@/hooks/use-auth";
+import { getDataLayer } from "@/lib/data";
 
 const schema = z.object({
   email: z.string().email("Informe um e-mail válido"),
@@ -38,6 +39,7 @@ const DEMO_USERS = [
 
 export default function LoginPage() {
   const { signIn } = useAuth();
+  const isMock = getDataLayer().isMock;
   const [submitting, setSubmitting] = useState(false);
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -151,6 +153,7 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
+        {isMock && (
         <Card className="border-dashed border-border bg-muted/40">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-sm">
@@ -176,6 +179,7 @@ export default function LoginPage() {
             ))}
           </CardContent>
         </Card>
+        )}
       </div>
     </div>
   );

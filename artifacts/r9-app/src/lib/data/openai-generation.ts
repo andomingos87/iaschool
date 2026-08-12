@@ -60,7 +60,9 @@ function buildPrompt(request: GenerationRequest): string {
   return parts.join(" ");
 }
 
-export function createOpenAIGenerationService(): ImageGenerationService {
+export function createOpenAIGenerationService(
+  getAccessToken?: () => Promise<string | null>,
+): ImageGenerationService {
   return {
     async generate(request) {
       const images: Array<{ dataUrl: string; name: string }> = [];
@@ -99,9 +101,20 @@ export function createOpenAIGenerationService(): ImageGenerationService {
         }
       }
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (getAccessToken) {
+        const token = await getAccessToken();
+        if (!token) {
+          throw new Error("Sua sessão expirou. Entre novamente para gerar posts.");
+        }
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const res = await fetch("/api/generation/post-image", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ prompt: buildPrompt(request), images }),
         // Evita loader infinito se a geração travar.
         signal: AbortSignal.timeout(180_000),
