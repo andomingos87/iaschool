@@ -446,7 +446,7 @@ create policy "r9_storage_delete" on storage.objects
 -- b) Copie o UUID do usuário criado e rode (trocando os valores):
 --
 --   insert into public.profiles (id, email, name, role, approval_status)
---   values ('COLE-O-UUID-AQUI', 'seu@email.com', 'Seu Nome', 'super_admin', 'approved');
+--   values ('ea24f6d7-a439-4254-a3b7-6e66b053bfa7', 'iasport@andersondomingos.com.br', 'Anderson Domingos', 'super_admin', 'approved');
 --
 -- Escolas e alunos agora se cadastram pelo app ("Criar conta") e entram como
 -- pendentes; o super_admin aprova em "Aprovações". Para isso o cadastro por
