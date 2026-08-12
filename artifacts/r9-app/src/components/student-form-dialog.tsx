@@ -14,7 +14,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -328,9 +327,9 @@ export function StudentFormDialog({ open, onOpenChange, student, clubs }: Props)
 
             <div className="space-y-2">
               <Label>Fotos do aluno</Label>
-              <FormDescription>
+              <p className="text-sm text-muted-foreground">
                 Use fotos boas — elas aparecem nas imagens geradas.
-              </FormDescription>
+              </p>
               <MultiUpload
                 bucket={BUCKETS.students}
                 value={photos}
