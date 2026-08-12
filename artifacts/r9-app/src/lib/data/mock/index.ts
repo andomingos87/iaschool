@@ -22,6 +22,7 @@ import type {
   Metric,
   PendingRegistration,
   PromptTemplateSetting,
+  PromptTemplateVersion,
   ReferencePost,
   Session,
   StoredImage,
@@ -453,6 +454,7 @@ function assertSuperAdmin(): void {
   }
 }
 
+const MAX_PROMPT_VERSIONS = 50;
 const promptTemplate: PromptTemplateRepository = {
   async get() {
     await delay(200);
@@ -464,7 +466,27 @@ const promptTemplate: PromptTemplateRepository = {
     if (!template.trim()) throw new Error("O template não pode ficar vazio.");
     const setting: PromptTemplateSetting = { template, updatedAt: nowIso() };
     writeValue("prompt-template", setting);
+    // Grava uma versão no histórico (espelha a tabela prompt_template_versions).
+    const session = readValue<Session>("session");
+    const versions = readCollection<PromptTemplateVersion>(
+      "prompt-template-versions",
+      [],
+    );
+    versions.unshift({
+      id: newId(),
+      template,
+      savedBy: session?.user.name ?? "Administrador",
+      savedAt: setting.updatedAt,
+    });
+    writeCollection(
+      "prompt-template-versions",
+      versions.slice(0, MAX_PROMPT_VERSIONS),
+    );
     return setting;
+  },
+  async listVersions() {
+    await delay(200);
+    return readCollection<PromptTemplateVersion>("prompt-template-versions", []);
   },
   async reset() {
     await delay(250);

@@ -114,6 +114,14 @@ export interface PromptTemplateSetting {
   updatedAt: string;
 }
 
+/** Versão salva do template do prompt (histórico para desfazer edições). */
+export interface PromptTemplateVersion {
+  id: string;
+  template: string;
+  /** nome de quem salvou a versão */
+  savedBy: string;
+  savedAt: string;
+}
 export interface GeneratedPost {
   id: string;
   studentId: string;

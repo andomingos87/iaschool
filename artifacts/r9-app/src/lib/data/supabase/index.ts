@@ -28,6 +28,7 @@ import type {
   Metric,
   PendingRegistration,
   PromptTemplateSetting,
+  PromptTemplateVersion,
   ReferencePost,
   Session,
   StoredImage,
@@ -731,10 +732,29 @@ export function createSupabaseDataLayer(): DataLayer {
         .select("template, updated_at")
         .single();
       if (error) fail("Falha ao salvar o template do prompt", error);
+      // A versão do histórico é gravada por trigger no banco
+      // (on_prompt_settings_saved em setup.sql), na MESMA transação do
+      // upsert — save e versão são atômicos.
       return {
         template: data.template as string,
         updatedAt: data.updated_at as string,
       };
+    },
+    async listVersions() {
+      const { data, error } = await supabase
+        .from("prompt_template_versions")
+        .select("id, template, saved_by_name, created_at")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (error) fail("Falha ao carregar o histórico do template", error);
+      return (data ?? []).map(
+        (r): PromptTemplateVersion => ({
+          id: r.id as string,
+          template: r.template as string,
+          savedBy: (r.saved_by_name as string | null) ?? "Administrador",
+          savedAt: r.created_at as string,
+        }),
+      );
     },
     async reset() {
       const { error } = await supabase

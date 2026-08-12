@@ -3,7 +3,14 @@
 // condicional no app-shell).
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Eye, RotateCcw, Save, Terminal } from "lucide-react";
+import {
+  AlertTriangle,
+  Eye,
+  History,
+  RotateCcw,
+  Save,
+  Terminal,
+} from "lucide-react";
 import { Button } from "@workspace/iasport/components/ui/button";
 import {
   AlertDialog,
@@ -29,9 +36,11 @@ import { PageHeader } from "@/components/app-shell";
 import { ErrorState } from "@/components/data-state";
 import {
   usePromptTemplate,
+  usePromptTemplateVersions,
   useSavePromptTemplate,
   useResetPromptTemplate,
 } from "@/hooks/use-prompt-template";
+import type { PromptTemplateVersion } from "@/lib/data/types";
 import {
   DEFAULT_PROMPT_TEMPLATE,
   PLACEHOLDER_DOCS,
@@ -42,8 +51,10 @@ import {
 
 export default function AdminPromptPage() {
   const query = usePromptTemplate();
+  const versions = usePromptTemplateVersions();
   const save = useSavePromptTemplate();
   const reset = useResetPromptTemplate();
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   const [draft, setDraft] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -93,6 +104,26 @@ export default function AdminPromptPage() {
         title: "Falha ao salvar o template",
         description: err instanceof Error ? err.message : "Tente novamente.",
       });
+    }
+  }
+
+  async function onRestoreVersion(version: PromptTemplateVersion) {
+    setRestoringId(version.id);
+    try {
+      await save.mutateAsync(version.template);
+      setDraft(version.template);
+      toast({
+        title: "Versão restaurada",
+        description: "As próximas gerações já usarão esta versão do template.",
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Falha ao restaurar a versão",
+        description: err instanceof Error ? err.message : "Tente novamente.",
+      });
+    } finally {
+      setRestoringId(null);
     }
   }
 
@@ -252,6 +283,72 @@ export default function AdminPromptPage() {
               Exemplo montado com: aluno João da Silva (Atacante), métricas,
               brasão e cores do clube, uniforme, logo R9 e instruções extras.
             </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <History className="size-4 text-primary" /> Histórico de versões
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {versions.isLoading ? (
+              <Skeleton className="h-20 w-full rounded-md" />
+            ) : versions.isError ? (
+              <p className="text-sm text-destructive" data-testid="text-versions-error">
+                Não foi possível carregar o histórico de versões.
+              </p>
+            ) : !versions.data || versions.data.length === 0 ? (
+              <p
+                className="text-sm text-muted-foreground"
+                data-testid="text-versions-empty"
+              >
+                Nenhuma versão salva ainda. Cada salvamento do template cria uma
+                versão que pode ser restaurada aqui.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border" data-testid="list-versions">
+                {versions.data.map((v, i) => (
+                  <li
+                    key={v.id}
+                    className="flex items-center justify-between gap-3 py-3"
+                    data-testid={`row-version-${v.id}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">
+                        {new Date(v.savedAt).toLocaleString("pt-BR", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })}
+                        {i === 0 && (
+                          <Badge variant="secondary" className="ml-2">
+                            Mais recente
+                          </Badge>
+                        )}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        Salvo por {v.savedBy} ·{" "}
+                        <span className="font-mono">
+                          {v.template.slice(0, 80)}
+                          {v.template.length > 80 ? "…" : ""}
+                        </span>
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onRestoreVersion(v)}
+                      disabled={busy || v.template === (query.data?.template ?? "")}
+                      data-testid={`button-restaurar-versao-${v.id}`}
+                    >
+                      <RotateCcw className="size-3.5" />
+                      {restoringId === v.id ? "Restaurando..." : "Restaurar"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
       </div>

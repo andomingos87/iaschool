@@ -135,6 +135,41 @@ create table if not exists public.prompt_settings (
   updated_at timestamptz not null default now()
 );
 
+-- Histórico de versões do template do prompt (uma linha por salvamento).
+create table if not exists public.prompt_template_versions (
+  id uuid primary key default gen_random_uuid(),
+  template text not null,
+  saved_by uuid references auth.users (id) on delete set null,
+  saved_by_name text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Trigger: cada insert/update em prompt_settings grava uma versão no
+-- histórico DENTRO da mesma transação — o save e a versão são atômicos
+-- (ou ambos entram, ou nenhum). O nome do autor é resolvido aqui pelo
+-- perfil do usuário autenticado.
+create or replace function public.record_prompt_template_version()
+returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.prompt_template_versions (template, saved_by, saved_by_name)
+  values (
+    new.template,
+    auth.uid(),
+    coalesce(
+      (select name from public.profiles where id = auth.uid()),
+      'Administrador'
+    )
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists on_prompt_settings_saved on public.prompt_settings;
+create trigger on_prompt_settings_saved
+  after insert or update of template on public.prompt_settings
+  for each row execute function public.record_prompt_template_version();
+
 -- Adiciona owner_id a tabelas existentes se a coluna ainda não existir.
 do $$
 begin
@@ -322,6 +357,24 @@ alter table public.reference_posts enable row level security;
 alter table public.metrics enable row level security;
 alter table public.generated_posts enable row level security;
 alter table public.prompt_settings enable row level security;
+alter table public.prompt_template_versions enable row level security;
+
+-- prompt_template_versions: mesma regra de prompt_settings —
+-- leitura para aprovados; escrita apenas para super_admin.
+drop policy if exists "prompt_template_versions_select" on public.prompt_template_versions;
+create policy "prompt_template_versions_select" on public.prompt_template_versions
+  for select to authenticated
+  using (public.is_approved());
+
+drop policy if exists "prompt_template_versions_insert" on public.prompt_template_versions;
+create policy "prompt_template_versions_insert" on public.prompt_template_versions
+  for insert to authenticated
+  with check (public.is_super_admin());
+
+drop policy if exists "prompt_template_versions_delete" on public.prompt_template_versions;
+create policy "prompt_template_versions_delete" on public.prompt_template_versions
+  for delete to authenticated
+  using (public.is_super_admin());
 
 -- prompt_settings: leitura apenas para aprovados; escrita apenas para super_admin.
 drop policy if exists "prompt_settings_select" on public.prompt_settings;

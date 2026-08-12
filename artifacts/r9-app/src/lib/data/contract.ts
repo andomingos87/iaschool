@@ -17,6 +17,7 @@ import type {
   Metric,
   PendingRegistration,
   PromptTemplateSetting,
+  PromptTemplateVersion,
   ReferencePost,
   SchoolOption,
   Session,
@@ -156,6 +157,11 @@ export interface PromptTemplateRepository {
   save(template: string): Promise<PromptTemplateSetting>;
   /** Remove o template salvo (voltar ao padrão embutido). */
   reset(): Promise<void>;
+  /**
+   * Histórico de versões salvas (mais recente primeiro). Cada save() grava
+   * uma versão; restaurar = save(versao.template).
+   */
+  listVersions(): Promise<PromptTemplateVersion[]>;
 }
 
 export interface DataLayer {
