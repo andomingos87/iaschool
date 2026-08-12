@@ -23,19 +23,3 @@ timeoutMs = 20000
 
 [userenv.shared]
 VITE_SUPABASE_URL = "https://rcogrxuuctdpzfoodmvg.supabase.co"
-
-[[ports]]
-localPort = 8080
-externalPort = 8080
-
-[[ports]]
-localPort = 8081
-externalPort = 8081
-
-[[ports]]
-localPort = 21906
-externalPort = 3000
-
-[[ports]]
-localPort = 26022
-externalPort = 80
