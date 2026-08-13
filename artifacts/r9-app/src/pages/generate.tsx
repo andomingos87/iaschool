@@ -85,6 +85,8 @@ export default function GeneratePage() {
   const [selectedMetrics, setSelectedMetrics] = useState<Record<string, string>>({});
   const [auxiliaryPrompt, setAuxiliaryPrompt] = useState("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  // Progresso real (0–100) do upload das fotos; null = fase de geração.
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);
 
   const club: Club | undefined = useMemo(
@@ -181,8 +183,12 @@ export default function GeneratePage() {
     };
 
     setPhase("generating");
+    setUploadProgress(0);
     try {
-      const { imageUrl } = await getDataLayer().generation.generate(request);
+      const { imageUrl } = await getDataLayer().generation.generate(
+        request,
+        (percent) => setUploadProgress(percent < 100 ? percent : null),
+      );
       setResultUrl(imageUrl);
       setPhase("result");
       // Se salvar no histórico falhar, a imagem gerada continua visível.
@@ -218,6 +224,7 @@ export default function GeneratePage() {
       }
     } catch (err) {
       setPhase("form");
+      setUploadProgress(null);
       toast({
         variant: "destructive",
         title: "Falha na geração",
@@ -280,10 +287,17 @@ export default function GeneratePage() {
   if (phase === "generating") {
     return (
       <div className="mx-auto max-w-3xl">
-        <PageHeader title="Gerando imagem" description="Isso leva alguns segundos." />
+        <PageHeader
+          title={
+            uploadProgress !== null && uploadProgress < 100
+              ? "Enviando fotos"
+              : "Gerando imagem"
+          }
+          description="Isso leva alguns segundos."
+        />
         <Card className="border-primary/40">
           <CardContent className="p-6">
-            <GenerationLoader />
+            <GenerationLoader uploadProgress={uploadProgress} />
           </CardContent>
         </Card>
       </div>

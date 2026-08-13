@@ -111,7 +111,14 @@ export interface GeneratedPostRepository {
  * chamada de backend para a OpenAI (GPT Image) usando a mesma assinatura.
  */
 export interface ImageGenerationService {
-  generate(request: GenerationRequest): Promise<{ imageUrl: string }>;
+  /**
+   * `onUploadProgress` (opcional) recebe 0–100 enquanto as fotos sobem ao
+   * servidor; após 100%, a fase passa a ser "gerando" (sem progresso real).
+   */
+  generate(
+    request: GenerationRequest,
+    onUploadProgress?: (percent: number) => void,
+  ): Promise<{ imageUrl: string }>;
 }
 
 /** Aprovação de cadastros pendentes — apenas super_admin. */

@@ -29,13 +29,58 @@ async function toUploadFile(url: string, name: string): Promise<File> {
   return new File([blob], name, { type: blob.type || "image/png" });
 }
 
+/**
+ * POST multipart via XMLHttpRequest para acompanhar o progresso REAL do
+ * upload (fetch não expõe progresso de envio de forma ampla nos navegadores).
+ * Resolve com status + corpo JSON (ou null se não for JSON).
+ */
+function uploadWithProgress(
+  url: string,
+  formData: FormData,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  onUploadProgress?: (percent: number) => void,
+): Promise<{ status: number; body: { imageUrl?: string; error?: string } | null }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.timeout = timeoutMs;
+    for (const [key, value] of Object.entries(headers)) {
+      xhr.setRequestHeader(key, value);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onUploadProgress) {
+        onUploadProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    xhr.upload.onload = () => onUploadProgress?.(100);
+    xhr.onload = () => {
+      let body: { imageUrl?: string; error?: string } | null = null;
+      try {
+        body = JSON.parse(xhr.responseText) as {
+          imageUrl?: string;
+          error?: string;
+        };
+      } catch {
+        body = null;
+      }
+      resolve({ status: xhr.status, body });
+    };
+    xhr.ontimeout = () =>
+      reject(new Error("A geração demorou demais. Tente novamente."));
+    xhr.onerror = () =>
+      reject(new Error("Falha de conexão ao enviar as fotos. Verifique sua internet e tente novamente."));
+    xhr.send(formData);
+  });
+}
+
 export function createOpenAIGenerationService(
   getAccessToken?: () => Promise<string | null>,
   /** Carrega o template salvo pelo admin; null/erro → padrão embutido. */
   getTemplate?: () => Promise<string | null>,
 ): ImageGenerationService {
   return {
-    async generate(request) {
+    async generate(request, onUploadProgress) {
       const files: File[] = [];
 
       // Ordem importa: a referência é sempre a primeira imagem.
@@ -90,31 +135,24 @@ export function createOpenAIGenerationService(
         formData.append("images", file, file.name);
       }
 
-      const res = await fetch("/api/generation/post-image", {
-        method: "POST",
+      // XHR (em vez de fetch) para expor o progresso real do upload.
+      // Timeout total continua evitando loader infinito se a geração travar.
+      const { status, body } = await uploadWithProgress(
+        "/api/generation/post-image",
+        formData,
         headers,
-        body: formData,
-        // Evita loader infinito se a geração travar.
-        signal: AbortSignal.timeout(180_000),
-      }).catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === "TimeoutError") {
-          throw new Error("A geração demorou demais. Tente novamente.");
-        }
-        throw err;
-      });
+        180_000,
+        onUploadProgress,
+      );
 
-      const body = (await res.json().catch(() => null)) as
-        | { imageUrl?: string; error?: string }
-        | null;
-
-      if (!res.ok || !body?.imageUrl) {
-        if (res.status === 413) {
+      if (status < 200 || status >= 300 || !body?.imageUrl) {
+        if (status === 413) {
           throw new Error(
             "As imagens enviadas são grandes demais. Use imagens menores (ou re-envie as fotos) e tente novamente.",
           );
         }
         throw new Error(
-          body?.error ?? `Falha na geração (HTTP ${res.status}). Tente novamente.`,
+          body?.error ?? `Falha na geração (HTTP ${status}). Tente novamente.`,
         );
       }
 
