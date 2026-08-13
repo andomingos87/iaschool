@@ -14,25 +14,10 @@ const COMPRESS_OPTIONS = {
   useWebWorker: true,
 };
 
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Falha ao ler imagem"));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function toDataUrl(url: string, name: string): Promise<string> {
-  let blob: Blob;
-  if (url.startsWith("data:")) {
-    const res = await fetch(url);
-    blob = await res.blob();
-  } else {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("Falha ao carregar imagem para envio");
-    blob = await res.blob();
-  }
+async function toUploadFile(url: string, name: string): Promise<File> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Falha ao carregar imagem para envio");
+  let blob: Blob = await res.blob();
   if (blob.size > COMPRESS_THRESHOLD_BYTES && blob.type.startsWith("image/")) {
     try {
       const file = new File([blob], name, { type: blob.type });
@@ -41,7 +26,7 @@ async function toDataUrl(url: string, name: string): Promise<string> {
       // se a compressão falhar, envia o original (servidor ainda valida limites)
     }
   }
-  return blobToDataUrl(blob);
+  return new File([blob], name, { type: blob.type || "image/png" });
 }
 
 export function createOpenAIGenerationService(
@@ -51,46 +36,36 @@ export function createOpenAIGenerationService(
 ): ImageGenerationService {
   return {
     async generate(request) {
-      const images: Array<{ dataUrl: string; name: string }> = [];
+      const files: File[] = [];
 
       // Ordem importa: a referência é sempre a primeira imagem.
-      images.push({
-        dataUrl: await toDataUrl(request.reference.image.url, "referencia.png"),
-        name: "referencia.png",
-      });
-      images.push({
-        dataUrl: await toDataUrl(request.studentPhoto.url, "foto-aluno.png"),
-        name: "foto-aluno.png",
-      });
+      files.push(
+        await toUploadFile(request.reference.image.url, "referencia.png"),
+      );
+      files.push(await toUploadFile(request.studentPhoto.url, "foto-aluno.png"));
       if (request.showClubLogo && request.club?.logo) {
-        images.push({
-          dataUrl: await toDataUrl(request.club.logo.url, "brasao-clube.png"),
-          name: "brasao-clube.png",
-        });
+        files.push(
+          await toUploadFile(request.club.logo.url, "brasao-clube.png"),
+        );
       }
       if (request.uniform) {
-        images.push({
-          dataUrl: await toDataUrl(request.uniform.url, "uniforme.png"),
-          name: "uniforme.png",
-        });
+        files.push(await toUploadFile(request.uniform.url, "uniforme.png"));
       }
       if (request.includeR9Logo) {
         try {
-          images.push({
-            dataUrl: await toDataUrl(
+          files.push(
+            await toUploadFile(
               `${import.meta.env.BASE_URL}iasport-logo-color.png`,
               "logo-iasport.png",
             ),
-            name: "logo-iasport.png",
-          });
+          );
         } catch {
           // sem o arquivo do logo, o prompt ainda pede o selo em texto
         }
       }
 
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
+      // Sem Content-Type manual: o navegador define o boundary do multipart.
+      const headers: Record<string, string> = {};
       if (getAccessToken) {
         const token = await getAccessToken();
         if (!token) {
@@ -109,13 +84,16 @@ export function createOpenAIGenerationService(
         }
       }
 
+      const formData = new FormData();
+      formData.append("prompt", buildGenerationPrompt(request, template));
+      for (const file of files) {
+        formData.append("images", file, file.name);
+      }
+
       const res = await fetch("/api/generation/post-image", {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          prompt: buildGenerationPrompt(request, template),
-          images,
-        }),
+        body: formData,
         // Evita loader infinito se a geração travar.
         signal: AbortSignal.timeout(180_000),
       }).catch((err: unknown) => {

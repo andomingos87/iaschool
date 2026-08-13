@@ -1,4 +1,5 @@
-import express, { Router, type IRouter } from "express";
+import { Router, type IRouter } from "express";
+import multer from "multer";
 import OpenAI, { toFile } from "openai";
 import { requireSupabaseUser } from "../middlewares/supabase-auth";
 import { consumeDailyQuota } from "../lib/generation-quota";
@@ -45,25 +46,57 @@ function consumeBucket(
   return false;
 }
 
-function dataUrlToBuffer(dataUrl: string): { buffer: Buffer; mime: string } {
-  const match = /^data:([\w/+.-]+);base64,(.+)$/.exec(dataUrl);
-  if (!match) throw new Error("Imagem inválida (esperado data URL base64)");
-  const mime = match[1]!;
-  if (!ALLOWED_MIMES.has(mime)) {
-    throw new Error(`Tipo de imagem não suportado: ${mime}. Use PNG, JPEG ou WebP.`);
-  }
-  const buffer = Buffer.from(match[2]!, "base64");
-  if (buffer.length > MAX_IMAGE_BYTES) {
-    throw new Error("Imagem muito grande (máx. 8 MB por imagem).");
-  }
-  return { buffer, mime };
-}
+// Upload multipart (FormData): as imagens chegam como arquivos binários,
+// sem inflar ~33% como base64. O multer valida tamanho/quantidade por arquivo.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    files: MAX_IMAGES,
+    fileSize: MAX_IMAGE_BYTES,
+    fieldSize: 64 * 1024, // campos de texto (prompt)
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_MIMES.has(file.mimetype)) {
+      cb(
+        new Error(
+          `Tipo de imagem não suportado: ${file.mimetype}. Use PNG, JPEG ou WebP.`,
+        ),
+      );
+      return;
+    }
+    cb(null, true);
+  },
+});
 
-// Limite de corpo específico desta rota (imagens em base64).
 router.post(
   "/generation/post-image",
-  express.json({ limit: "40mb" }),
   requireSupabaseUser,
+  (req, res, next) => {
+    upload.array("images", MAX_IMAGES)(req, res, (err: unknown) => {
+      if (!err) {
+        next();
+        return;
+      }
+      if (err instanceof multer.MulterError) {
+        const messages: Record<string, string> = {
+          LIMIT_FILE_SIZE: "Imagem muito grande (máx. 8 MB por imagem).",
+          LIMIT_FILE_COUNT: `No máximo ${MAX_IMAGES} imagens por geração.`,
+          LIMIT_UNEXPECTED_FILE: `No máximo ${MAX_IMAGES} imagens por geração.`,
+        };
+        res.status(400).json({
+          error:
+            messages[err.code] ?? "Falha ao receber as imagens. Tente novamente.",
+        });
+        return;
+      }
+      res.status(400).json({
+        error:
+          err instanceof Error
+            ? err.message
+            : "Falha ao receber as imagens. Tente novamente.",
+      });
+    });
+  },
   async (req, res) => {
   try {
     const apiKey = process.env["OPENAI_API_KEY"];
@@ -75,10 +108,8 @@ router.post(
       return;
     }
 
-    const { prompt, images } = req.body as {
-      prompt?: string;
-      images?: Array<{ dataUrl: string; name: string }>;
-    };
+    const prompt = (req.body as { prompt?: unknown })?.["prompt"];
+    const files = (req.files ?? []) as Express.Multer.File[];
 
     // Rajada: por usuário autenticado; sem usuário (modo dev), por IP.
     const burstKey = req.supabaseUserId
@@ -133,32 +164,20 @@ router.post(
       res.status(400).json({ error: "Prompt longo demais." });
       return;
     }
-    if (!Array.isArray(images) || images.length === 0) {
+    if (files.length === 0) {
       res.status(400).json({
         error: "Envie ao menos uma imagem (referência e foto do aluno).",
       });
       return;
     }
-    if (images.length > MAX_IMAGES) {
+    if (files.length > MAX_IMAGES) {
       res
         .status(400)
         .json({ error: `No máximo ${MAX_IMAGES} imagens por geração.` });
       return;
     }
 
-    const openai = new OpenAI({ apiKey });
-
-    let totalBytes = 0;
-    const files = await Promise.all(
-      images.map(async (img, i) => {
-        const { buffer, mime } = dataUrlToBuffer(img.dataUrl);
-        totalBytes += buffer.length;
-        const ext = mime.split("/")[1] ?? "png";
-        return toFile(buffer, img.name || `imagem-${i + 1}.${ext}`, {
-          type: mime,
-        });
-      }),
-    );
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
     if (totalBytes > MAX_TOTAL_BYTES) {
       res
         .status(400)
@@ -166,9 +185,20 @@ router.post(
       return;
     }
 
+    const openai = new OpenAI({ apiKey });
+
+    const openaiFiles = await Promise.all(
+      files.map((f, i) => {
+        const ext = f.mimetype.split("/")[1] ?? "png";
+        return toFile(f.buffer, f.originalname || `imagem-${i + 1}.${ext}`, {
+          type: f.mimetype,
+        });
+      }),
+    );
+
     const result = await openai.images.edit({
       model: "gpt-image-2",
-      image: files,
+      image: openaiFiles,
       prompt,
       size: "1024x1024",
       // gpt-image sempre responde em base64
