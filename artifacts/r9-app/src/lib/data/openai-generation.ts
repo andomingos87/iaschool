@@ -3,7 +3,12 @@
 
 import imageCompression from "browser-image-compression";
 import type { ImageGenerationService } from "./contract";
+import type { GenerationPayloadImage } from "./types";
 import { buildGenerationPrompt } from "../prompt-template";
+
+// Espelham o payload montado pelo servidor (api-server/routes/generation.ts).
+const GENERATION_MODEL = "gpt-image-2";
+const GENERATION_SIZE = "1024x1024";
 
 // Acima disso, redimensiona/comprime antes de enviar (payload menor = mais rápido
 // e bem abaixo dos limites do servidor).
@@ -82,27 +87,42 @@ export function createOpenAIGenerationService(
   return {
     async generate(request, onUploadProgress) {
       const files: File[] = [];
+      // Metadados de cada imagem enviada (papel/nome/tamanho) — nunca bytes.
+      const imagesMeta: GenerationPayloadImage[] = [];
+      const pushFile = (file: File, role: string) => {
+        files.push(file);
+        imagesMeta.push({ role, fileName: file.name, sizeBytes: file.size });
+      };
 
       // Ordem importa: a referência é sempre a primeira imagem.
-      files.push(
+      pushFile(
         await toUploadFile(request.reference.image.url, "referencia.png"),
+        "Referência",
       );
-      files.push(await toUploadFile(request.studentPhoto.url, "foto-aluno.png"));
+      pushFile(
+        await toUploadFile(request.studentPhoto.url, "foto-aluno.png"),
+        "Foto do aluno",
+      );
       if (request.showClubLogo && request.club?.logo) {
-        files.push(
+        pushFile(
           await toUploadFile(request.club.logo.url, "brasao-clube.png"),
+          "Escudo do clube",
         );
       }
       if (request.uniform) {
-        files.push(await toUploadFile(request.uniform.url, "uniforme.png"));
+        pushFile(
+          await toUploadFile(request.uniform.url, "uniforme.png"),
+          "Uniforme",
+        );
       }
       if (request.includeR9Logo) {
         try {
-          files.push(
+          pushFile(
             await toUploadFile(
               `${import.meta.env.BASE_URL}iasport-logo-color.png`,
               "logo-iasport.png",
             ),
+            "Logo R9",
           );
         } catch {
           // sem o arquivo do logo, o prompt ainda pede o selo em texto
@@ -129,8 +149,9 @@ export function createOpenAIGenerationService(
         }
       }
 
+      const prompt = buildGenerationPrompt(request, template);
       const formData = new FormData();
-      formData.append("prompt", buildGenerationPrompt(request, template));
+      formData.append("prompt", prompt);
       for (const file of files) {
         formData.append("images", file, file.name);
       }
@@ -156,7 +177,15 @@ export function createOpenAIGenerationService(
         );
       }
 
-      return { imageUrl: body.imageUrl };
+      return {
+        imageUrl: body.imageUrl,
+        details: {
+          prompt,
+          model: GENERATION_MODEL,
+          size: GENERATION_SIZE,
+          images: imagesMeta,
+        },
+      };
     },
   };
 }

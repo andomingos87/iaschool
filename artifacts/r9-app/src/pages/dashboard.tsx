@@ -20,6 +20,8 @@ import { Skeleton } from "@workspace/iasport/components/ui/skeleton";
 import { PageHeader } from "@/components/app-shell";
 import { EmptyState, ErrorState } from "@/components/data-state";
 import { ImageLightbox } from "@/components/image-lightbox";
+import { GenerationDetailsSection } from "@/components/generation-details";
+import type { GeneratedPost } from "@/lib/data";
 import { useStudents } from "@/hooks/use-students";
 import { useClubs } from "@/hooks/use-clubs";
 import { useReferences } from "@/hooks/use-references";
@@ -70,7 +72,7 @@ export default function DashboardPage() {
   const clubs = useClubs();
   const references = useReferences();
   const posts = useGeneratedPosts();
-  const [zoom, setZoom] = useState<string | null>(null);
+  const [zoomPost, setZoomPost] = useState<GeneratedPost | null>(null);
 
   const studentName = useMemo(() => {
     const map = new Map((students.data ?? []).map((s) => [s.id, s.name]));
@@ -175,7 +177,7 @@ export default function DashboardPage() {
                 <button
                   key={post.id}
                   type="button"
-                  onClick={() => setZoom(post.imageUrl)}
+                  onClick={() => setZoomPost(post)}
                   className="group overflow-hidden rounded-lg border border-border bg-muted text-left"
                   data-testid={`card-post-${post.id}`}
                 >
@@ -201,7 +203,16 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <ImageLightbox src={zoom} onClose={() => setZoom(null)} />
+      <ImageLightbox
+        src={zoomPost?.imageUrl ?? null}
+        onClose={() => setZoomPost(null)}
+        footer={
+          <GenerationDetailsSection
+            details={zoomPost?.details}
+            className="mx-auto max-w-xl"
+          />
+        }
+      />
     </div>
   );
 }

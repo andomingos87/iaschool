@@ -129,6 +129,7 @@ function toGeneratedPost(r: Row): GeneratedPost {
     studentId: r["student_id"] as string,
     imageUrl: r["image_url"] as string,
     metrics: (r["metrics"] as GeneratedPost["metrics"] | null) ?? [],
+    details: (r["details"] as GeneratedPost["details"] | null) ?? null,
     createdAt: r["created_at"] as string,
   };
 }
@@ -521,11 +522,30 @@ export function createSupabaseDataLayer(): DataLayer {
           student_id: input.studentId,
           image_url: input.imageUrl,
           metrics: input.metrics,
+          details: input.details ?? null,
           owner_id: uid,
         })
         .select("*")
         .single();
-      if (error) fail("Falha ao salvar post gerado", error);
+      if (error) {
+        // Base ainda sem a coluna `details` (setup.sql não re-executado):
+        // salva o post sem os detalhes em vez de perder a imagem no histórico.
+        if (/details/i.test(error.message) && /column/i.test(error.message)) {
+          const { data: retry, error: retryErr } = await supabase
+            .from("generated_posts")
+            .insert({
+              student_id: input.studentId,
+              image_url: input.imageUrl,
+              metrics: input.metrics,
+              owner_id: uid,
+            })
+            .select("*")
+            .single();
+          if (retryErr) fail("Falha ao salvar post gerado", retryErr);
+          return toGeneratedPost(retry);
+        }
+        fail("Falha ao salvar post gerado", error);
+      }
       return toGeneratedPost(data);
     },
   };

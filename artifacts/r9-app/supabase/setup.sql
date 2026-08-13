@@ -125,8 +125,19 @@ create table if not exists public.generated_posts (
   student_id uuid not null,
   image_url text not null,
   metrics jsonb not null default '[]'::jsonb,
+  -- Metadados da geração (prompt final + resumo do payload); null em posts antigos.
+  details jsonb,
   created_at timestamptz not null default now()
 );
+
+-- Migração de bases existentes: coluna details em generated_posts.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+    where table_schema='public' and table_name='generated_posts' and column_name='details') then
+    alter table public.generated_posts add column details jsonb;
+  end if;
+end $$;
 
 -- Template global do prompt de geração (linha única, editada pelo admin).
 create table if not exists public.prompt_settings (

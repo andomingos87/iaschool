@@ -122,12 +122,35 @@ export interface PromptTemplateVersion {
   savedBy: string;
   savedAt: string;
 }
+/** Imagem enviada no payload da geração (sem bytes — só metadados). */
+export interface GenerationPayloadImage {
+  /** papel da imagem no payload, em pt-BR (ex.: "Referência", "Foto do aluno") */
+  role: string;
+  fileName: string;
+  sizeBytes: number;
+}
+
+/**
+ * Metadados do que foi enviado à OpenAI em uma geração (para depuração do
+ * template pelo admin). Nunca inclui tokens/segredos nem bytes das imagens.
+ */
+export interface GenerationDetails {
+  /** prompt final renderizado a partir do template */
+  prompt: string;
+  model: string;
+  size: string;
+  /** lista ordenada das imagens enviadas no multipart */
+  images: GenerationPayloadImage[];
+}
+
 export interface GeneratedPost {
   id: string;
   studentId: string;
   /** data URL da imagem gerada */
   imageUrl: string;
   metrics: MetricValue[];
+  /** detalhes da geração (prompt/payload); null em gerações antigas */
+  details?: GenerationDetails | null;
   createdAt: string;
 }
 

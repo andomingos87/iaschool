@@ -36,6 +36,7 @@ import { toast } from "@workspace/iasport/hooks/use-toast";
 import { getDataLayer } from "@/lib/data";
 import type {
   Club,
+  GenerationDetails,
   GenerationRequest,
   MetricValue,
   ReferencePost,
@@ -45,6 +46,7 @@ import type {
 import { PageHeader } from "@/components/app-shell";
 import { EmptyState, CardsSkeleton } from "@/components/data-state";
 import { GenerationLoader } from "@/components/generation-loader";
+import { GenerationDetailsSection } from "@/components/generation-details";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { useStudents } from "@/hooks/use-students";
 import { useClubs } from "@/hooks/use-clubs";
@@ -85,6 +87,7 @@ export default function GeneratePage() {
   const [selectedMetrics, setSelectedMetrics] = useState<Record<string, string>>({});
   const [auxiliaryPrompt, setAuxiliaryPrompt] = useState("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [resultDetails, setResultDetails] = useState<GenerationDetails | null>(null);
   // Progresso real (0–100) do upload das fotos; null = fase de geração.
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);
@@ -133,6 +136,7 @@ export default function GeneratePage() {
     setSelectedMetrics({});
     setAuxiliaryPrompt("");
     setResultUrl(null);
+    setResultDetails(null);
   }
 
   function toggleMetric(id: string) {
@@ -185,11 +189,12 @@ export default function GeneratePage() {
     setPhase("generating");
     setUploadProgress(0);
     try {
-      const { imageUrl } = await getDataLayer().generation.generate(
+      const { imageUrl, details } = await getDataLayer().generation.generate(
         request,
         (percent) => setUploadProgress(percent < 100 ? percent : null),
       );
       setResultUrl(imageUrl);
+      setResultDetails(details);
       setPhase("result");
       // Se salvar no histórico falhar, a imagem gerada continua visível.
       try {
@@ -214,6 +219,7 @@ export default function GeneratePage() {
           studentId: student.id,
           imageUrl: savedUrl,
           metrics: metricValues,
+          details,
         });
       } catch {
         toast({
@@ -335,6 +341,10 @@ export default function GeneratePage() {
                 <SiWhatsapp className="size-4" /> WhatsApp
               </Button>
             </div>
+            <GenerationDetailsSection
+              details={resultDetails}
+              className="max-w-md"
+            />
             <p className="max-w-md text-center text-xs text-muted-foreground">
               O WhatsApp abre com a mensagem pronta. A imagem não pode ser anexada
               automaticamente — baixe o PNG e envie junto.

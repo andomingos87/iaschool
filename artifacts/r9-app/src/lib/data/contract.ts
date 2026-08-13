@@ -12,6 +12,7 @@ import type {
   AppUser,
   Club,
   GeneratedPost,
+  GenerationDetails,
   GenerationRequest,
   LinkableStudentAccount,
   Metric,
@@ -118,7 +119,7 @@ export interface ImageGenerationService {
   generate(
     request: GenerationRequest,
     onUploadProgress?: (percent: number) => void,
-  ): Promise<{ imageUrl: string }>;
+  ): Promise<{ imageUrl: string; details: GenerationDetails }>;
 }
 
 /** Aprovação de cadastros pendentes — apenas super_admin. */
