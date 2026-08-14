@@ -137,7 +137,7 @@ export default function DashboardPage() {
           icon={<Sparkles className="size-6" />}
           label="Posts gerados"
           value={posts.data?.length ?? 0}
-          href="/gerar"
+          href="/galeria"
           loading={posts.isLoading}
         />
       </div>

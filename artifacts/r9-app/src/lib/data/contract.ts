@@ -102,8 +102,24 @@ export interface MetricRepository {
 }
 
 export interface GeneratedPostRepository {
+  /** Posts ativos (fora da lixeira), mais recentes primeiro. */
   list(): Promise<GeneratedPost[]>;
+  /**
+   * Posts na lixeira, mais recentes primeiro. Antes de listar, faz o expurgo
+   * oportunista dos itens com mais de 30 dias na lixeira (registro + arquivo
+   * no Storage quando o caminho é conhecido).
+   */
+  listTrash(): Promise<GeneratedPost[]>;
   create(input: Omit<GeneratedPost, "id" | "createdAt">): Promise<GeneratedPost>;
+  /** Exclusão normal: move para a lixeira (30 dias até o expurgo). */
+  moveToTrash(ids: string[]): Promise<void>;
+  /** Devolve itens da lixeira para a galeria. */
+  restore(ids: string[]): Promise<void>;
+  /**
+   * Exclusão definitiva imediata: remove o registro e o arquivo no Storage
+   * (quando o caminho é conhecido). Sem volta.
+   */
+  deletePermanently(ids: string[]): Promise<void>;
 }
 
 /**

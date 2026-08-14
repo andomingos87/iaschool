@@ -7,6 +7,7 @@ import {
   Shield,
   Images,
   BarChart3,
+  GalleryVerticalEnd,
   Sparkles,
   Settings2,
   LogOut,
@@ -84,6 +85,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/", label: "Início", icon: Home },
   { href: "/gerar", label: "Gerar imagem", icon: Sparkles, highlight: true },
+  { href: "/galeria", label: "Galeria", icon: GalleryVerticalEnd },
   { href: "/alunos", label: "Alunos", icon: Users },
   { href: "/clubes", label: "Clubes", icon: Shield },
   { href: "/referencias", label: "Referências", icon: Images },

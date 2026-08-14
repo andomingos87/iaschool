@@ -34,6 +34,7 @@ import type {
   StoredImage,
   Student,
 } from "../types";
+import { TRASH_RETENTION_DAYS } from "../types";
 import { createOpenAIGenerationService } from "../openai-generation";
 
 function required(name: string, value: string | undefined): string {
@@ -47,7 +48,24 @@ function fail(context: string, error: { message: string } | null): never {
   throw new Error(`${context}: ${error?.message ?? "erro desconhecido"}`);
 }
 
-// URL de assinatura válida por 1 ano (máximo do Supabase).
+/** Erro de lixeira com dica quando a migração ainda não foi aplicada. */
+function failTrash(
+  context: string,
+  error: { message: string; code?: string } | null,
+): never {
+  // 42703: coluna inexistente (select/filter); PGRST204: coluna fora do
+  // schema cache do PostgREST (update) — ambos indicam migração pendente.
+  if (
+    error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    (error?.message ?? "").includes("deleted_at")
+  ) {
+    throw new Error(
+      `${context}: a lixeira ainda não está habilitada no banco. Rode o script supabase/setup.sql no SQL Editor do Supabase.`,
+    );
+  }
+  fail(context, error);
+}
 const SIGNED_URL_TTL = 365 * 24 * 3600;
 
 // ---------- mapeadores snake_case ↔ domínio ----------
@@ -131,11 +149,22 @@ function toGeneratedPost(r: Row): GeneratedPost {
     metrics: (r["metrics"] as GeneratedPost["metrics"] | null) ?? [],
     details: (r["details"] as GeneratedPost["details"] | null) ?? null,
     createdAt: r["created_at"] as string,
+    deletedAt: (r["deleted_at"] as string | null) ?? undefined,
   };
 }
 
-// ---------- factory ----------
-
+/**
+ * Extrai bucket + caminho do objeto a partir de uma URL do Supabase Storage
+ * (assinada ou pública). Retorna null para data URLs ou URLs externas —
+ * nesses casos não há arquivo nosso a remover.
+ */
+function storageLocationFromUrl(
+  url: string,
+): { bucket: string; path: string } | null {
+  const m = url.match(/\/storage\/v1\/object\/(?:sign|public)\/([^/]+)\/([^?]+)/);
+  if (!m) return null;
+  return { bucket: m[1]!, path: decodeURIComponent(m[2]!) };
+}
 export function createSupabaseDataLayer(): DataLayer {
   const url = required("VITE_SUPABASE_URL", import.meta.env.VITE_SUPABASE_URL);
   const anonKey = required(
@@ -505,14 +534,140 @@ export function createSupabaseDataLayer(): DataLayer {
     },
   };
 
+  /**
+   * Exclui definitivamente as linhas dadas: primeiro o arquivo no Storage
+   * (quando o caminho é conhecido), depois o registro. Se a remoção no
+   * Storage falhar, o registro correspondente é PRESERVADO — assim a
+   * exclusão pode ser tentada de novo (pelo usuário ou pelo expurgo) e
+   * nenhum arquivo fica órfão.
+   */
+  async function hardDeletePosts(
+    rows: Array<{ id: string; image_url: string }>,
+  ): Promise<void> {
+    if (rows.length === 0) return;
+
+    // Agrupa por bucket os arquivos conhecidos, lembrando os ids das linhas.
+    const byBucket = new Map<string, Array<{ id: string; path: string }>>();
+    const deletableIds = new Set<string>();
+    for (const r of rows) {
+      const loc = storageLocationFromUrl(r.image_url);
+      if (loc) {
+        byBucket.set(loc.bucket, [
+          ...(byBucket.get(loc.bucket) ?? []),
+          { id: r.id, path: loc.path },
+        ]);
+      } else {
+        // Sem arquivo nosso no Storage (data URL / URL externa): pode excluir.
+        deletableIds.add(r.id);
+      }
+    }
+
+    let storageFailure: string | null = null;
+    for (const [bucket, entries] of byBucket) {
+      const { error } = await supabase.storage
+        .from(bucket)
+        .remove(entries.map((e) => e.path));
+      if (error) {
+        // Mantém os registros deste bucket para tentar de novo depois.
+        storageFailure = error.message;
+      } else {
+        // remove() não falha para arquivos inexistentes — ok excluir a linha.
+        for (const e of entries) deletableIds.add(e.id);
+      }
+    }
+
+    if (deletableIds.size > 0) {
+      const { error } = await supabase
+        .from("generated_posts")
+        .delete()
+        .in("id", [...deletableIds]);
+      if (error) fail("Falha ao excluir posts definitivamente", error);
+    }
+    if (storageFailure) {
+      throw new Error(
+        `Falha ao remover arquivo(s) no Storage: ${storageFailure}. Os posts afetados foram mantidos — tente excluir de novo.`,
+      );
+    }
+  }
+
+  /** Expurgo oportunista: itens há mais de 30 dias na lixeira. */
+  async function purgeExpiredTrash(): Promise<void> {
+    const cutoff = new Date(
+      Date.now() - TRASH_RETENTION_DAYS * 24 * 3600 * 1000,
+    ).toISOString();
+    const { data, error } = await supabase
+      .from("generated_posts")
+      .select("id, image_url")
+      .not("deleted_at", "is", null)
+      .lt("deleted_at", cutoff);
+    if (error || !data || data.length === 0) return; // expurgo é best-effort
+    try {
+      await hardDeletePosts(data as Array<{ id: string; image_url: string }>);
+    } catch {
+      // Best-effort: tentará de novo no próximo carregamento.
+    }
+  }
+
   const generatedPosts: GeneratedPostRepository = {
     async list() {
+      void purgeExpiredTrash();
       const { data, error } = await supabase
         .from("generated_posts")
         .select("*")
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
-      if (error) fail("Falha ao listar posts gerados", error);
+      if (error) {
+        // Banco ainda sem a migração da lixeira (coluna deleted_at ausente):
+        // lista sem o filtro para não quebrar dashboard/área do aluno.
+        // Rode supabase/setup.sql para habilitar a lixeira.
+        if (error.code === "42703") {
+          const { data: all, error: err2 } = await supabase
+            .from("generated_posts")
+            .select("*")
+            .order("created_at", { ascending: false });
+          if (err2) fail("Falha ao listar posts gerados", err2);
+          return (all ?? []).map(toGeneratedPost);
+        }
+        fail("Falha ao listar posts gerados", error);
+      }
       return (data ?? []).map(toGeneratedPost);
+    },
+    async listTrash() {
+      await purgeExpiredTrash();
+      const { data, error } = await supabase
+        .from("generated_posts")
+        .select("*")
+        .not("deleted_at", "is", null)
+        .order("deleted_at", { ascending: false });
+      if (error) failTrash("Falha ao listar a lixeira", error);
+      return (data ?? []).map(toGeneratedPost);
+    },
+    async moveToTrash(ids) {
+      if (ids.length === 0) return;
+      const { error } = await supabase
+        .from("generated_posts")
+        .update({ deleted_at: new Date().toISOString() })
+        .in("id", ids);
+      if (error) failTrash("Falha ao mover posts para a lixeira", error);
+    },
+    async restore(ids) {
+      if (ids.length === 0) return;
+      const { error } = await supabase
+        .from("generated_posts")
+        .update({ deleted_at: null })
+        .in("id", ids);
+      if (error) failTrash("Falha ao restaurar posts", error);
+    },
+    async deletePermanently(ids) {
+      if (ids.length === 0) return;
+      const { data, error } = await supabase
+        .from("generated_posts")
+        .select("id, image_url")
+        .in("id", ids);
+      if (error) fail("Falha ao excluir posts definitivamente", error);
+      await hardDeletePosts(
+        (data ?? []) as Array<{ id: string; image_url: string }>,
+      );
     },
     async create(input) {
       const uid = await currentUserId();

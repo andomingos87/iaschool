@@ -1,9 +1,9 @@
--- ============================================================
+-- ------------------------------------------------------------
 -- R9 Escolinhas — setup do projeto Supabase
 -- Rode este script inteiro no SQL Editor do painel Supabase
 -- (https://supabase.com/dashboard → seu projeto → SQL Editor).
 -- Pode ser executado mais de uma vez sem quebrar (idempotente).
--- ============================================================
+-- ------------------------------------------------------------
 
 -- ---------- 1. Tabelas ----------
 
@@ -127,15 +127,22 @@ create table if not exists public.generated_posts (
   metrics jsonb not null default '[]'::jsonb,
   -- Metadados da geração (prompt final + resumo do payload); null em posts antigos.
   details jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Lixeira (soft delete): data em que foi movido; null = ativo.
+  -- Itens com mais de 30 dias na lixeira são expurgados pelo app.
+  deleted_at timestamptz
 );
 
--- Migração de bases existentes: coluna details em generated_posts.
+-- Migração de bases existentes: colunas details e deleted_at em generated_posts.
 do $$
 begin
   if not exists (select 1 from information_schema.columns
     where table_schema='public' and table_name='generated_posts' and column_name='details') then
     alter table public.generated_posts add column details jsonb;
+  end if;
+  if not exists (select 1 from information_schema.columns
+    where table_schema='public' and table_name='generated_posts' and column_name='deleted_at') then
+    alter table public.generated_posts add column deleted_at timestamptz;
   end if;
 end $$;
 
@@ -506,6 +513,19 @@ create policy "generated_posts_insert" on public.generated_posts
   for insert to authenticated
   with check (owner_id = auth.uid() and public.is_school_user());
 
+-- update: lixeira (soft delete/restauração) pela escola dona ou super_admin.
+drop policy if exists "generated_posts_update" on public.generated_posts;
+create policy "generated_posts_update" on public.generated_posts
+  for update to authenticated
+  using ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin())
+  with check ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin());
+
+-- delete: exclusão definitiva (e expurgo da lixeira) pela escola dona ou super_admin.
+drop policy if exists "generated_posts_delete" on public.generated_posts;
+create policy "generated_posts_delete" on public.generated_posts
+  for delete to authenticated
+  using ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin());
+
 -- metrics: pré-definidas (owner_id IS NULL) são visíveis a todos logados com perfil.
 -- Métricas personalizadas são visíveis/editáveis apenas pelo criador (ou super_admin).
 drop policy if exists "metrics_select" on public.metrics;
@@ -605,12 +625,12 @@ create policy "r9_storage_delete" on storage.objects
     )
   );
 
--- ============================================================
+-- ------------------------------------------------------------
 -- 6. Cota diária de gerações de imagem (persistida no banco)
 --
 -- O api-server chama consume_generation_quota() com a chave service_role a
 -- cada geração; a contagem por usuário/dia é atômica e resiste a reinícios.
--- ============================================================
+-- ------------------------------------------------------------
 
 create table if not exists public.generation_usage (
   user_id    uuid        not null,
@@ -649,7 +669,7 @@ revoke execute on function public.consume_generation_quota(uuid, integer)
 grant execute on function public.consume_generation_quota(uuid, integer)
   to service_role;
 
--- ============================================================
+-- ------------------------------------------------------------
 -- 7. Primeiro usuário super_admin (faça DEPOIS de rodar o script)
 --
 -- a) No painel: Authentication → Users → "Add user" → e-mail + senha
@@ -664,4 +684,4 @@ grant execute on function public.consume_generation_quota(uuid, integer)
 -- e-mail precisa estar HABILITADO no Supabase:
 --   Authentication → Sign In / Up → Email → "Enable email signups" (ativado).
 -- Contas pendentes/recusadas não leem nenhum dado (RLS acima).
--- ============================================================
+-- ------------------------------------------------------------

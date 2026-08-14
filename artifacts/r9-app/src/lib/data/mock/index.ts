@@ -28,6 +28,7 @@ import type {
   StoredImage,
   Student,
 } from "../types";
+import { TRASH_RETENTION_DAYS } from "../types";
 import { PREDEFINED_METRICS, MOCK_USERS } from "./seed";
 import {
   delay,
@@ -312,10 +313,61 @@ const metrics: MetricRepository = {
 };
 
 const generatedPostsCrud = makeCrud<GeneratedPost>("generated-posts");
+
+/** Expurgo oportunista: remove da lixeira itens com mais de 30 dias. */
+function purgeExpiredGeneratedPosts(): void {
+  const cutoff = Date.now() - TRASH_RETENTION_DAYS * 24 * 3600 * 1000;
+  const items = readCollection<GeneratedPost>("generated-posts", []);
+  const kept = items.filter(
+    (p) => !p.deletedAt || new Date(p.deletedAt).getTime() >= cutoff,
+  );
+  if (kept.length !== items.length) writeCollection("generated-posts", kept);
+}
+
 const generatedPosts: GeneratedPostRepository = {
-  list: () => generatedPostsCrud.list(),
+  async list() {
+    purgeExpiredGeneratedPosts();
+    return (await generatedPostsCrud.list()).filter((p) => !p.deletedAt);
+  },
+  async listTrash() {
+    purgeExpiredGeneratedPosts();
+    return (await generatedPostsCrud.list())
+      .filter((p) => Boolean(p.deletedAt))
+      .sort(
+        (a, b) =>
+          new Date(b.deletedAt!).getTime() - new Date(a.deletedAt!).getTime(),
+      );
+  },
   create: (input) =>
     generatedPostsCrud.create(input as Record<string, unknown>),
+  async moveToTrash(ids) {
+    await delay(300);
+    const deletedAt = nowIso();
+    const items = readCollection<GeneratedPost>("generated-posts", []);
+    writeCollection(
+      "generated-posts",
+      items.map((p) => (ids.includes(p.id) ? { ...p, deletedAt } : p)),
+    );
+  },
+  async restore(ids) {
+    await delay(300);
+    const items = readCollection<GeneratedPost>("generated-posts", []);
+    writeCollection(
+      "generated-posts",
+      items.map((p) =>
+        ids.includes(p.id) ? { ...p, deletedAt: undefined } : p,
+      ),
+    );
+  },
+  async deletePermanently(ids) {
+    await delay(300);
+    // No mock as imagens são data URLs (sem arquivo no Storage a remover).
+    const items = readCollection<GeneratedPost>("generated-posts", []);
+    writeCollection(
+      "generated-posts",
+      items.filter((p) => !ids.includes(p.id)),
+    );
+  },
 };
 
 const approvals: ApprovalRepository = {

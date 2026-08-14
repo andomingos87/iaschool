@@ -152,8 +152,12 @@ export interface GeneratedPost {
   /** detalhes da geração (prompt/payload); null em gerações antigas */
   details?: GenerationDetails | null;
   createdAt: string;
+  /** Data em que foi movido para a lixeira (null/ausente = ativo). */
+  deletedAt?: string;
 }
 
+/** Dias que um post fica na lixeira antes do expurgo definitivo. */
+export const TRASH_RETENTION_DAYS = 30;
 /** Cadastro aguardando aprovação, listado na tela do admin. */
 export interface PendingRegistration {
   id: string;

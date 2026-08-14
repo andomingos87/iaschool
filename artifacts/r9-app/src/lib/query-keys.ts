@@ -8,6 +8,7 @@ export const qk = {
   references: ["references"] as const,
   metrics: ["metrics"] as const,
   generatedPosts: ["generated-posts"] as const,
+  generatedPostsTrash: ["generated-posts", "trash"] as const,
   promptTemplate: ["prompt-template"] as const,
   promptTemplateVersions: ["prompt-template-versions"] as const,
   linkableStudentAccounts: ["linkable-student-accounts"] as const,
