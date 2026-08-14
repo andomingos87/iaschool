@@ -487,6 +487,54 @@ const approvals: ApprovalRepository = {
     links[profileId] = studentRecordId;
     writeValue("student-links", links);
   },
+  async listLinkedStudentAccounts() {
+    await delay(300);
+    const session = readValue<Session>("session");
+    const me = session?.user;
+    if (!me || (me.role !== "school_user" && me.role !== "super_admin")) {
+      throw new Error("Apenas escolas podem ver contas vinculadas.");
+    }
+    return allUsers()
+      .filter(
+        (u) =>
+          u.role === "student" &&
+          u.approvalStatus === "approved" &&
+          Boolean(u.studentRecordId) &&
+          (me.role === "super_admin" || u.schoolId === me.id),
+      )
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        studentRecordId: u.studentRecordId!,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  },
+  async unlinkStudentAccount(studentRecordId) {
+    await delay(400);
+    const session = readValue<Session>("session");
+    const me = session?.user;
+    if (!me || (me.role !== "school_user" && me.role !== "super_admin")) {
+      throw new Error("Apenas escolas podem desvincular contas de aluno.");
+    }
+    const student = readCollection<OwnedStudent>("students", []).find(
+      (s) => s.id === studentRecordId,
+    );
+    if (!student) throw new Error("Registro de aluno não encontrado.");
+    // Mesma regra de posse da RPC do Supabase.
+    if (me.role !== "super_admin" && student.ownerId && student.ownerId !== me.id) {
+      throw new Error("Registro de aluno não encontrado.");
+    }
+    const links = readStudentLinks();
+    const profileId = Object.keys(links).find(
+      (pid) => links[pid] === studentRecordId,
+    );
+    if (!profileId) {
+      throw new Error("Este registro de aluno não tem conta vinculada.");
+    }
+    delete links[profileId];
+    writeValue("student-links", links);
+  },
   async listStudentAccounts() {
     await delay(300);
     const session = readValue<Session>("session");

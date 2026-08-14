@@ -181,6 +181,14 @@ export interface LinkableStudentAccount {
   email: string;
 }
 
+/** Conta de aluno já vinculada a um registro de students (visão da escola). */
+export interface LinkedStudentAccount {
+  id: string;
+  name: string;
+  email: string;
+  studentRecordId: string;
+}
+
 /** Conta de aluno aprovada com o estado do vínculo (visão do super_admin). */
 export interface StudentAccountOverview {
   id: string;

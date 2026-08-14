@@ -974,6 +974,36 @@ export function createSupabaseDataLayer(): DataLayer {
       if (error) fail("Falha ao vincular conta de aluno", error);
       profileCache.delete(profileId);
     },
+    async listLinkedStudentAccounts() {
+      // RPC security definer (setup.sql): school_user vê só os alunos da
+      // própria escola; super_admin vê todos.
+      const { data, error } = await supabase.rpc(
+        "list_linked_student_accounts",
+      );
+      if (error) fail("Falha ao listar contas de aluno vinculadas", error);
+      return (
+        (data ?? []) as Array<{
+          id: string;
+          name: string;
+          email: string;
+          student_record_id: string;
+        }>
+      ).map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        studentRecordId: r.student_record_id,
+      }));
+    },
+    async unlinkStudentAccount(studentRecordId) {
+      // RPC security definer (setup.sql) espelha link_student_account:
+      // valida escola e posse do registro antes de zerar o vínculo.
+      const { error } = await supabase.rpc("unlink_student_account", {
+        p_student_record_id: studentRecordId,
+      });
+      if (error) fail("Falha ao desvincular conta de aluno", error);
+      profileCache.clear();
+    },
     async listStudentAccounts() {
       // Visão do super_admin (RLS de profiles permite ler todos).
       const { data, error } = await supabase

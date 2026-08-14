@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   Search,
@@ -9,6 +10,7 @@ import {
   Phone,
   Shield,
   Link2,
+  Link2Off,
 } from "lucide-react";
 import { Button } from "@workspace/iasport/components/ui/button";
 import { Input } from "@workspace/iasport/components/ui/input";
@@ -34,29 +36,62 @@ import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { StudentFormDialog } from "@/components/student-form-dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { LinkStudentAccountDialog } from "@/components/link-student-account-dialog";
-import {
-  useStudents,
-  useDeleteStudent,
-  useLinkedStudentRecordIds,
-} from "@/hooks/use-students";
+import { useStudents, useDeleteStudent } from "@/hooks/use-students";
 import { useClubs } from "@/hooks/use-clubs";
-import type { Student } from "@/lib/data";
+import { getDataLayer } from "@/lib/data";
+import type { LinkedStudentAccount, Student } from "@/lib/data";
+import { qk } from "@/lib/query-keys";
 import { ageFromIso, initials, storedToMasked } from "@/lib/format";
 
 export default function StudentsPage() {
   const students = useStudents();
   const clubs = useClubs();
   const del = useDeleteStudent();
-  const linkedIds = useLinkedStudentRecordIds();
-  const linkedSet = useMemo(
-    () => new Set(linkedIds.data ?? []),
-    [linkedIds.data],
-  );
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [toDelete, setToDelete] = useState<Student | null>(null);
   const [toLink, setToLink] = useState<Student | null>(null);
+  const [toUnlink, setToUnlink] = useState<Student | null>(null);
+  const queryClient = useQueryClient();
+
+  // Contas de aluno já vinculadas — para mostrar o vínculo no card e
+  // oferecer "Desvincular conta" quando houver.
+  const linkedAccounts = useQuery({
+    queryKey: qk.linkedStudentAccounts,
+    queryFn: () => getDataLayer().approvals.listLinkedStudentAccounts(),
+  });
+
+  const linkedByStudentId = useMemo(() => {
+    const map = new Map<string, LinkedStudentAccount>();
+    for (const acc of linkedAccounts.data ?? []) {
+      map.set(acc.studentRecordId, acc);
+    }
+    return map;
+  }, [linkedAccounts.data]);
+
+  const unlink = useMutation({
+    mutationFn: (studentRecordId: string) =>
+      getDataLayer().approvals.unlinkStudentAccount(studentRecordId),
+    onSuccess: () => {
+      toast({
+        title: "Conta desvinculada",
+        description: `${toUnlink?.name} não tem mais conta de aluno vinculada.`,
+      });
+      void queryClient.invalidateQueries({ queryKey: qk.linkedStudentAccounts });
+      void queryClient.invalidateQueries({
+        queryKey: qk.linkableStudentAccounts,
+      });
+      setToUnlink(null);
+    },
+    onError: (err) => {
+      toast({
+        variant: "destructive",
+        title: "Não foi possível desvincular",
+        description: err instanceof Error ? err.message : "Tente novamente.",
+      });
+    },
+  });
 
   const clubName = useMemo(() => {
     const map = new Map((clubs.data ?? []).map((c) => [c.id, c.name]));
@@ -146,7 +181,7 @@ export default function StudentsPage() {
           {filtered.map((s) => {
             const age = ageFromIso(s.birthDate);
             const photo = s.photos?.[0]?.url;
-            const isLinked = linkedSet.has(s.id);
+            const linked = linkedByStudentId.get(s.id);
             return (
               <Card
                 key={s.id}
@@ -176,7 +211,7 @@ export default function StudentsPage() {
                             {age} anos
                           </span>
                         )}
-                        {isLinked && (
+                        {linked && (
                           <Badge
                             variant="outline"
                             className="gap-1 border-primary/40 text-[10px] text-primary"
@@ -205,16 +240,21 @@ export default function StudentsPage() {
                         >
                           <Pencil className="size-4" /> Editar
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          disabled={isLinked}
-                          onClick={() => setToLink(s)}
-                          data-testid={`button-link-student-${s.id}`}
-                        >
-                          <Link2 className="size-4" />{" "}
-                          {isLinked
-                            ? "Conta já vinculada"
-                            : "Vincular conta de aluno"}
-                        </DropdownMenuItem>
+                        {linked ? (
+                          <DropdownMenuItem
+                            onClick={() => setToUnlink(s)}
+                            data-testid={`button-unlink-student-${s.id}`}
+                          >
+                            <Link2Off className="size-4" /> Desvincular conta
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onClick={() => setToLink(s)}
+                            data-testid={`button-link-student-${s.id}`}
+                          >
+                            <Link2 className="size-4" /> Vincular conta de aluno
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           className="text-destructive"
                           onClick={() => setToDelete(s)}
@@ -235,6 +275,17 @@ export default function StudentsPage() {
                         <Shield className="size-3.5" /> {clubName(s.clubId)}
                       </p>
                     )}
+                    {linked && (
+                      <p
+                        className="flex items-center gap-2"
+                        data-testid={`text-linked-account-${s.id}`}
+                      >
+                        <Link2 className="size-3.5 text-primary" />
+                        <span className="truncate">
+                          Conta vinculada: {linked.email}
+                        </span>
+                      </p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -252,6 +303,16 @@ export default function StudentsPage() {
       <LinkStudentAccountDialog
         student={toLink}
         onOpenChange={(o) => !o && setToLink(null)}
+      />
+      <ConfirmDelete
+        open={!!toUnlink}
+        onOpenChange={(o) => !o && setToUnlink(null)}
+        title="Desvincular conta?"
+        description={`A conta ${
+          toUnlink ? linkedByStudentId.get(toUnlink.id)?.email ?? "" : ""
+        } deixará de ver os dados de "${toUnlink?.name}". Você pode vincular outra conta depois.`}
+        onConfirm={() => toUnlink && unlink.mutate(toUnlink.id)}
+        loading={unlink.isPending}
       />
       <ConfirmDelete
         open={!!toDelete}

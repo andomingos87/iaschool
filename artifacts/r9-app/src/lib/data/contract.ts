@@ -15,6 +15,7 @@ import type {
   GenerationDetails,
   GenerationRequest,
   LinkableStudentAccount,
+  LinkedStudentAccount,
   Metric,
   PendingRegistration,
   PromptTemplateSetting,
@@ -142,6 +143,7 @@ export interface ImageGenerationService {
 export interface ApprovalRepository {
   listPending(): Promise<PendingRegistration[]>;
   /** Quantidade de cadastros aguardando aprovação (para o badge do menu). */
+
   countPending(): Promise<number>;
   /**
    * Notifica quando a quantidade de pendências pode ter mudado
@@ -149,30 +151,45 @@ export interface ApprovalRepository {
    * (postgres_changes em `profiles`); no mock, eventos locais.
    * Retorna a função de unsubscribe.
    */
+
   onPendingCountChange(cb: () => void): () => void;
+
   approve(profileId: string): Promise<void>;
+
   reject(profileId: string): Promise<void>;
   /**
    * Contas de aluno aprovadas e ainda sem vínculo com um registro de students.
    * Para school_user: apenas alunos da própria escola. super_admin vê todas.
    */
+
   listLinkableStudentAccounts(): Promise<LinkableStudentAccount[]>;
   /**
    * Vincula manualmente uma conta de aluno (profiles.student_record_id) a um
    * registro da tabela students. Falha se o registro já tiver conta vinculada.
    */
+
   linkStudentAccount(profileId: string, studentRecordId: string): Promise<void>;
   /**
    * IDs dos registros de students que JÁ têm conta vinculada
    * (profiles.student_record_id). Para school_user: apenas registros da
    * própria escola. Usado para o selo "Conta vinculada" na lista de Alunos.
    */
+
   listLinkedStudentRecordIds(): Promise<string[]>;
   /**
    * Contas de aluno aprovadas com o estado do vínculo — visão do super_admin
    * na tela de Aprovações (o vínculo em si é feito pela escola).
    */
+
   listStudentAccounts(): Promise<StudentAccountOverview[]>;
+
+  listLinkedStudentAccounts(): Promise<LinkedStudentAccount[]>;
+  /**
+   * Desfaz um vínculo feito por engano: zera profiles.student_record_id da
+   * conta ligada ao registro informado (mesmas validações de escola do link).
+   */
+
+  unlinkStudentAccount(studentRecordId: string): Promise<void>;
 }
 
 /**

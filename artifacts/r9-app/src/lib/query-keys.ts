@@ -13,4 +13,5 @@ export const qk = {
   promptTemplateVersions: ["prompt-template-versions"] as const,
   linkableStudentAccounts: ["linkable-student-accounts"] as const,
   linkedStudentRecordIds: ["linked-student-record-ids"] as const,
+  linkedStudentAccounts: ["linked-student-accounts"] as const,
 };

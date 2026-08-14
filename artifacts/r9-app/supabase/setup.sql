@@ -349,6 +349,56 @@ end;
 $$;
 grant execute on function public.link_student_account(uuid, uuid) to authenticated;
 
+-- Contas de aluno já vinculadas a um registro de students da escola atual.
+-- Usada na tela de Alunos para mostrar o vínculo e oferecer "Desvincular".
+-- school_user vê só os próprios alunos; super_admin vê todos.
+create or replace function public.list_linked_student_accounts()
+returns table (id uuid, name text, email text, student_record_id uuid)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.name, p.email, p.student_record_id
+  from public.profiles p
+  where public.is_school_user()
+    and p.role = 'student'
+    and p.approval_status = 'approved'
+    and p.student_record_id is not null
+    and (p.school_id = auth.uid() or public.is_super_admin())
+  order by p.name;
+$$;
+grant execute on function public.list_linked_student_accounts() to authenticated;
+
+-- Desfaz um vínculo feito por engano: zera profiles.student_record_id da conta
+-- ligada ao registro students informado. Espelha link_student_account (mesmas
+-- validações de escola; security definer pelo mesmo motivo — RLS não restringe
+-- o update a UMA coluna).
+create or replace function public.unlink_student_account(
+  p_student_record_id uuid
+)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_school_user() then
+    raise exception 'Apenas escolas podem desvincular contas de aluno.';
+  end if;
+  -- O registro students precisa pertencer à escola que está desvinculando.
+  if not exists (
+    select 1 from public.students s
+    where s.id = p_student_record_id
+      and (s.owner_id = auth.uid() or public.is_super_admin())
+  ) then
+    raise exception 'Registro de aluno não encontrado.';
+  end if;
+  update public.profiles
+  set student_record_id = null
+  where student_record_id = p_student_record_id
+    and role = 'student'
+    and (school_id = auth.uid() or public.is_super_admin());
+  if not found then
+    raise exception 'Este registro de aluno não tem conta vinculada.';
+  end if;
+end;
+$$;
+grant execute on function public.unlink_student_account(uuid) to authenticated;
+
 -- Escolas aprovadas para o seletor do cadastro de aluno (acessível sem login;
 -- expõe apenas id e nome — nunca e-mail).
 create or replace function public.list_approved_schools()
