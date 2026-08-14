@@ -46,6 +46,9 @@ export function LinkStudentAccountDialog({ student, onOpenChange }: Props) {
       void queryClient.invalidateQueries({
         queryKey: qk.linkableStudentAccounts,
       });
+      void queryClient.invalidateQueries({
+        queryKey: qk.linkedStudentRecordIds,
+      });
       onOpenChange(false);
     },
     onError: (err) => {

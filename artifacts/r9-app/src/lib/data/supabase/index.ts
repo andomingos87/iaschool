@@ -820,6 +820,23 @@ export function createSupabaseDataLayer(): DataLayer {
         (data ?? []) as Array<{ id: string; name: string; email: string }>
       ).map((r) => ({ id: r.id, name: r.name, email: r.email }));
     },
+    async listLinkedStudentRecordIds() {
+      // RPC security definer (setup.sql): school_user vê só os vínculos dos
+      // alunos da própria escola; super_admin vê todos.
+      const { data, error } = await supabase.rpc(
+        "list_linked_student_record_ids",
+      );
+      if (error) {
+        // RPC ainda não aplicada no banco (setup.sql pendente): degrade sem
+        // selo em vez de quebrar a lista de alunos. 42883 = função inexistente;
+        // PGRST202 = função fora do schema cache do PostgREST.
+        if (error.code === "42883" || error.code === "PGRST202") return [];
+        fail("Falha ao listar registros de alunos vinculados", error);
+      }
+      return ((data ?? []) as Array<{ student_record_id: string }>).map(
+        (r) => r.student_record_id,
+      );
+    },
     async linkStudentAccount(profileId, studentRecordId) {
       // RPC security definer (setup.sql) valida escola, registro e duplicidade.
       const { error } = await supabase.rpc("link_student_account", {

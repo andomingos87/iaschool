@@ -34,7 +34,11 @@ import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { StudentFormDialog } from "@/components/student-form-dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { LinkStudentAccountDialog } from "@/components/link-student-account-dialog";
-import { useStudents, useDeleteStudent } from "@/hooks/use-students";
+import {
+  useStudents,
+  useDeleteStudent,
+  useLinkedStudentRecordIds,
+} from "@/hooks/use-students";
 import { useClubs } from "@/hooks/use-clubs";
 import type { Student } from "@/lib/data";
 import { ageFromIso, initials, storedToMasked } from "@/lib/format";
@@ -43,6 +47,11 @@ export default function StudentsPage() {
   const students = useStudents();
   const clubs = useClubs();
   const del = useDeleteStudent();
+  const linkedIds = useLinkedStudentRecordIds();
+  const linkedSet = useMemo(
+    () => new Set(linkedIds.data ?? []),
+    [linkedIds.data],
+  );
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
@@ -137,6 +146,7 @@ export default function StudentsPage() {
           {filtered.map((s) => {
             const age = ageFromIso(s.birthDate);
             const photo = s.photos?.[0]?.url;
+            const isLinked = linkedSet.has(s.id);
             return (
               <Card
                 key={s.id}
@@ -166,6 +176,15 @@ export default function StudentsPage() {
                             {age} anos
                           </span>
                         )}
+                        {isLinked && (
+                          <Badge
+                            variant="outline"
+                            className="gap-1 border-primary/40 text-[10px] text-primary"
+                            data-testid={`badge-linked-${s.id}`}
+                          >
+                            <Link2 className="size-3" /> Conta vinculada
+                          </Badge>
+                        )}
                       </div>
                     </div>
                     <DropdownMenu>
@@ -187,10 +206,14 @@ export default function StudentsPage() {
                           <Pencil className="size-4" /> Editar
                         </DropdownMenuItem>
                         <DropdownMenuItem
+                          disabled={isLinked}
                           onClick={() => setToLink(s)}
                           data-testid={`button-link-student-${s.id}`}
                         >
-                          <Link2 className="size-4" /> Vincular conta de aluno
+                          <Link2 className="size-4" />{" "}
+                          {isLinked
+                            ? "Conta já vinculada"
+                            : "Vincular conta de aluno"}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"

@@ -8,6 +8,15 @@ export function useStudents() {
   return useQuery({ queryKey: qk.students, queryFn: () => data.students.list() });
 }
 
+/** IDs dos registros de students que já têm conta de aluno vinculada. */
+export function useLinkedStudentRecordIds() {
+  const data = getDataLayer();
+  return useQuery({
+    queryKey: qk.linkedStudentRecordIds,
+    queryFn: () => data.approvals.listLinkedStudentRecordIds(),
+  });
+}
+
 export function useCreateStudent() {
   const data = getDataLayer();
   const qc = useQueryClient();

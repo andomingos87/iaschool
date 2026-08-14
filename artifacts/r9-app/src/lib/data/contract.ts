@@ -163,6 +163,12 @@ export interface ApprovalRepository {
    */
   linkStudentAccount(profileId: string, studentRecordId: string): Promise<void>;
   /**
+   * IDs dos registros de students que JÁ têm conta vinculada
+   * (profiles.student_record_id). Para school_user: apenas registros da
+   * própria escola. Usado para o selo "Conta vinculada" na lista de Alunos.
+   */
+  listLinkedStudentRecordIds(): Promise<string[]>;
+  /**
    * Contas de aluno aprovadas com o estado do vínculo — visão do super_admin
    * na tela de Aprovações (o vínculo em si é feito pela escola).
    */

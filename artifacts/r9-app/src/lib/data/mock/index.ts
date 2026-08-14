@@ -438,6 +438,23 @@ const approvals: ApprovalRepository = {
       .map((u) => ({ id: u.id, name: u.name, email: u.email }))
       .sort((a, b) => a.name.localeCompare(b.name));
   },
+  async listLinkedStudentRecordIds() {
+    await delay(300);
+    const session = readValue<Session>("session");
+    const me = session?.user;
+    if (!me || (me.role !== "school_user" && me.role !== "super_admin")) {
+      throw new Error("Apenas escolas podem consultar vínculos de alunos.");
+    }
+    return allUsers()
+      .filter(
+        (u) =>
+          u.role === "student" &&
+          u.approvalStatus === "approved" &&
+          !!u.studentRecordId &&
+          (me.role === "super_admin" || u.schoolId === me.id),
+      )
+      .map((u) => u.studentRecordId!) as string[];
+  },
   async linkStudentAccount(profileId, studentRecordId) {
     await delay(400);
     const session = readValue<Session>("session");

@@ -279,6 +279,23 @@ language sql stable security definer set search_path = public as $$
 $$;
 grant execute on function public.list_linkable_student_accounts() to authenticated;
 
+-- Registros de students que JÁ têm conta vinculada (para o selo "Conta
+-- vinculada" na lista de Alunos). school_user vê apenas os vínculos dos
+-- alunos da própria escola; super_admin vê todos.
+-- (security definer porque a RLS de profiles só permite ler o próprio perfil.)
+create or replace function public.list_linked_student_record_ids()
+returns table (student_record_id uuid)
+language sql stable security definer set search_path = public as $$
+  select p.student_record_id
+  from public.profiles p
+  where public.is_school_user()
+    and p.role = 'student'
+    and p.approval_status = 'approved'
+    and p.student_record_id is not null
+    and (p.school_id = auth.uid() or public.is_super_admin());
+$$;
+grant execute on function public.list_linked_student_record_ids() to authenticated;
+
 -- Vincula manualmente uma conta de aluno a um registro da tabela students
 -- (profiles.student_record_id). Usado pela escola quando o vínculo automático
 -- por nome falha na aprovação. security definer em vez de política RLS de
