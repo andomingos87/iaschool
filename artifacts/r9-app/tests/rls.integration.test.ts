@@ -166,6 +166,40 @@ describe("aluno aprovado vê apenas o próprio registro e posts", () => {
   });
 });
 
+describe("aluno recém-vinculado enxerga seus dados imediatamente", () => {
+  it("mesmo token JWT: nada antes do vínculo, tudo visível após o PATCH no profile", async () => {
+    // Aluno aprovado, mas ainda SEM vínculo (student_record_id nulo).
+    const freshStudent = await createTestUser({ label: "fresh-student", signupRole: "student" });
+    createdUsers.push(freshStudent.id);
+    await adminUpdateProfile(freshStudent.id, {
+      approval_status: "approved",
+      role: "student",
+      school_id: schoolA.id,
+    });
+
+    // BEFORE: com o token já emitido, não vê nenhum registro nem post.
+    const beforeStudents = await userSelect(freshStudent, "students", "select=id");
+    expect(beforeStudents.status).toBe(200);
+    expect(beforeStudents.rows).toHaveLength(0);
+    const beforePosts = await userSelect(freshStudent, "generated_posts", "select=id");
+    expect(beforePosts.status).toBe(200);
+    expect(beforePosts.rows).toHaveLength(0);
+
+    // Escola vincula o registro (PATCH em profiles via service role,
+    // igual ao fluxo de aprovação/vínculo manual do app).
+    await adminUpdateProfile(freshStudent.id, { student_record_id: studentRecordA2 });
+
+    // AFTER: MESMO token (sem novo login/refresh) — dados visíveis imediatamente.
+    const afterStudents = await userSelect(freshStudent, "students", "select=id");
+    expect(afterStudents.status).toBe(200);
+    expect(afterStudents.rows.map((r) => (r as { id: string }).id)).toEqual([studentRecordA2]);
+    const afterPosts = await userSelect(freshStudent, "generated_posts", "select=id,student_id");
+    expect(afterPosts.status).toBe(200);
+    expect(afterPosts.rows).toHaveLength(1);
+    expect((afterPosts.rows[0] as { id: string }).id).toBe(postA2);
+  }, 60_000);
+});
+
 describe("isolamento entre escolas aprovadas", () => {
   it("escola A não vê alunos da escola B", async () => {
     const { status, rows } = await userSelect(schoolA, "students", "select=id");
