@@ -67,6 +67,17 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+router.post(
+  "/generation/post-image",
+  requireSupabaseUser,
+  (req, res, next) => {
+    upload.array("images", MAX_IMAGES)(req, res, (err: unknown) => {
+      if (!err) {
+        next();
+        return;
+      }
+      if (err instanceof multer.MulterError) {
         const messages: Record<string, string> = {
           LIMIT_FILE_SIZE: "Imagem muito grande (máx. 8 MB por imagem).",
           LIMIT_FILE_COUNT: `No máximo ${MAX_IMAGES} imagens por geração.`,
@@ -226,12 +237,34 @@ const upload = multer({
           : "Erro inesperado na geração.";
     const status =
       err instanceof OpenAI.APIError && err.status ? err.status : 500;
-
-  const used = Math.min(status.used, DAILY_MAX_REQUESTS);
     res.status(status >= 400 && status < 600 ? status : 500).json({
       error: message,
     });
   }
+});
+
+// Saldo da cota diária do usuário autenticado (sem consumir).
+router.get("/generation/quota", requireSupabaseUser, async (req, res) => {
+  if (!req.supabaseUserId) {
+    res.json({ available: false, limit: DAILY_MAX_REQUESTS });
+    return;
+  }
+  const status = await getDailyQuotaUsage(req.supabaseUserId);
+  if (status.kind !== "ok") {
+    req.log.warn(
+      { reason: status.reason },
+      "Saldo da cota diária indisponível",
+    );
+    res.json({ available: false, limit: DAILY_MAX_REQUESTS });
+    return;
+  }
+  const used = Math.min(status.used, DAILY_MAX_REQUESTS);
+  res.json({
+    available: true,
+    limit: DAILY_MAX_REQUESTS,
+    used,
+    remaining: DAILY_MAX_REQUESTS - used,
+  });
 });
 
 export default router;

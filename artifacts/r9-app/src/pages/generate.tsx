@@ -15,6 +15,9 @@ import {
   RotateCcw,
   Wand2,
   Plus,
+  Pencil,
+  Save,
+  Loader2,
 } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 import { cn } from "@workspace/iasport/lib/utils";
@@ -44,11 +47,12 @@ import type {
   Student,
 } from "@/lib/data";
 import { PageHeader } from "@/components/app-shell";
-import { EmptyState, CardsSkeleton } from "@/components/data-state";
+import { EmptyState, CardsSkeleton, ErrorState } from "@/components/data-state";
+import { ClubFormDialog } from "@/components/club-form-dialog";
 import { GenerationLoader } from "@/components/generation-loader";
 import { GenerationDetailsSection } from "@/components/generation-details";
 import { ImageLightbox } from "@/components/image-lightbox";
-import { useStudents } from "@/hooks/use-students";
+import { useStudents, useUpdateStudent } from "@/hooks/use-students";
 import { useClubs } from "@/hooks/use-clubs";
 import { useReferences } from "@/hooks/use-references";
 import { useMetrics } from "@/hooks/use-metrics";
@@ -67,6 +71,7 @@ type Phase = "form" | "generating" | "result";
 
 const STEP_META = [
   { key: "aluno", label: "Aluno", icon: Users },
+  { key: "time", label: "Time", icon: Shield },
   { key: "brasao", label: "Brasão", icon: Shield },
   { key: "r9", label: "Logo R9", icon: Sparkles },
   { key: "uniforme", label: "Uniforme", icon: Shirt },
@@ -80,6 +85,7 @@ export default function GeneratePage() {
   const references = useReferences();
   const metrics = useMetrics();
   const createPost = useCreateGeneratedPost();
+  const updateStudent = useUpdateStudent();
   const quota = useGenerationQuota();
   const queryClient = useQueryClient();
 
@@ -89,6 +95,11 @@ export default function GeneratePage() {
   // seleções
   const [student, setStudent] = useState<Student | null>(null);
   const [photo, setPhoto] = useState<StoredImage | null>(null);
+  // Time (clube) selecionado explicitamente no wizard; null = "Sem time".
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
+  // Diálogo de criação/edição de clube dentro do wizard.
+  const [clubDialogOpen, setClubDialogOpen] = useState(false);
+  const [clubDialogEditing, setClubDialogEditing] = useState<Club | null>(null);
   const [showClubLogo, setShowClubLogo] = useState(true);
   const [includeR9, setIncludeR9] = useState(true);
   const [uniform, setUniform] = useState<StoredImage | null>(null);
@@ -139,8 +150,8 @@ export default function GeneratePage() {
   }, []);
 
   const club: Club | undefined = useMemo(
-    () => clubs.data?.find((c) => c.id === student?.clubId),
-    [clubs.data, student],
+    () => clubs.data?.find((c) => c.id === selectedClubId),
+    [clubs.data, selectedClubId],
   );
 
   const hasClubLogo = !!club?.logo;
@@ -154,9 +165,9 @@ export default function GeneratePage() {
     switch (current) {
       case 0:
         return !!student && !!photo;
-      case 4:
-        return !!reference;
       case 5:
+        return !!reference;
+      case 6:
         return Object.values(selectedMetrics).some((v) => v.trim() !== "");
       default:
         return true;
@@ -175,6 +186,7 @@ export default function GeneratePage() {
     setStep(0);
     setStudent(null);
     setPhoto(null);
+    setSelectedClubId(null);
     setShowClubLogo(true);
     setIncludeR9(true);
     setUniform(null);
@@ -183,6 +195,52 @@ export default function GeneratePage() {
     setAuxiliaryPrompt("");
     setResultUrl(null);
     setResultDetails(null);
+  }
+
+  // Troca o time selecionado no wizard (null = "Sem time").
+  function selectClub(id: string | null) {
+    if (id === selectedClubId) return;
+    setSelectedClubId(id);
+    setShowClubLogo(true);
+    setUniform(null);
+  }
+
+  // Clube criado/editado no diálogo dentro do wizard.
+  function onClubSaved(saved: Club) {
+    if (clubDialogEditing) {
+      // Edição: revalida o uniforme escolhido (pode ter sido removido).
+      if (uniform && !saved.uniforms.some((u) => u.id === uniform.id)) {
+        setUniform(null);
+      }
+    } else {
+      // Novo clube fica selecionado automaticamente.
+      selectClub(saved.id);
+    }
+  }
+
+  // Salva o vínculo do time escolhido no cadastro do aluno (clubId).
+  async function saveClubLink() {
+    if (!student) return;
+    try {
+      const updated = await updateStudent.mutateAsync({
+        id: student.id,
+        patch: { clubId: selectedClubId ?? undefined },
+      });
+      setStudent(updated);
+      toast({
+        title: "Vínculo salvo",
+        description:
+          selectedClubId && club
+            ? `${student.name} agora está vinculado a ${club.name}.`
+            : `${student.name} ficou sem time no cadastro.`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Não foi possível salvar o vínculo",
+        description: err instanceof Error ? err.message : "Tente novamente.",
+      });
+    }
   }
 
   function toggleMetric(id: string) {
@@ -469,6 +527,8 @@ export default function GeneratePage() {
                       onClick={() => {
                         setStudent(s);
                         setPhoto(s.photos?.[0] ?? null);
+                        setSelectedClubId(s.clubId ?? null);
+                        setShowClubLogo(true);
                         setUniform(null);
                       }}
                       className={cn(
@@ -529,8 +589,156 @@ export default function GeneratePage() {
               </div>
             )}
 
-            {/* STEP 1 — brasão */}
+            {/* STEP 1 — time (clube) */}
             {step === 1 && (
+              <div className="space-y-5">
+                {clubs.isError ? (
+                  <ErrorState onRetry={() => clubs.refetch()} />
+                ) : (
+                  <>
+                    {student?.clubId ? (
+                      <p className="text-sm text-muted-foreground">
+                        Time vinculado no cadastro do aluno já vem pré-selecionado.
+                        Você pode trocar por outro ou seguir sem time.
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Este aluno não tem time vinculado. Selecione um clube
+                        existente, crie um novo ou siga sem time.
+                      </p>
+                    )}
+
+                    {(clubs.data?.length ?? 0) === 0 ? (
+                      <div className="rounded-md border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
+                        Nenhum clube cadastrado — crie um novo para usar brasão,
+                        cores e uniformes na imagem.
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => selectClub(null)}
+                          className={cn(
+                            "flex items-center gap-3 rounded-md border p-3 text-left transition-colors",
+                            selectedClubId === null
+                              ? "border-primary bg-accent"
+                              : "border-border hover:border-primary/50",
+                          )}
+                          data-testid="select-club-none"
+                        >
+                          <div className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
+                            <Shield className="size-5 text-muted-foreground" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium">Sem time</p>
+                            <p className="text-xs text-muted-foreground">
+                              Gerar sem brasão, cores e uniforme
+                            </p>
+                          </div>
+                        </button>
+                        {clubs.data!.map((c) => (
+                          <div
+                            key={c.id}
+                            className={cn(
+                              "relative flex items-center gap-3 rounded-md border p-3 transition-colors",
+                              selectedClubId === c.id
+                                ? "border-primary bg-accent"
+                                : "border-border hover:border-primary/50",
+                            )}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => selectClub(c.id)}
+                              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                              data-testid={`select-club-${c.id}`}
+                            >
+                              <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
+                                {c.logo ? (
+                                  <img
+                                    src={c.logo.url}
+                                    alt={c.name}
+                                    className="h-full w-full object-contain"
+                                  />
+                                ) : (
+                                  <Shield className="size-5 text-muted-foreground" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate font-medium">
+                                  {c.name}
+                                  {student?.clubId === c.id && (
+                                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                                      (vinculado)
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  <Shirt className="mr-1 inline size-3" />
+                                  {c.uniforms.length} uniforme(s)
+                                </p>
+                              </div>
+                            </button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0"
+                              onClick={() => {
+                                setClubDialogEditing(c);
+                                setClubDialogOpen(true);
+                              }}
+                              title="Editar clube / adicionar uniforme"
+                              data-testid={`button-edit-club-${c.id}`}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setClubDialogEditing(null);
+                        setClubDialogOpen(true);
+                      }}
+                      data-testid="button-new-club-wizard"
+                    >
+                      <Plus className="size-4" /> Criar novo time
+                    </Button>
+
+                    {student &&
+                      (selectedClubId ?? null) !== (student.clubId ?? null) && (
+                        <div className="rounded-md border border-border bg-card/50 p-4">
+                          <p className="text-sm font-medium">
+                            Salvar este time no cadastro do aluno?
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Se não salvar, o time vale só para esta geração.
+                          </p>
+                          <Button
+                            size="sm"
+                            className="mt-3"
+                            onClick={saveClubLink}
+                            disabled={updateStudent.isPending}
+                            data-testid="button-save-club-link"
+                          >
+                            {updateStudent.isPending ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Save className="size-4" />
+                            )}
+                            Salvar vínculo no cadastro
+                          </Button>
+                        </div>
+                      )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* STEP 2 — brasão */}
+            {step === 2 && (
               <div className="space-y-4">
                 {!hasClubLogo ? (
                   <p className="text-sm text-muted-foreground">
@@ -567,8 +775,8 @@ export default function GeneratePage() {
               </div>
             )}
 
-            {/* STEP 2 — logo R9 */}
-            {step === 2 && (
+            {/* STEP 3 — logo R9 */}
+            {step === 3 && (
               <label
                 className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-4"
                 data-testid="checkbox-r9-wrapper"
@@ -587,13 +795,31 @@ export default function GeneratePage() {
               </label>
             )}
 
-            {/* STEP 3 — uniforme */}
-            {step === 3 && (
+            {/* STEP 4 — uniforme */}
+            {step === 4 && (
               <div className="space-y-3">
-                {!hasUniforms ? (
+                {!club ? (
                   <p className="text-sm text-muted-foreground">
-                    Nenhum uniforme cadastrado para este clube. Você pode pular este passo.
+                    Nenhum time selecionado — a imagem será gerada sem uniforme.
+                    Volte ao passo "Time" para escolher um clube.
                   </p>
+                ) : !hasUniforms ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Nenhum uniforme cadastrado para "{club.name}". Você pode
+                      pular este passo ou adicionar um uniforme agora.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setClubDialogEditing(club);
+                        setClubDialogOpen(true);
+                      }}
+                      data-testid="button-add-uniform"
+                    >
+                      <Plus className="size-4" /> Adicionar uniforme
+                    </Button>
+                  </div>
                 ) : (
                   <>
                     <p className="text-sm text-muted-foreground">
@@ -630,13 +856,24 @@ export default function GeneratePage() {
                         </button>
                       ))}
                     </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setClubDialogEditing(club!);
+                        setClubDialogOpen(true);
+                      }}
+                      data-testid="button-add-uniform"
+                    >
+                      <Plus className="size-4" /> Adicionar uniforme
+                    </Button>
                   </>
                 )}
               </div>
             )}
 
-            {/* STEP 4 — referência */}
-            {step === 4 && (
+            {/* STEP 5 — referência */}
+            {step === 5 && (
               <div className="space-y-3">
                 {(references.data?.length ?? 0) === 0 ? (
                   <div className="rounded-md border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
@@ -669,8 +906,8 @@ export default function GeneratePage() {
               </div>
             )}
 
-            {/* STEP 5 — métricas */}
-            {step === 5 && (
+            {/* STEP 6 — métricas */}
+            {step === 6 && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-muted-foreground">
@@ -800,8 +1037,19 @@ export default function GeneratePage() {
         <p className="mt-3 text-center text-xs text-muted-foreground">
           Aluno: <span className="font-medium text-foreground">{student.name}</span>
           {" · "}WhatsApp: {storedToMasked(student.whatsapp)}
+          {" · "}Time:{" "}
+          <span className="font-medium text-foreground">
+            {club?.name ?? "Sem time"}
+          </span>
         </p>
       )}
+
+      <ClubFormDialog
+        open={clubDialogOpen}
+        onOpenChange={setClubDialogOpen}
+        club={clubDialogEditing}
+        onSaved={onClubSaved}
+      />
     </div>
   );
 }
@@ -809,6 +1057,7 @@ export default function GeneratePage() {
 function stepTitle(step: number): string {
   return [
     "Selecionar aluno e foto",
+    "Escolher time (clube)",
     "Exibir brasão do clube?",
     "Incluir logo R9",
     "Escolher uniforme (opcional)",

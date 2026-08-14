@@ -38,9 +38,11 @@ interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   club: Club | null;
+  /** Chamado com o clube criado/atualizado após salvar com sucesso. */
+  onSaved?: (club: Club) => void;
 }
 
-export function ClubFormDialog({ open, onOpenChange, club }: Props) {
+export function ClubFormDialog({ open, onOpenChange, club, onSaved }: Props) {
   const create = useCreateClub();
   const update = useUpdateClub();
   const [logo, setLogo] = useState<StoredImage[]>([]);
@@ -78,14 +80,16 @@ export function ClubFormDialog({ open, onOpenChange, club }: Props) {
       colors: colors.slice(0, 3),
     };
     try {
+      let saved: Club;
       if (club) {
-        await update.mutateAsync({ id: club.id, patch: payload });
+        saved = await update.mutateAsync({ id: club.id, patch: payload });
         toast({ title: "Clube atualizado", description: values.name });
       } else {
-        await create.mutateAsync(payload);
+        saved = await create.mutateAsync(payload);
         toast({ title: "Clube cadastrado", description: values.name });
       }
       onOpenChange(false);
+      onSaved?.(saved);
     } catch (err) {
       toast({
         variant: "destructive",
