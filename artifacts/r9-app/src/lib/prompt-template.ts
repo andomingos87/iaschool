@@ -1,7 +1,9 @@
 // Motor de template do prompt de geração.
 // O template usa placeholders {{nome}} e blocos condicionais
-// {{#bloco}}...{{/bloco}} que só entram no prompt final quando o dado existe.
-// O template padrão abaixo equivale exatamente ao prompt fixo original.
+// {{#bloco}}...{{/bloco}} que só entram no prompt final quando o dado existe,
+// e blocos invertidos {{^bloco}}...{{/bloco}} que entram quando o dado ESTÁ
+// ausente/vazio. O template padrão abaixo equivale exatamente ao prompt fixo
+// original.
 
 import type { GenerationRequest } from "./data/types";
 
@@ -30,9 +32,11 @@ export const PLACEHOLDER_DOCS: Array<{ token: string; description: string }> = [
   { token: "{{#metricas}}...{{/metricas}}", description: "Bloco: só entra se houver métricas" },
   { token: "{{#brasao}}...{{/brasao}}", description: "Bloco: só entra se o brasão for exibido" },
   { token: "{{#cores_clube}}...{{/cores_clube}}", description: "Bloco: só entra se o clube tiver cores" },
+  { token: "{{^cores_clube}}...{{/cores_clube}}", description: "Bloco invertido: só entra se o clube NÃO tiver cores" },
   { token: "{{#uniforme}}...{{/uniforme}}", description: "Bloco: só entra se um uniforme foi escolhido" },
   { token: "{{#logo_r9}}...{{/logo_r9}}", description: "Bloco: só entra se o logo R9 estiver habilitado" },
   { token: "{{#prompt_auxiliar}}...{{/prompt_auxiliar}}", description: "Bloco: só entra se houver instruções extras" },
+  { token: "{{^nome}}...{{/nome}}", description: "Bloco invertido: só entra quando a condição do bloco NÃO está ativa" },
 ];
 
 /** Placeholders simples reconhecidos pelo motor. */
@@ -45,7 +49,7 @@ export const KNOWN_PLACEHOLDERS = [
   "prompt_auxiliar",
 ] as const;
 
-/** Blocos condicionais reconhecidos pelo motor. */
+/** Blocos condicionais reconhecidos pelo motor (normais e invertidos). */
 export const KNOWN_BLOCKS = [
   "posicao",
   "metricas",
@@ -79,6 +83,7 @@ export interface TemplateWarning {
  *   fica como texto literal no prompt
  * - sintaxe inválida ({{ nome }}, {{Nome-Aluno}}) — o motor ignora e o trecho
  *   fica como texto literal no prompt
+ * Blocos invertidos {{^nome}}...{{/nome}} são aceitos para nomes conhecidos.
  */
 export function validatePromptTemplate(template: string): TemplateWarning[] {
   const warnings: TemplateWarning[] = [];
@@ -101,8 +106,9 @@ export function validatePromptTemplate(template: string): TemplateWarning[] {
 
   // 1) Tokeniza qualquer construção {{...}} (válida ou não) na ordem em que
   //    aparece, classificando com a mesma gramática do renderer.
+  //    "open_inv" representa blocos invertidos {{^nome}}.
   type Token =
-    | { kind: "open" | "close"; name: string; raw: string; start: number; end: number }
+    | { kind: "open" | "open_inv" | "close"; name: string; raw: string; start: number; end: number }
     | { kind: "placeholder"; name: string; raw: string; start: number; end: number }
     | { kind: "invalid"; raw: string; start: number; end: number };
   const tokens: Token[] = [];
@@ -119,6 +125,8 @@ export function validatePromptTemplate(template: string): TemplateWarning[] {
       residue.slice(0, start) + " ".repeat(raw.length) + residue.slice(end);
     if (/^#[a-z0-9_]+$/.test(inner)) {
       tokens.push({ kind: "open", name: inner.slice(1), raw, start, end });
+    } else if (/^\^[a-z0-9_]+$/.test(inner)) {
+      tokens.push({ kind: "open_inv", name: inner.slice(1), raw, start, end });
     } else if (/^\/[a-z0-9_]+$/.test(inner)) {
       tokens.push({ kind: "close", name: inner.slice(1), raw, start, end });
     } else if (/^[a-z0-9_]+$/.test(inner)) {
@@ -154,7 +162,8 @@ export function validatePromptTemplate(template: string): TemplateWarning[] {
 
   // 3) Valida nomes e o pareamento/ordem dos blocos.
   //    O renderer não suporta aninhamento, então bloco dentro de bloco também
-  //    gera aviso.
+  //    gera aviso. Blocos normais (open) e invertidos (open_inv) usam o mesmo
+  //    fechamento {{/nome}} e compartilham a pilha.
   const stack: Array<{ name: string; start: number; end: number }> = [];
   for (const t of tokens) {
     if (t.kind === "placeholder") {
@@ -173,11 +182,12 @@ export function validatePromptTemplate(template: string): TemplateWarning[] {
         t.start,
         t.end,
       );
-    } else if (t.kind === "open") {
+    } else if (t.kind === "open" || t.kind === "open_inv") {
       if (!knownBlocks.has(t.name)) {
+        const kindLabel = t.kind === "open_inv" ? "invertido" : "";
         add(
           t.raw,
-          `Bloco desconhecido — "${t.name}" não está na lista de blocos disponíveis.`,
+          `Bloco ${kindLabel ? kindLabel + " " : ""}desconhecido — "${t.name}" não está na lista de blocos disponíveis.`,
           t.start,
           t.end,
         );
@@ -205,7 +215,7 @@ export function validatePromptTemplate(template: string): TemplateWarning[] {
       if (idx === -1) {
         add(
           t.raw,
-          `Fechamento sem abertura — falta {{#${t.name}}}; a tag ficará como texto literal no prompt.`,
+          `Fechamento sem abertura — falta {{#${t.name}}} ou {{^${t.name}}}; a tag ficará como texto literal no prompt.`,
           t.start,
           t.end,
         );
@@ -247,7 +257,9 @@ export function contextFromRequest(request: GenerationRequest): PromptContext {
     .map((m) => `${m.name}: ${m.value}`)
     .join(", ");
   const showBrasao = request.showClubLogo && !!request.club;
-  const cores = showBrasao ? (request.club?.colors ?? []).join(", ") : "";
+  // cores_clube é desacoplado do brasão: disponível sempre que o clube tiver
+  // cores cadastradas, independentemente da opção de exibir o brasão.
+  const clubColors = (request.club?.colors ?? []).join(", ");
   const auxiliar = request.auxiliaryPrompt?.trim() ?? "";
   return {
     values: {
@@ -255,14 +267,15 @@ export function contextFromRequest(request: GenerationRequest): PromptContext {
       posicao: request.student.position ?? "",
       metricas,
       nome_clube: request.club?.name ?? "",
-      cores_clube: cores,
+      cores_clube: clubColors,
       prompt_auxiliar: auxiliar,
     },
     flags: {
       posicao: !!request.student.position,
       metricas: request.metrics.length > 0,
       brasao: showBrasao,
-      cores_clube: showBrasao && cores.length > 0,
+      // Ativo quando há clube com pelo menos uma cor cadastrada.
+      cores_clube: !!request.club && clubColors.length > 0,
       uniforme: !!request.uniform,
       logo_r9: request.includeR9Logo,
       prompt_auxiliar: auxiliar.length > 0,
@@ -293,14 +306,20 @@ export const SAMPLE_CONTEXT: PromptContext = {
 
 /**
  * Renderiza o template: resolve blocos condicionais {{#x}}...{{/x}},
- * substitui placeholders {{x}} e normaliza espaços em branco.
+ * blocos invertidos {{^x}}...{{/x}}, substitui placeholders {{x}} e
+ * normaliza espaços em branco.
  */
 export function renderPromptTemplate(
   template: string,
   ctx: PromptContext,
 ): string {
   let out = template;
-  // Blocos condicionais (sem aninhamento — suficiente para o caso de uso).
+  // Blocos invertidos: rendem o corpo quando a flag está ausente/falsa.
+  out = out.replace(
+    /\{\{\^([a-z0-9_]+)\}\}([\s\S]*?)\{\{\/\1\}\}/g,
+    (_all, name: string, body: string) => (!ctx.flags[name] ? body : ""),
+  );
+  // Blocos condicionais normais (sem aninhamento — suficiente para o caso de uso).
   out = out.replace(
     /\{\{#([a-z0-9_]+)\}\}([\s\S]*?)\{\{\/\1\}\}/g,
     (_all, name: string, body: string) => (ctx.flags[name] ? body : ""),

@@ -1,13 +1,44 @@
-// Testes do validador do template do prompt (tela /admin/prompt).
+// Testes do validador e renderizador do template do prompt (tela /admin/prompt).
 // A validação deve espelhar exatamente a gramática de renderPromptTemplate.
 
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PROMPT_TEMPLATE,
+  PLACEHOLDER_DOCS,
   SAMPLE_CONTEXT,
+  contextFromRequest,
   renderPromptTemplate,
   validatePromptTemplate,
 } from "./prompt-template";
+import type { GenerationRequest } from "./data/types";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Cria um GenerationRequest mínimo válido para testes de contextFromRequest. */
+function makeRequest(
+  overrides: Partial<GenerationRequest> = {},
+): GenerationRequest {
+  return {
+    student: { id: "s1", name: "João", schoolId: "sc1", createdAt: "" },
+    studentPhoto: { url: "foto.jpg", path: "foto.jpg" },
+    showClubLogo: false,
+    includeR9Logo: false,
+    reference: {
+      id: "r1",
+      image: { url: "ref.jpg", path: "ref.jpg" },
+      uploadedBy: "u1",
+      createdAt: "",
+    },
+    metrics: [],
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// validatePromptTemplate — suite original
+// ---------------------------------------------------------------------------
 
 describe("validatePromptTemplate", () => {
   it("não gera avisos para o template padrão", () => {
@@ -152,5 +183,340 @@ describe("validatePromptTemplate", () => {
     expect(renderPromptTemplate("{{#posicao}}oi", SAMPLE_CONTEXT)).toBe(
       "{{#posicao}}oi",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validatePromptTemplate — blocos invertidos
+// ---------------------------------------------------------------------------
+
+describe("validatePromptTemplate — blocos invertidos", () => {
+  it("não gera aviso para bloco invertido com nome conhecido", () => {
+    expect(
+      validatePromptTemplate("{{^cores_clube}}sem cores{{/cores_clube}}"),
+    ).toEqual([]);
+  });
+
+  it("não gera aviso para múltiplas ocorrências do mesmo bloco invertido", () => {
+    expect(
+      validatePromptTemplate(
+        "{{^posicao}}sem posição{{/posicao}} {{^posicao}}repetido{{/posicao}}",
+      ),
+    ).toEqual([]);
+  });
+
+  it("avisa sobre bloco invertido com nome desconhecido", () => {
+    const w = validatePromptTemplate("{{^xpto}}texto{{/xpto}}");
+    // Deve avisar para o abre e para o fecha (bloco desconhecido).
+    expect(w.length).toBeGreaterThanOrEqual(1);
+    expect(w.some((x) => /desconhecido/i.test(x.message))).toBe(true);
+  });
+
+  it("avisa sobre bloco invertido aberto sem fechamento", () => {
+    const w = validatePromptTemplate("{{^posicao}} sem fim");
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toMatch(/sem fechamento/i);
+  });
+
+  it("avisa sobre fechamento sem abertura correspondente (invertido)", () => {
+    const w = validatePromptTemplate("fim {{/cores_clube}}");
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toMatch(/sem abertura/i);
+  });
+
+  it("avisa sobre bloco invertido aninhado dentro de outro bloco", () => {
+    const w = validatePromptTemplate(
+      "{{#posicao}}{{^metricas}}x{{/metricas}}{{/posicao}}",
+    );
+    expect(w.some((x) => /aninhado/i.test(x.message))).toBe(true);
+  });
+
+  it("bloco invertido ativo quando flag é false/ausente", () => {
+    const ctx = { values: {}, flags: { cores_clube: false } };
+    expect(
+      renderPromptTemplate("{{^cores_clube}}sem cores{{/cores_clube}}", ctx),
+    ).toBe("sem cores");
+  });
+
+  it("bloco invertido inativo quando flag é true", () => {
+    const ctx = { values: {}, flags: { cores_clube: true } };
+    expect(
+      renderPromptTemplate("{{^cores_clube}}sem cores{{/cores_clube}}", ctx),
+    ).toBe("");
+  });
+
+  it("bloco invertido com flag ausente no contexto renderiza o corpo", () => {
+    // flag não definida → falsy → bloco invertido ativo
+    expect(
+      renderPromptTemplate("{{^uniforme}}sem uniforme{{/uniforme}}", {
+        values: {},
+        flags: {},
+      }),
+    ).toBe("sem uniforme");
+  });
+
+  it("bloco normal e invertido do mesmo nome funcionam juntos", () => {
+    const tplComCores =
+      "{{#cores_clube}}com cores{{/cores_clube}}{{^cores_clube}}sem cores{{/cores_clube}}";
+    expect(
+      renderPromptTemplate(tplComCores, { values: {}, flags: { cores_clube: true } }),
+    ).toBe("com cores");
+    expect(
+      renderPromptTemplate(tplComCores, { values: {}, flags: { cores_clube: false } }),
+    ).toBe("sem cores");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderPromptTemplate — blocos invertidos
+// ---------------------------------------------------------------------------
+
+describe("renderPromptTemplate — blocos invertidos", () => {
+  it("renderiza bloco invertido apenas quando flag está ausente/falsa", () => {
+    const tpl = "A{{^brasao}}SEM BRASÃO{{/brasao}}B";
+    expect(renderPromptTemplate(tpl, { values: {}, flags: { brasao: false } })).toBe(
+      "ASEM BRASÃOB",
+    );
+    expect(renderPromptTemplate(tpl, { values: {}, flags: { brasao: true } })).toBe(
+      "AB",
+    );
+  });
+
+  it("bloco invertido sem fechamento permanece literal", () => {
+    expect(
+      renderPromptTemplate("{{^posicao}}sem fim", { values: {}, flags: {} }),
+    ).toBe("{{^posicao}}sem fim");
+  });
+
+  it("múltiplos blocos invertidos diferentes são processados independentemente", () => {
+    const tpl =
+      "{{^posicao}}Posição desconhecida. {{/posicao}}{{^metricas}}Sem métricas. {{/metricas}}";
+    expect(
+      renderPromptTemplate(tpl, {
+        values: {},
+        flags: { posicao: false, metricas: true },
+      }),
+    ).toBe("Posição desconhecida.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// contextFromRequest — cores desacopladas do brasão
+// ---------------------------------------------------------------------------
+
+describe("contextFromRequest — cores_clube desacoplado do brasão", () => {
+  const clubComCores = {
+    id: "c1",
+    name: "Clube Teste",
+    colors: ["#ff0000", "#0000ff"],
+    uniforms: [],
+    createdAt: "",
+    updatedAt: "",
+  };
+
+  it("cores_clube ativo quando clube tem cores e brasão está ligado", () => {
+    const ctx = contextFromRequest(
+      makeRequest({ club: clubComCores, showClubLogo: true }),
+    );
+    expect(ctx.flags.cores_clube).toBe(true);
+    expect(ctx.values.cores_clube).toBe("#ff0000, #0000ff");
+    expect(ctx.flags.brasao).toBe(true);
+  });
+
+  it("cores_clube ativo mesmo quando brasão está desligado", () => {
+    const ctx = contextFromRequest(
+      makeRequest({ club: clubComCores, showClubLogo: false }),
+    );
+    expect(ctx.flags.cores_clube).toBe(true);
+    expect(ctx.values.cores_clube).toBe("#ff0000, #0000ff");
+    expect(ctx.flags.brasao).toBe(false);
+  });
+
+  it("cores_clube inativo quando não há clube", () => {
+    const ctx = contextFromRequest(
+      makeRequest({ club: undefined, showClubLogo: false }),
+    );
+    expect(ctx.flags.cores_clube).toBe(false);
+    expect(ctx.values.cores_clube).toBe("");
+  });
+
+  it("cores_clube inativo quando clube não tem cores cadastradas", () => {
+    const clubSemCores = { ...clubComCores, colors: [] };
+    const ctx = contextFromRequest(
+      makeRequest({ club: clubSemCores, showClubLogo: true }),
+    );
+    expect(ctx.flags.cores_clube).toBe(false);
+    expect(ctx.values.cores_clube).toBe("");
+  });
+
+  it("brasao segue showClubLogo independentemente das cores", () => {
+    // brasão ligado, sem cores → brasao=true, cores_clube=false
+    const clubSemCores = { ...clubComCores, colors: [] };
+    const ctxBrasaoSemCores = contextFromRequest(
+      makeRequest({ club: clubSemCores, showClubLogo: true }),
+    );
+    expect(ctxBrasaoSemCores.flags.brasao).toBe(true);
+    expect(ctxBrasaoSemCores.flags.cores_clube).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Prompt do admin (caso real) — valida e renderiza sem erro
+// ---------------------------------------------------------------------------
+
+const ADMIN_PROMPT_NOVO = `TAREFA
+Gerar uma arte de post de Instagram, formato quadrado, para uma escolinha de
+futebol, destacando um aluno e suas estatísticas.
+
+IMAGENS ENVIADAS
+As imagens chegam nesta ordem exata. Cada uma serve APENAS ao papel indicado.
+1. REFERÊNCIA DE ESTILO — a arte de post já pronta. Use somente como guia de
+   layout, tipografia, tratamento de cor e clima.
+2. FOTO DO ALUNO — a fotografia do atleta. Este é o sujeito principal da arte.
+As imagens seguintes, na ordem em que foram enviadas, são:
+{{#brasao}}
+- BRASÃO DO CLUBE — escudo/emblema do {{nome_clube}}, geralmente em fundo
+  transparente ou chapado. Reproduza fielmente: não redesenhe formas, letras
+  nem cores.
+{{/brasao}}
+{{#uniforme}}
+- UNIFORME DO CLUBE — peça de vestuário esportivo (camisa/kit), fotografada ou
+  em mockup. Vista o aluno com este uniforme, respeitando cores, faixas, gola e
+  detalhes. Não invente patrocínio, número nem nome nas costas.
+{{/uniforme}}
+{{#logo_r9}}
+- LOGOTIPO DA MARCA — logotipo R9 / IAsport. Reproduza fielmente como selo de
+  marca, sem redesenhar.
+{{/logo_r9}}
+Não existem outras imagens além destas. Não presuma imagens ausentes.
+
+IDENTIDADE (prioridade máxima, acima de qualquer outra instrução)
+Preserve fielmente o rosto, a estrutura facial, o tom de pele, o cabelo, a idade
+aparente e o biotipo do aluno exatamente como na FOTO DO ALUNO. Não substitua
+por um modelo genérico, não embeleze, não envelheça nem rejuvenesça. Recorte o
+aluno e reintegre-o à composição com iluminação, sombra e contato de solo
+coerentes com a cena.
+
+ESTILO
+Da REFERÊNCIA DE ESTILO, siga: grid e layout, hierarquia visual, tipografia
+(família, peso, caixa, inclinação), tratamento de cor, texturas de fundo,
+efeitos de luz e clima geral.
+Copie a LINGUAGEM VISUAL, nunca o CONTEÚDO: ignore o rosto, o nome, os números e
+qualquer texto presentes nela. Nenhuma pessoa da REFERÊNCIA pode aparecer na
+arte final.
+
+TEXTOS
+Renderize exatamente como escrito, caractere por caractere, com acentuação
+correta do português do Brasil. Não acrescente nenhum texto além destes:
+- Nome do atleta: "{{nome_aluno}}"
+{{#posicao}}- Posição: "{{posicao}}"{{/posicao}}
+{{#metricas}}- Estatísticas, cada uma com o número grande e o rótulo menor
+  acompanhando: {{metricas}}{{/metricas}}
+{{#logo_r9}}- Assinatura de marca: "R9 ESCOLINHAS"{{/logo_r9}}
+
+COMPOSIÇÃO
+Hierarquia visual, do mais para o menos proeminente:
+1) o aluno  2) o nome  3) os valores das estatísticas  4) elementos de marca.
+{{#brasao}}Brasão: pequeno e integrado ao layout (canto superior ou junto ao
+nome), nítido, sem competir com o rosto do aluno.{{/brasao}}
+{{#logo_r9}}Marca R9 ESCOLINHAS: selo pequeno no rodapé, legível, nunca
+cortado.{{/logo_r9}}
+Margem de segurança de 6% em todas as bordas — nenhum texto, número ou logo pode
+encostar na borda ou ser cortado.
+
+PALETA
+{{#cores_clube}}Cores oficiais do clube: {{cores_clube}}. Aplique-as em elementos
+gráficos (faixas, blocos, brilhos, destaque numérico), mantendo contraste alto e
+texto sempre legível.{{/cores_clube}}
+{{^cores_clube}}Siga a paleta da REFERÊNCIA DE ESTILO.{{/cores_clube}}
+
+{{#prompt_auxiliar}}
+AJUSTES DESTA GERAÇÃO
+{{prompt_auxiliar}}
+Estes ajustes não podem violar as regras de IDENTIDADE, TEXTOS e RESTRIÇÕES.
+{{/prompt_auxiliar}}
+
+RESTRIÇÕES
+- Não invente números, nomes, datas, patrocinadores, hashtags, @ ou frases soltas.
+- Não escreva palavras em outro idioma nem letras sem significado.
+- Não reproduza logos de clubes profissionais, ligas ou marcas esportivas reais.
+- Não crie moldura, borda de foto, marca d'água, legenda ou interface de app.
+- Não duplique o aluno nem crie um segundo rosto na cena.
+- Não deforme mãos, orelhas, dentes ou o brasão.`;
+
+describe("Prompt novo do admin", () => {
+  it("valida sem nenhum aviso", () => {
+    expect(validatePromptTemplate(ADMIN_PROMPT_NOVO)).toEqual([]);
+  });
+
+  it("renderiza com clube+cores+brasão+uniforme+logo+posição+métricas+instruções (tudo ativo)", () => {
+    const rendered = renderPromptTemplate(ADMIN_PROMPT_NOVO, SAMPLE_CONTEXT);
+    expect(rendered).toContain("JOÃO DA SILVA");
+    expect(rendered).toContain("Atacante");
+    expect(rendered).toContain("Gols: 12");
+    // bloco normal de cores ativo → menciona as cores
+    expect(rendered).toContain("#39ff14");
+    // bloco invertido de cores inativo → "Siga a paleta" não aparece
+    expect(rendered).not.toContain("Siga a paleta");
+  });
+
+  it("renderiza sem clube: bloco invertido de cores ativo → 'Siga a paleta'", () => {
+    const ctxSemCores = {
+      ...SAMPLE_CONTEXT,
+      flags: { ...SAMPLE_CONTEXT.flags, cores_clube: false },
+    };
+    const rendered = renderPromptTemplate(ADMIN_PROMPT_NOVO, ctxSemCores);
+    expect(rendered).toContain("Siga a paleta");
+    expect(rendered).not.toContain("#39ff14");
+  });
+
+  it("renderiza sem brasão: bloco brasão excluído", () => {
+    const ctxSemBrasao = {
+      ...SAMPLE_CONTEXT,
+      flags: { ...SAMPLE_CONTEXT.flags, brasao: false },
+    };
+    const rendered = renderPromptTemplate(ADMIN_PROMPT_NOVO, ctxSemBrasao);
+    expect(rendered).not.toContain("BRASÃO DO CLUBE");
+    expect(rendered).not.toContain("Brasão: pequeno");
+  });
+
+  it("renderiza sem posição nem métricas: blocos excluídos", () => {
+    const ctx = {
+      ...SAMPLE_CONTEXT,
+      flags: { ...SAMPLE_CONTEXT.flags, posicao: false, metricas: false },
+    };
+    const rendered = renderPromptTemplate(ADMIN_PROMPT_NOVO, ctx);
+    expect(rendered).not.toContain("Posição");
+    expect(rendered).not.toContain("Estatísticas");
+  });
+
+  it("renderiza sem instruções adicionais: bloco prompt_auxiliar excluído", () => {
+    const ctx = {
+      ...SAMPLE_CONTEXT,
+      flags: { ...SAMPLE_CONTEXT.flags, prompt_auxiliar: false },
+    };
+    const rendered = renderPromptTemplate(ADMIN_PROMPT_NOVO, ctx);
+    expect(rendered).not.toContain("AJUSTES");
+  });
+
+  it("renderiza sem logo R9: bloco logo_r9 excluído", () => {
+    const ctx = {
+      ...SAMPLE_CONTEXT,
+      flags: { ...SAMPLE_CONTEXT.flags, logo_r9: false },
+    };
+    const rendered = renderPromptTemplate(ADMIN_PROMPT_NOVO, ctx);
+    expect(rendered).not.toContain("LOGOTIPO DA MARCA");
+    expect(rendered).not.toContain("R9 ESCOLINHAS");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PLACEHOLDER_DOCS menciona a sintaxe {{^...}}
+// ---------------------------------------------------------------------------
+
+describe("PLACEHOLDER_DOCS", () => {
+  it("documenta a sintaxe de bloco invertido", () => {
+    const texts = PLACEHOLDER_DOCS.map((d) => d.token + " " + d.description).join(" ");
+    expect(texts).toMatch(/\{\{\^/);
   });
 });
