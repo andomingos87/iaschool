@@ -37,6 +37,7 @@ export async function requireSupabaseUser(
     const hasOpenAI = Boolean(process.env["OPENAI_API_KEY"]);
     if (hasOpenAI) {
       res.status(503).json({
+        code: "supabase_config_missing",
         error:
           "Configuração incompleta: SUPABASE_URL e SUPABASE_ANON_KEY são necessárias para usar a geração de imagens.",
       });
@@ -134,8 +135,27 @@ export async function requireSupabaseUser(
     req.supabaseUserId = user.id;
     next();
   } catch (err) {
-    req.log.error({ err }, "Falha ao validar sessão Supabase");
+    // Distinguir timeout (AbortSignal de 10 s) de outras falhas de rede, tanto
+    // no log (diagnóstico) quanto no código enviado ao cliente.
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === "TimeoutError" || err.name === "AbortError");
+    const code = isTimeout ? "supabase_timeout" : "supabase_unavailable";
+    req.log.error(
+      {
+        err,
+        code,
+        errName: err instanceof Error ? err.name : typeof err,
+        timeoutMs: isTimeout ? 10_000 : undefined,
+        supabaseUrl: config.url,
+        path: req.path,
+      },
+      isTimeout
+        ? "Timeout ao validar sessão Supabase (10 s)"
+        : "Falha ao validar sessão Supabase",
+    );
     res.status(503).json({
+      code,
       error: "Não foi possível validar sua sessão agora. Tente novamente.",
     });
   }
