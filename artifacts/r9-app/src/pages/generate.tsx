@@ -53,6 +53,9 @@ import { useClubs } from "@/hooks/use-clubs";
 import { useReferences } from "@/hooks/use-references";
 import { useMetrics } from "@/hooks/use-metrics";
 import { useCreateGeneratedPost } from "@/hooks/use-generated-posts";
+import { useGenerationQuota } from "@/hooks/use-generation-quota";
+import { useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
 import { initials, storedToMasked } from "@/lib/format";
 import {
   AUX_PROMPT_PREFILL_EVENT,
@@ -77,6 +80,8 @@ export default function GeneratePage() {
   const references = useReferences();
   const metrics = useMetrics();
   const createPost = useCreateGeneratedPost();
+  const quota = useGenerationQuota();
+  const queryClient = useQueryClient();
 
   const [phase, setPhase] = useState<Phase>("form");
   const [step, setStep] = useState(0);
@@ -237,6 +242,8 @@ export default function GeneratePage() {
       setResultUrl(imageUrl);
       setResultDetails(details);
       setPhase("result");
+      // O saldo diário mudou — atualiza o indicador na próxima visita ao form.
+      void queryClient.invalidateQueries({ queryKey: qk.generationQuota });
       // Se salvar no histórico falhar, a imagem gerada continua visível.
       try {
         // Persiste a imagem no Storage (bucket "generated") em vez de gravar
@@ -272,6 +279,8 @@ export default function GeneratePage() {
     } catch (err) {
       setPhase("form");
       setUploadProgress(null);
+      // Mesmo em falha a cota pode ter sido consumida — atualiza o saldo.
+      void queryClient.invalidateQueries({ queryKey: qk.generationQuota });
       toast({
         variant: "destructive",
         title: "Falha na geração",
@@ -751,13 +760,36 @@ export default function GeneratePage() {
                 Continuar <ArrowRight className="size-4" />
               </Button>
             ) : (
-              <Button
-                onClick={generate}
-                disabled={!canAdvance(step) || !reference}
-                data-testid="button-wizard-generate"
-              >
-                <Sparkles className="size-4" /> Gerar imagem
-              </Button>
+              <div className="flex flex-col items-end gap-1.5">
+                <Button
+                  onClick={generate}
+                  disabled={
+                    !canAdvance(step) || !reference || quota.data?.remaining === 0
+                  }
+                  data-testid="button-wizard-generate"
+                >
+                  <Sparkles className="size-4" /> Gerar imagem
+                </Button>
+                {quota.data && (
+                  <p
+                    className={cn(
+                      "text-xs",
+                      quota.data.remaining === 0
+                        ? "font-medium text-destructive"
+                        : quota.data.remaining <= Math.max(3, Math.ceil(quota.data.limit * 0.1))
+                          ? "font-medium text-amber-500"
+                          : "text-muted-foreground",
+                    )}
+                    data-testid="text-quota-restante"
+                  >
+                    {quota.data.remaining === 0
+                      ? "Cota diária esgotada — tente novamente amanhã."
+                      : quota.data.remaining <= Math.max(3, Math.ceil(quota.data.limit * 0.1))
+                        ? `Atenção: só ${quota.data.remaining === 1 ? "resta 1 geração" : `restam ${quota.data.remaining} gerações`} hoje.`
+                        : `${quota.data.remaining} de ${quota.data.limit} gerações restantes hoje`}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </CardContent>

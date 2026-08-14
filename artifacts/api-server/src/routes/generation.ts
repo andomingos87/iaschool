@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import multer from "multer";
 import OpenAI, { toFile } from "openai";
 import { requireSupabaseUser } from "../middlewares/supabase-auth";
-import { consumeDailyQuota } from "../lib/generation-quota";
+import { consumeDailyQuota, getDailyQuotaUsage } from "../lib/generation-quota";
 
 // Geração da arte de post (R9 Escolinhas) com a OpenAI GPT Image.
 // A chave OPENAI_API_KEY fica somente no backend — nunca no navegador.
@@ -67,17 +67,6 @@ const upload = multer({
     cb(null, true);
   },
 });
-
-router.post(
-  "/generation/post-image",
-  requireSupabaseUser,
-  (req, res, next) => {
-    upload.array("images", MAX_IMAGES)(req, res, (err: unknown) => {
-      if (!err) {
-        next();
-        return;
-      }
-      if (err instanceof multer.MulterError) {
         const messages: Record<string, string> = {
           LIMIT_FILE_SIZE: "Imagem muito grande (máx. 8 MB por imagem).",
           LIMIT_FILE_COUNT: `No máximo ${MAX_IMAGES} imagens por geração.`,
@@ -237,6 +226,8 @@ router.post(
           : "Erro inesperado na geração.";
     const status =
       err instanceof OpenAI.APIError && err.status ? err.status : 500;
+
+  const used = Math.min(status.used, DAILY_MAX_REQUESTS);
     res.status(status >= 400 && status < 600 ? status : 500).json({
       error: message,
     });

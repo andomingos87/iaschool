@@ -14,4 +14,5 @@ export const qk = {
   linkableStudentAccounts: ["linkable-student-accounts"] as const,
   linkedStudentRecordIds: ["linked-student-record-ids"] as const,
   linkedStudentAccounts: ["linked-student-accounts"] as const,
+  generationQuota: ["generation-quota"] as const,
 };

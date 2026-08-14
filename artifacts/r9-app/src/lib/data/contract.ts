@@ -137,8 +137,21 @@ export interface ImageGenerationService {
     request: GenerationRequest,
     onUploadProgress?: (percent: number) => void,
   ): Promise<{ imageUrl: string; details: GenerationDetails }>;
+
+  /**
+   * Saldo da cota diária de gerações do usuário. Retorna `null` quando o
+   * saldo não está disponível (banco de cota fora do ar, modo dev sem
+   * autenticação) — a UI deve simplesmente omitir o indicador nesse caso.
+   */
+  getQuota(): Promise<GenerationQuota | null>;
 }
 
+/** Saldo da cota diária de gerações (por usuário, reinicia à meia-noite UTC). */
+export interface GenerationQuota {
+  limit: number;
+  used: number;
+  remaining: number;
+}
 /** Aprovação de cadastros pendentes — apenas super_admin. */
 export interface ApprovalRepository {
   listPending(): Promise<PendingRegistration[]>;

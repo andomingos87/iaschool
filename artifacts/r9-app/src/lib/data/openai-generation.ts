@@ -2,7 +2,7 @@
 // Substitui o mock de canvas. A chave da OpenAI vive apenas no servidor.
 
 import imageCompression from "browser-image-compression";
-import type { ImageGenerationService } from "./contract";
+import type { GenerationQuota, ImageGenerationService } from "./contract";
 import type { GenerationPayloadImage } from "./types";
 import { buildGenerationPrompt } from "../prompt-template";
 
@@ -85,6 +85,32 @@ export function createOpenAIGenerationService(
   getTemplate?: () => Promise<string | null>,
 ): ImageGenerationService {
   return {
+    async getQuota(): Promise<GenerationQuota | null> {
+      const headers: Record<string, string> = {};
+      if (getAccessToken) {
+        const token = await getAccessToken();
+        if (!token) return null;
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      const res = await fetch("/api/generation/quota", { headers });
+      if (!res.ok) return null;
+      const body = (await res.json()) as {
+        available?: boolean;
+        limit?: number;
+        used?: number;
+        remaining?: number;
+      };
+      if (
+        !body.available ||
+        typeof body.limit !== "number" ||
+        typeof body.used !== "number" ||
+        typeof body.remaining !== "number"
+      ) {
+        return null;
+      }
+      return { limit: body.limit, used: body.used, remaining: body.remaining };
+    },
+
     async generate(request, onUploadProgress) {
       const files: File[] = [];
       // Metadados de cada imagem enviada (papel/nome/tamanho) — nunca bytes.

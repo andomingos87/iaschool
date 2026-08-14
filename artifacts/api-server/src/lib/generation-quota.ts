@@ -58,6 +58,55 @@ function quotaConfig(): { url: string; serviceKey: string } | null {
 }
 
 /**
+ * Consulta (sem consumir) quantas gerações o usuário já usou hoje.
+ * O dia é o mesmo do banco: `current_date` em UTC — por isso a data aqui
+ * também é calculada em UTC, para bater com consume_generation_quota().
+ */
+export async function getDailyQuotaUsage(userId: string): Promise<QuotaStatus> {
+  const config = quotaConfig();
+  if (!config) {
+    return {
+      kind: "unavailable",
+      reason:
+        "SUPABASE_SERVICE_ROLE_KEY (e SUPABASE_URL) não configuradas — cota diária persistida indisponível.",
+    };
+  }
+  const today = new Date().toISOString().slice(0, 10); // UTC, igual ao banco
+  try {
+    const resp = await fetch(
+      `${config.url}/rest/v1/generation_usage?select=count&user_id=eq.${encodeURIComponent(userId)}&day=eq.${today}`,
+      {
+        headers: {
+          apikey: config.serviceKey,
+          Authorization: `Bearer ${config.serviceKey}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      return {
+        kind: "unavailable",
+        reason: `Consulta a generation_usage falhou (HTTP ${resp.status}): ${body.slice(0, 300)}`,
+      };
+    }
+    const rows = (await resp.json()) as Array<{ count?: unknown }>;
+    const count = rows[0]?.count;
+    if (rows.length > 0 && typeof count !== "number") {
+      return {
+        kind: "unavailable",
+        reason: "generation_usage retornou valor inesperado.",
+      };
+    }
+    return { kind: "ok", used: typeof count === "number" ? count : 0 };
+  } catch (err) {
+    return {
+      kind: "unavailable",
+      reason: `Erro ao consultar generation_usage: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+/**
  * Consome 1 geração da cota diária do usuário no banco.
  * - "ok": consumo registrado (count = total do dia após o consumo)
  * - "exceeded": cota atingida — nada foi consumido
@@ -118,3 +167,7 @@ export async function consumeDailyQuota(
     );
   }
 }
+
+export type QuotaStatus =
+  | { kind: "ok"; used: number }
+  | { kind: "unavailable"; reason: string };
