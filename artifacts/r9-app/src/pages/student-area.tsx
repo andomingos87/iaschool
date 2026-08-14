@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { GraduationCap, ImageOff } from "lucide-react";
+import { Download, GraduationCap, ImageOff } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -7,8 +8,12 @@ import {
   CardTitle,
 } from "@workspace/iasport/components/ui/card";
 import { Badge } from "@workspace/iasport/components/ui/badge";
+import { Button } from "@workspace/iasport/components/ui/button";
 import { Spinner } from "@workspace/iasport/components/ui/spinner";
+import { toast } from "@workspace/iasport/hooks/use-toast";
 import { PageHeader } from "@/components/app-shell";
+import { ErrorState } from "@/components/data-state";
+import { ImageLightbox } from "@/components/image-lightbox";
 import { useAuth } from "@/hooks/use-auth";
 import { getDataLayer } from "@/lib/data";
 
@@ -20,6 +25,21 @@ function formatDate(iso: string) {
   });
 }
 
+/** Baixa a imagem do post (funciona com URLs assinadas e data URLs). */
+async function downloadImage(url: string, fileName: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Não foi possível baixar a imagem.");
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 /**
  * Área do aluno aprovado (somente visualização):
  * perfil (registro de aluno vinculado, se houver) + posts gerados sobre ele.
@@ -28,6 +48,26 @@ export default function StudentAreaPage() {
   const { session } = useAuth();
   const user = session?.user;
   const studentRecordId = user?.studentRecordId;
+  const [zoom, setZoom] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  async function handleDownload(post: { id: string; imageUrl: string; createdAt: string }) {
+    setDownloading(post.id);
+    try {
+      await downloadImage(
+        post.imageUrl,
+        `post-${post.createdAt.slice(0, 10)}-${post.id.slice(0, 8)}.png`,
+      );
+    } catch {
+      toast({
+        title: "Falha ao baixar",
+        description: "Não foi possível baixar a imagem. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   const studentQuery = useQuery({
     queryKey: ["student-record", studentRecordId],
@@ -129,6 +169,11 @@ export default function StudentAreaPage() {
           <div className="flex justify-center py-10">
             <Spinner className="size-8 text-primary" />
           </div>
+        ) : postsQuery.isError ? (
+          <ErrorState
+            message="Não foi possível carregar seus posts."
+            onRetry={() => void postsQuery.refetch()}
+          />
         ) : !postsQuery.data || postsQuery.data.length === 0 ? (
           <Card className="border-dashed border-border">
             <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
@@ -142,22 +187,46 @@ export default function StudentAreaPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {postsQuery.data.map((post) => (
               <Card key={post.id} className="overflow-hidden border-border">
-                <img
-                  src={post.imageUrl}
-                  alt="Post gerado"
-                  className="aspect-square w-full object-cover"
-                  loading="lazy"
-                />
-                <CardContent className="py-2">
+                <button
+                  type="button"
+                  onClick={() => setZoom(post.imageUrl)}
+                  className="block w-full cursor-zoom-in"
+                  data-testid={`button-zoom-post-${post.id}`}
+                >
+                  <img
+                    src={post.imageUrl}
+                    alt="Post gerado"
+                    className="aspect-square w-full object-cover"
+                    loading="lazy"
+                  />
+                </button>
+                <CardContent className="flex items-center justify-between py-2">
                   <p className="text-xs text-muted-foreground">
                     {formatDate(post.createdAt)}
                   </p>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    onClick={() => void handleDownload(post)}
+                    disabled={downloading === post.id}
+                    aria-label="Baixar imagem"
+                    data-testid={`button-download-post-${post.id}`}
+                  >
+                    {downloading === post.id ? (
+                      <Spinner className="size-4" />
+                    ) : (
+                      <Download className="size-4" />
+                    )}
+                  </Button>
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
       </div>
+
+      <ImageLightbox src={zoom} onClose={() => setZoom(null)} />
     </div>
   );
 }
