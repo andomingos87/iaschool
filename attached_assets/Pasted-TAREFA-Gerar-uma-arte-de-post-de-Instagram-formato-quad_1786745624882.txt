@@ -1,0 +1,79 @@
+TAREFA
+Gerar uma arte de post de Instagram, formato quadrado, para uma escolinha de
+futebol, destacando um aluno e suas estatísticas.
+
+IMAGENS ENVIADAS
+As imagens chegam nesta ordem exata. Cada uma serve APENAS ao papel indicado.
+1. REFERÊNCIA DE ESTILO — a arte de post já pronta. Use somente como guia de
+   layout, tipografia, tratamento de cor e clima.
+2. FOTO DO ALUNO — a fotografia do atleta. Este é o sujeito principal da arte.
+As imagens seguintes, na ordem em que foram enviadas, são:
+{{#brasao}}
+- BRASÃO DO CLUBE — escudo/emblema do {{nome_clube}}, geralmente em fundo
+  transparente ou chapado. Reproduza fielmente: não redesenhe formas, letras
+  nem cores.
+{{/brasao}}
+{{#uniforme}}
+- UNIFORME DO CLUBE — peça de vestuário esportivo (camisa/kit), fotografada ou
+  em mockup. Vista o aluno com este uniforme, respeitando cores, faixas, gola e
+  detalhes. Não invente patrocínio, número nem nome nas costas.
+{{/uniforme}}
+{{#logo_r9}}
+- LOGOTIPO DA MARCA — logotipo R9 / IAsport. Reproduza fielmente como selo de
+  marca, sem redesenhar.
+{{/logo_r9}}
+Não existem outras imagens além destas. Não presuma imagens ausentes.
+
+IDENTIDADE (prioridade máxima, acima de qualquer outra instrução)
+Preserve fielmente o rosto, a estrutura facial, o tom de pele, o cabelo, a idade
+aparente e o biotipo do aluno exatamente como na FOTO DO ALUNO. Não substitua
+por um modelo genérico, não embeleze, não envelheça nem rejuvenesça. Recorte o
+aluno e reintegre-o à composição com iluminação, sombra e contato de solo
+coerentes com a cena.
+
+ESTILO
+Da REFERÊNCIA DE ESTILO, siga: grid e layout, hierarquia visual, tipografia
+(família, peso, caixa, inclinação), tratamento de cor, texturas de fundo,
+efeitos de luz e clima geral.
+Copie a LINGUAGEM VISUAL, nunca o CONTEÚDO: ignore o rosto, o nome, os números e
+qualquer texto presentes nela. Nenhuma pessoa da REFERÊNCIA pode aparecer na
+arte final.
+
+TEXTOS
+Renderize exatamente como escrito, caractere por caractere, com acentuação
+correta do português do Brasil. Não acrescente nenhum texto além destes:
+- Nome do atleta: "{{nome_aluno}}"
+{{#posicao}}- Posição: "{{posicao}}"{{/posicao}}
+{{#metricas}}- Estatísticas, cada uma com o número grande e o rótulo menor
+  acompanhando: {{metricas}}{{/metricas}}
+{{#logo_r9}}- Assinatura de marca: "R9 ESCOLINHAS"{{/logo_r9}}
+
+COMPOSIÇÃO
+Hierarquia visual, do mais para o menos proeminente:
+1) o aluno  2) o nome  3) os valores das estatísticas  4) elementos de marca.
+{{#brasao}}Brasão: pequeno e integrado ao layout (canto superior ou junto ao
+nome), nítido, sem competir com o rosto do aluno.{{/brasao}}
+{{#logo_r9}}Marca R9 ESCOLINHAS: selo pequeno no rodapé, legível, nunca
+cortado.{{/logo_r9}}
+Margem de segurança de 6% em todas as bordas — nenhum texto, número ou logo pode
+encostar na borda ou ser cortado.
+
+PALETA
+{{#cores_clube}}Cores oficiais do clube: {{cores_clube}}. Aplique-as em elementos
+gráficos (faixas, blocos, brilhos, destaque numérico), mantendo contraste alto e
+texto sempre legível.{{/cores_clube}}
+{{^cores_clube}}Siga a paleta da REFERÊNCIA DE ESTILO.{{/cores_clube}}
+
+{{#prompt_auxiliar}}
+AJUSTES DESTA GERAÇÃO
+{{prompt_auxiliar}}
+Estes ajustes não podem violar as regras de IDENTIDADE, TEXTOS e RESTRIÇÕES.
+{{/prompt_auxiliar}}
+
+RESTRIÇÕES
+- Não invente números, nomes, datas, patrocinadores, hashtags, @ ou frases soltas.
+- Não escreva palavras em outro idioma nem letras sem significado.
+- Não reproduza logos de clubes profissionais, ligas ou marcas esportivas reais.
+- Não crie moldura, borda de foto, marca d'água, legenda ou interface de app.
+- Não duplique o aluno nem crie um segundo rosto na cena.
+- Não deforme mãos, orelhas, dentes ou o brasão.
