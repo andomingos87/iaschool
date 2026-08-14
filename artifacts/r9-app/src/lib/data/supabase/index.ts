@@ -381,6 +381,130 @@ export function createSupabaseDataLayer(): DataLayer {
     },
   };
 
+  // ---------- Re-assinatura de URLs ao exibir ----------
+  // As URLs assinadas gravadas no banco expiram (SIGNED_URL_TTL). Em vez de
+  // depender da URL gravada, guardamos o caminho do objeto (StoredImage.path
+  // ou derivado da própria URL) e re-assinamos na hora de listar/carregar.
+  // Cache em memória evita re-assinar a cada refetch na mesma sessão.
+
+  const signedUrlCache = new Map<string, string>(); // "bucket/path" -> url
+
+  /** Assina em lote os caminhos de um bucket; falhas mantêm a URL antiga. */
+  async function signPaths(
+    bucket: string,
+    paths: string[],
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    const missing: string[] = [];
+    for (const p of paths) {
+      const cached = signedUrlCache.get(`${bucket}/${p}`);
+      if (cached) result.set(p, cached);
+      else missing.push(p);
+    }
+    if (missing.length > 0) {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrls(missing, SIGNED_URL_TTL);
+      if (!error && data) {
+        for (const item of data) {
+          if (item.signedUrl && item.path) {
+            result.set(item.path, item.signedUrl);
+            signedUrlCache.set(`${bucket}/${item.path}`, item.signedUrl);
+          }
+        }
+      }
+      // Erros aqui são best-effort: quem chamou mantém a URL gravada.
+    }
+    return result;
+  }
+
+  /** Localiza bucket/caminho de um StoredImage (via path ou pela URL). */
+  function storedImageLocation(
+    img: StoredImage,
+  ): { bucket: string; path: string } | null {
+    if (img.path) {
+      const i = img.path.indexOf("/");
+      if (i > 0) {
+        return { bucket: img.path.slice(0, i), path: img.path.slice(i + 1) };
+      }
+    }
+    return storageLocationFromUrl(img.url);
+  }
+
+  type SignTarget = {
+    bucket: string;
+    path: string;
+    apply: (url: string) => void;
+  };
+
+  /** Re-assina os alvos em lote (uma chamada por bucket). */
+  async function refreshTargets(targets: SignTarget[]): Promise<void> {
+    if (targets.length === 0) return;
+    const byBucket = new Map<string, SignTarget[]>();
+    for (const t of targets) {
+      byBucket.set(t.bucket, [...(byBucket.get(t.bucket) ?? []), t]);
+    }
+    await Promise.all(
+      [...byBucket.entries()].map(async ([bucket, list]) => {
+        const map = await signPaths(bucket, [
+          ...new Set(list.map((t) => t.path)),
+        ]);
+        for (const t of list) {
+          const url = map.get(t.path);
+          if (url) t.apply(url);
+        }
+      }),
+    );
+  }
+
+  function imageTarget(img: StoredImage): SignTarget | null {
+    const loc = storedImageLocation(img);
+    if (!loc) return null; // data URL / URL externa: nada a re-assinar
+    return {
+      ...loc,
+      apply: (url) => {
+        img.url = url;
+      },
+    };
+  }
+
+  /** Re-assina as URLs de todas as imagens dos registros dados. */
+  async function refreshImages<T>(
+    rows: T[],
+    imagesOf: (row: T) => Array<StoredImage | null | undefined>,
+  ): Promise<T[]> {
+    const targets: SignTarget[] = [];
+    for (const row of rows) {
+      for (const img of imagesOf(row)) {
+        if (!img) continue;
+        const t = imageTarget(img);
+        if (t) targets.push(t);
+      }
+    }
+    await refreshTargets(targets);
+    return rows;
+  }
+
+  /** Re-assina image_url dos posts gerados (caminho derivado da URL). */
+  async function refreshPostUrls(posts: GeneratedPost[]): Promise<GeneratedPost[]> {
+    const targets: SignTarget[] = [];
+    for (const post of posts) {
+      const loc = storageLocationFromUrl(post.imageUrl);
+      if (!loc) continue;
+      targets.push({
+        ...loc,
+        apply: (url) => {
+          post.imageUrl = url;
+        },
+      });
+    }
+    await refreshTargets(targets);
+    return posts;
+  }
+
+  const studentImages = (s: Student) => s.photos;
+  const clubImages = (c: Club) => [c.logo, ...c.uniforms];
+
   // ---------- Repositórios ----------
 
   const students: StudentRepository = {
@@ -390,7 +514,7 @@ export function createSupabaseDataLayer(): DataLayer {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) fail("Falha ao listar alunos", error);
-      return (data ?? []).map(toStudent);
+      return refreshImages((data ?? []).map(toStudent), studentImages);
     },
     async get(id) {
       const { data, error } = await supabase
@@ -399,7 +523,9 @@ export function createSupabaseDataLayer(): DataLayer {
         .eq("id", id)
         .maybeSingle();
       if (error) fail("Falha ao carregar aluno", error);
-      return data ? toStudent(data) : null;
+      if (!data) return null;
+      const [student] = await refreshImages([toStudent(data)], studentImages);
+      return student!;
     },
     async create(input) {
       const uid = await currentUserId();
@@ -434,7 +560,7 @@ export function createSupabaseDataLayer(): DataLayer {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) fail("Falha ao listar clubes", error);
-      return (data ?? []).map(toClub);
+      return refreshImages((data ?? []).map(toClub), clubImages);
     },
     async get(id) {
       const { data, error } = await supabase
@@ -443,7 +569,9 @@ export function createSupabaseDataLayer(): DataLayer {
         .eq("id", id)
         .maybeSingle();
       if (error) fail("Falha ao carregar clube", error);
-      return data ? toClub(data) : null;
+      if (!data) return null;
+      const [club] = await refreshImages([toClub(data)], clubImages);
+      return club!;
     },
     async create(input) {
       const uid = await currentUserId();
@@ -478,7 +606,7 @@ export function createSupabaseDataLayer(): DataLayer {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) fail("Falha ao listar referências", error);
-      return (data ?? []).map(toReference);
+      return refreshImages((data ?? []).map(toReference), (r) => [r.image]);
     },
     async create(input) {
       const uid = await currentUserId();
@@ -626,11 +754,11 @@ export function createSupabaseDataLayer(): DataLayer {
             .select("*")
             .order("created_at", { ascending: false });
           if (err2) fail("Falha ao listar posts gerados", err2);
-          return (all ?? []).map(toGeneratedPost);
+          return refreshPostUrls((all ?? []).map(toGeneratedPost));
         }
         fail("Falha ao listar posts gerados", error);
       }
-      return (data ?? []).map(toGeneratedPost);
+      return refreshPostUrls((data ?? []).map(toGeneratedPost));
     },
     async listTrash() {
       await purgeExpiredTrash();
@@ -640,7 +768,7 @@ export function createSupabaseDataLayer(): DataLayer {
         .not("deleted_at", "is", null)
         .order("deleted_at", { ascending: false });
       if (error) failTrash("Falha ao listar a lixeira", error);
-      return (data ?? []).map(toGeneratedPost);
+      return refreshPostUrls((data ?? []).map(toGeneratedPost));
     },
     async moveToTrash(ids) {
       if (ids.length === 0) return;

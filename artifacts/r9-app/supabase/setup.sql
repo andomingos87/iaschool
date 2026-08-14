@@ -262,6 +262,16 @@ language sql stable security definer set search_path = public as $$
   where id = auth.uid() and role = 'student' and approval_status = 'approved';
 $$;
 
+-- Escola (profile id) do aluno atual (null se não houver / não aprovado).
+-- Usado no Storage: alunos re-assinam URLs de imagens da própria escola,
+-- já que os arquivos ficam em pastas prefixadas com o uid da escola.
+create or replace function public.my_school_id()
+returns uuid
+language sql stable security definer set search_path = public as $$
+  select school_id from public.profiles
+  where id = auth.uid() and role = 'student' and approval_status = 'approved';
+$$;
+
 -- Contas de aluno aprovadas e ainda sem vínculo com um registro de students.
 -- school_user vê apenas alunos da própria escola; super_admin vê todos.
 -- (security definer porque a RLS de profiles só permite ler o próprio perfil.)
@@ -618,7 +628,9 @@ create policy "r9_storage_insert" on storage.objects
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
--- Leitura: apenas o dono aprovado ou super_admin.
+-- Leitura: o dono aprovado, super_admin, ou aluno aprovado lendo arquivos
+-- da própria escola (necessário para re-assinar URLs de fotos e posts na
+-- área do aluno — as linhas visíveis já são limitadas pela RLS das tabelas).
 drop policy if exists "r9_storage_select" on storage.objects;
 create policy "r9_storage_select" on storage.objects
   for select to authenticated
@@ -627,6 +639,7 @@ create policy "r9_storage_select" on storage.objects
     and (
       ((storage.foldername(name))[1] = auth.uid()::text and public.is_approved())
       or public.is_super_admin()
+      or (storage.foldername(name))[1] = public.my_school_id()::text
     )
   );
 
