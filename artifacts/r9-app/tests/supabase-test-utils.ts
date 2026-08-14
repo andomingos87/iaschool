@@ -127,6 +127,52 @@ export async function userSelect(
   return { status: resp.status, rows: Array.isArray(body) ? body : [] };
 }
 
+/**
+ * UPDATE como o usuário (RLS aplicada). Retorna o status e as linhas
+ * efetivamente atualizadas — RLS filtra silenciosamente, então "bloqueado"
+ * aparece como 0 linhas afetadas (ou erro >= 400).
+ */
+export async function userUpdate(
+  user: TestUser,
+  table: string,
+  filter: string,
+  patch: Record<string, unknown>,
+): Promise<{ status: number; rows: unknown[] }> {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    method: "PATCH",
+    headers: {
+      apikey: ANON_KEY,
+      Authorization: `Bearer ${user.token}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(patch),
+  });
+  const body = resp.ok ? ((await resp.json()) as unknown[]) : [];
+  return { status: resp.status, rows: Array.isArray(body) ? body : [] };
+}
+
+/**
+ * DELETE como o usuário (RLS aplicada). Retorna o status e as linhas
+ * efetivamente excluídas (mesma semântica de userUpdate).
+ */
+export async function userDelete(
+  user: TestUser,
+  table: string,
+  filter: string,
+): Promise<{ status: number; rows: unknown[] }> {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    method: "DELETE",
+    headers: {
+      apikey: ANON_KEY,
+      Authorization: `Bearer ${user.token}`,
+      Prefer: "return=representation",
+    },
+  });
+  const body = resp.ok ? ((await resp.json()) as unknown[]) : [];
+  return { status: resp.status, rows: Array.isArray(body) ? body : [] };
+}
+
 /** INSERT como o usuário (RLS aplicada). Retorna o status HTTP. */
 export async function userInsert(
   user: TestUser,

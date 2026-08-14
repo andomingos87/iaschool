@@ -10,8 +10,10 @@ import {
   createTestUser,
   deleteTestUser,
   envReady,
+  userDelete,
   userInsert,
   userSelect,
+  userUpdate,
   type TestUser,
 } from "./supabase-test-utils";
 
@@ -180,5 +182,98 @@ describe("isolamento entre escolas aprovadas", () => {
     const ids = rows.map((r) => (r as { id: string }).id);
     expect(ids).not.toContain(postA1);
     expect(ids).not.toContain(postA2);
+  });
+});
+
+// Os testes da lixeira exigem a coluna generated_posts.deleted_at (setup.sql
+// atualizado aplicado no Supabase). Se a migração ainda não rodou, os testes
+// são PULADOS com aviso — e voltam a rodar sozinhos após aplicar o setup.sql.
+const probeResp = await adminRest("generated_posts?select=deleted_at&limit=1");
+const trashMigrationApplied = probeResp.ok;
+if (!trashMigrationApplied) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[rls.integration] Testes da lixeira PULADOS: coluna generated_posts.deleted_at " +
+      "não existe no banco. Rode artifacts/r9-app/supabase/setup.sql no Supabase.",
+  );
+}
+
+// Estado real do post no banco, lido com service role (bypassa RLS).
+async function adminGetPost(id: string): Promise<{ id: string; deleted_at: string | null } | undefined> {
+  const resp = await adminRest(`generated_posts?id=eq.${id}&select=id,deleted_at`);
+  const rows = (await resp.json()) as Array<{ id: string; deleted_at: string | null }>;
+  return rows[0];
+}
+
+describe.skipIf(!trashMigrationApplied)("lixeira de generated_posts: escrita entre tenants bloqueada", () => {
+  const NOW = "2026-01-01T00:00:00Z";
+
+  it("escola B não move post da escola A para a lixeira (update deleted_at)", async () => {
+    const { status, rows } = await userUpdate(
+      schoolB, "generated_posts", `id=eq.${postA1}`, { deleted_at: NOW },
+    );
+    // RLS filtra silenciosamente (0 linhas) ou rejeita com erro — nunca altera.
+    if (status < 400) expect(rows).toHaveLength(0);
+    const post = await adminGetPost(postA1);
+    expect(post?.deleted_at ?? null).toBeNull();
+  });
+
+  it("escola B não restaura post da escola A (update deleted_at → null)", async () => {
+    // Coloca o post na lixeira via admin para testar a restauração indevida.
+    await adminRest(`generated_posts?id=eq.${postA2}`, {
+      method: "PATCH",
+      body: JSON.stringify({ deleted_at: NOW }),
+    });
+    const { status, rows } = await userUpdate(
+      schoolB, "generated_posts", `id=eq.${postA2}`, { deleted_at: null },
+    );
+    if (status < 400) expect(rows).toHaveLength(0);
+    const post = await adminGetPost(postA2);
+    expect(post?.deleted_at).not.toBeNull();
+    // Restaura o estado original para os demais testes.
+    await adminRest(`generated_posts?id=eq.${postA2}`, {
+      method: "PATCH",
+      body: JSON.stringify({ deleted_at: null }),
+    });
+  });
+
+  it("escola B não exclui definitivamente post da escola A", async () => {
+    const { status, rows } = await userDelete(schoolB, "generated_posts", `id=eq.${postA1}`);
+    if (status < 400) expect(rows).toHaveLength(0);
+    const post = await adminGetPost(postA1);
+    expect(post).toBeDefined();
+  });
+
+  it("escola A consegue mover e restaurar o próprio post (sanidade da política)", async () => {
+    const moved = await userUpdate(schoolA, "generated_posts", `id=eq.${postA1}`, { deleted_at: NOW });
+    expect(moved.status).toBeLessThan(300);
+    expect(moved.rows).toHaveLength(1);
+    const restored = await userUpdate(schoolA, "generated_posts", `id=eq.${postA1}`, { deleted_at: null });
+    expect(restored.status).toBeLessThan(300);
+    expect(restored.rows).toHaveLength(1);
+    const post = await adminGetPost(postA1);
+    expect(post?.deleted_at ?? null).toBeNull();
+  });
+});
+
+describe.skipIf(!trashMigrationApplied)("lixeira de generated_posts: aluno é somente leitura", () => {
+  const NOW = "2026-01-01T00:00:00Z";
+
+  it("aluno não move o próprio post para a lixeira", async () => {
+    const { status, rows } = await userUpdate(
+      studentUser, "generated_posts", `id=eq.${postA1}`, { deleted_at: NOW },
+    );
+    if (status < 400) expect(rows).toHaveLength(0);
+    const post = await adminGetPost(postA1);
+    expect(post?.deleted_at ?? null).toBeNull();
+  });
+
+  it("aluno não exclui nenhum post (nem o próprio)", async () => {
+    for (const id of [postA1, postA2]) {
+      const { status, rows } = await userDelete(studentUser, "generated_posts", `id=eq.${id}`);
+      if (status < 400) expect(rows).toHaveLength(0);
+      const post = await adminGetPost(id);
+      expect(post).toBeDefined();
+    }
   });
 });
