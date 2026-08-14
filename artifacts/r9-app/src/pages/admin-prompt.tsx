@@ -2,7 +2,7 @@
 // Acessível apenas a super_admin (rota protegida em App.tsx e item de menu
 // condicional no app-shell).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Eye,
@@ -36,11 +36,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/iasport/components/ui/dialog";
-import { Textarea } from "@workspace/iasport/components/ui/textarea";
 import { Badge } from "@workspace/iasport/components/ui/badge";
 import { Skeleton } from "@workspace/iasport/components/ui/skeleton";
 import { toast } from "@workspace/iasport/hooks/use-toast";
 import { PageHeader } from "@/components/app-shell";
+import {
+  TemplateEditor,
+  type TemplateEditorHandle,
+} from "@/components/template-editor";
 import { ErrorState } from "@/components/data-state";
 import {
   usePromptTemplate,
@@ -112,6 +115,7 @@ export default function AdminPromptPage() {
 
   const [draft, setDraft] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const editorRef = useRef<TemplateEditorHandle>(null);
 
   // Pré-preenche com o salvo ou com o padrão embutido.
   useEffect(() => {
@@ -265,11 +269,12 @@ export default function AdminPromptPage() {
             )}
           </CardHeader>
           <CardContent className="space-y-3">
-            <Textarea
+            <TemplateEditor
+              ref={editorRef}
               value={value}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={setDraft}
+              warnings={warnings}
               rows={14}
-              className="font-mono text-xs leading-relaxed"
               placeholder="Escreva o template do prompt..."
               data-testid="input-template"
             />
@@ -285,17 +290,29 @@ export default function AdminPromptPage() {
                     : `${warnings.length} possíveis problemas no template`}
                 </p>
                 <ul className="space-y-1">
-                  {warnings.map((w) => (
-                    <li
-                      key={`${w.token}-${w.message}`}
-                      className="flex items-start gap-2 text-xs text-muted-foreground"
-                    >
-                      <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-yellow-500">
-                        {w.token}
-                      </code>
-                      <span>{w.message}</span>
-                    </li>
-                  ))}
+                  {warnings.map((w) => {
+                    const first = w.occurrences[0];
+                    return (
+                      <li
+                        key={`${w.token}-${w.message}`}
+                        className="flex items-start gap-2 text-xs text-muted-foreground"
+                      >
+                        <button
+                          type="button"
+                          disabled={!first}
+                          onClick={() =>
+                            first && editorRef.current?.jumpTo(first.start, first.end)
+                          }
+                          className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-yellow-500 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:no-underline"
+                          title={first ? "Ir até o trecho no editor" : undefined}
+                          data-testid={`button-aviso-${w.token}`}
+                        >
+                          {w.token}
+                        </button>
+                        <span>{w.message}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}

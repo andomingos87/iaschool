@@ -77,6 +77,27 @@ describe("validatePromptTemplate", () => {
     expect(w).toHaveLength(1);
   });
 
+  it("informa as posições de todas as ocorrências do trecho problemático", () => {
+    const tpl = "{{oops}} e {{oops}}";
+    const w = validatePromptTemplate(tpl);
+    expect(w[0].occurrences).toEqual([
+      { start: 0, end: 8 },
+      { start: 11, end: 19 },
+    ]);
+    expect(tpl.slice(0, 8)).toBe("{{oops}}");
+    expect(tpl.slice(11, 19)).toBe("{{oops}}");
+  });
+
+  it("informa a posição de bloco aberto sem fechamento", () => {
+    const w = validatePromptTemplate("abc {{#posicao}} sem fim");
+    expect(w[0].occurrences).toEqual([{ start: 4, end: 16 }]);
+  });
+
+  it("informa a posição de abertura {{ sem fechamento", () => {
+    const w = validatePromptTemplate("Olá {{nome_aluno");
+    expect(w[0].occurrences).toEqual([{ start: 4, end: 16 }]);
+  });
+
   it("avisa sobre abertura {{ sem fechamento }}", () => {
     const w = validatePromptTemplate("Olá {{nome_aluno");
     expect(w).toHaveLength(1);

@@ -61,6 +61,12 @@ export interface TemplateWarning {
   token: string;
   /** Mensagem curta em pt-BR explicando o problema. */
   message: string;
+  /**
+   * Posições (início/fim, em índices de caractere do template) de todas as
+   * ocorrências do trecho problemático — usadas para destacar no editor e
+   * levar o cursor até o local ao clicar no aviso.
+   */
+  occurrences: Array<{ start: number; end: number }>;
 }
 
 /**
@@ -76,12 +82,17 @@ export interface TemplateWarning {
  */
 export function validatePromptTemplate(template: string): TemplateWarning[] {
   const warnings: TemplateWarning[] = [];
-  const seen = new Set<string>();
-  const add = (token: string, message: string) => {
+  const byKey = new Map<string, TemplateWarning>();
+  const add = (token: string, message: string, start?: number, end?: number) => {
     const key = `${token}|${message}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      warnings.push({ token, message });
+    let w = byKey.get(key);
+    if (!w) {
+      w = { token, message, occurrences: [] };
+      byKey.set(key, w);
+      warnings.push(w);
+    }
+    if (start !== undefined && end !== undefined) {
+      w.occurrences.push({ start, end });
     }
   };
 
@@ -91,9 +102,9 @@ export function validatePromptTemplate(template: string): TemplateWarning[] {
   // 1) Tokeniza qualquer construção {{...}} (válida ou não) na ordem em que
   //    aparece, classificando com a mesma gramática do renderer.
   type Token =
-    | { kind: "open" | "close"; name: string; raw: string }
-    | { kind: "placeholder"; name: string; raw: string }
-    | { kind: "invalid"; raw: string };
+    | { kind: "open" | "close"; name: string; raw: string; start: number; end: number }
+    | { kind: "placeholder"; name: string; raw: string; start: number; end: number }
+    | { kind: "invalid"; raw: string; start: number; end: number };
   const tokens: Token[] = [];
   const re = /\{\{([^{}]*)\}\}/g;
   let m: RegExpExecArray | null;
@@ -102,87 +113,122 @@ export function validatePromptTemplate(template: string): TemplateWarning[] {
   while ((m = re.exec(template)) !== null) {
     const raw = m[0];
     const inner = m[1];
+    const start = m.index;
+    const end = m.index + raw.length;
     residue =
-      residue.slice(0, m.index) +
-      " ".repeat(raw.length) +
-      residue.slice(m.index + raw.length);
+      residue.slice(0, start) + " ".repeat(raw.length) + residue.slice(end);
     if (/^#[a-z0-9_]+$/.test(inner)) {
-      tokens.push({ kind: "open", name: inner.slice(1), raw });
+      tokens.push({ kind: "open", name: inner.slice(1), raw, start, end });
     } else if (/^\/[a-z0-9_]+$/.test(inner)) {
-      tokens.push({ kind: "close", name: inner.slice(1), raw });
+      tokens.push({ kind: "close", name: inner.slice(1), raw, start, end });
     } else if (/^[a-z0-9_]+$/.test(inner)) {
-      tokens.push({ kind: "placeholder", name: inner, raw });
+      tokens.push({ kind: "placeholder", name: inner, raw, start, end });
     } else {
-      tokens.push({ kind: "invalid", raw });
+      tokens.push({ kind: "invalid", raw, start, end });
     }
   }
 
   // 2) Delimitadores incompletos/soltos fora de qualquer token completo
   //    (ex.: "{{nome_aluno" sem "}}", ou "}}" sozinho) ficam literais no prompt.
   const strayOpen = residue.match(/\{\{[^\n{}]*/);
-  if (strayOpen) {
+  if (strayOpen && strayOpen.index !== undefined) {
     add(
       strayOpen[0].trim(),
       "Abertura {{ sem fechamento }} — o trecho ficará como texto literal no prompt.",
+      strayOpen.index,
+      strayOpen.index + strayOpen[0].length,
     );
   }
-  const strayClose = /\}\}/.test(residue.replace(/\{\{[^\n{}]*/g, ""));
-  if (strayClose) {
-    add("}}", "Fechamento }} sem abertura {{ — o trecho ficará como texto literal no prompt.");
+  const residueSansOpen = residue.replace(/\{\{[^\n{}]*/g, (s) =>
+    " ".repeat(s.length),
+  );
+  const strayClose = residueSansOpen.match(/\}\}/);
+  if (strayClose && strayClose.index !== undefined) {
+    add(
+      "}}",
+      "Fechamento }} sem abertura {{ — o trecho ficará como texto literal no prompt.",
+      strayClose.index,
+      strayClose.index + 2,
+    );
   }
 
   // 3) Valida nomes e o pareamento/ordem dos blocos.
   //    O renderer não suporta aninhamento, então bloco dentro de bloco também
   //    gera aviso.
-  const stack: string[] = [];
+  const stack: Array<{ name: string; start: number; end: number }> = [];
   for (const t of tokens) {
     if (t.kind === "placeholder") {
       if (!knownPlaceholders.has(t.name)) {
-        add(t.raw, "Placeholder desconhecido — será substituído por texto vazio na geração.");
+        add(
+          t.raw,
+          "Placeholder desconhecido — será substituído por texto vazio na geração.",
+          t.start,
+          t.end,
+        );
       }
     } else if (t.kind === "invalid") {
       add(
         t.raw,
         "Sintaxe inválida — use letras minúsculas, números e _ sem espaços (ex.: {{nome_aluno}}); do contrário o trecho fica como texto literal no prompt.",
+        t.start,
+        t.end,
       );
     } else if (t.kind === "open") {
       if (!knownBlocks.has(t.name)) {
-        add(t.raw, `Bloco desconhecido — "${t.name}" não está na lista de blocos disponíveis.`);
+        add(
+          t.raw,
+          `Bloco desconhecido — "${t.name}" não está na lista de blocos disponíveis.`,
+          t.start,
+          t.end,
+        );
       }
       if (stack.length > 0) {
         add(
           t.raw,
-          `Bloco aninhado dentro de {{#${stack[stack.length - 1]}}} — o motor não suporta blocos dentro de blocos e o resultado será incorreto.`,
+          `Bloco aninhado dentro de {{#${stack[stack.length - 1].name}}} — o motor não suporta blocos dentro de blocos e o resultado será incorreto.`,
+          t.start,
+          t.end,
         );
       }
-      stack.push(t.name);
+      stack.push({ name: t.name, start: t.start, end: t.end });
     } else {
       // close
       if (!knownBlocks.has(t.name)) {
-        add(t.raw, `Fechamento de bloco desconhecido — "${t.name}" não é um bloco disponível.`);
+        add(
+          t.raw,
+          `Fechamento de bloco desconhecido — "${t.name}" não é um bloco disponível.`,
+          t.start,
+          t.end,
+        );
       }
-      const idx = stack.lastIndexOf(t.name);
+      const idx = stack.map((s) => s.name).lastIndexOf(t.name);
       if (idx === -1) {
         add(
           t.raw,
           `Fechamento sem abertura — falta {{#${t.name}}}; a tag ficará como texto literal no prompt.`,
+          t.start,
+          t.end,
         );
       } else {
         // Blocos cruzados: tudo acima do par correspondente ficou fora de ordem.
         for (let i = stack.length - 1; i > idx; i--) {
           add(
-            `{{#${stack[i]}}}`,
-            `Blocos cruzados — {{#${stack[i]}}} foi aberto dentro de {{#${t.name}}} mas não foi fechado antes de {{/${t.name}}}; o resultado será incorreto.`,
+            `{{#${stack[i].name}}}`,
+            `Blocos cruzados — {{#${stack[i].name}}} foi aberto dentro de {{#${t.name}}} mas não foi fechado antes de {{/${t.name}}}; o resultado será incorreto.`,
+            stack[i].start,
+            stack[i].end,
           );
         }
         stack.length = idx;
       }
     }
   }
-  for (const name of stack) {
+  for (const s of stack) {
     add(
-      `{{#${name}}}`,
-      `Bloco aberto sem fechamento — falta {{/${name}}}; a tag ficará como texto literal no prompt.`,
+      `{{#${s.name}}}`,
+      `Bloco aberto sem fechamento — falta {{/${s.name}}}; a tag ficará como texto literal no prompt.`,
+      s.start,
+      s.end,
     );
   }
 
