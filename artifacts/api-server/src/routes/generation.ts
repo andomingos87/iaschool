@@ -134,6 +134,20 @@ router.post(
         });
         return;
       }
+      if (quota.kind === "outage") {
+        // Banco de cota falhando repetidamente: negar (fail-closed) em vez
+        // de confiar no contador em memória, que zera a cada reinício e
+        // deixaria o custo com a OpenAI sem proteção.
+        req.log.error(
+          { reason: quota.reason, failures: quota.failures },
+          "Cota diária persistida fora do ar — gerações bloqueadas (fail-closed)",
+        );
+        res.status(503).json({
+          error:
+            "O controle de cota de gerações está temporariamente indisponível. Para evitar gerações sem controle, novas gerações estão bloqueadas. Tente novamente em alguns minutos.",
+        });
+        return;
+      }
       if (quota.kind === "unavailable") {
         // Fallback: contador em memória (comportamento antigo), para não
         // negar o serviço quando o banco não estiver acessível.
