@@ -28,6 +28,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/iasport/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@workspace/iasport/components/ui/dialog";
 import { Textarea } from "@workspace/iasport/components/ui/textarea";
 import { Badge } from "@workspace/iasport/components/ui/badge";
 import { Skeleton } from "@workspace/iasport/components/ui/skeleton";
@@ -49,12 +57,58 @@ import {
   validatePromptTemplate,
 } from "@/lib/prompt-template";
 
+type DiffLine = {
+  kind: "same" | "added" | "removed";
+  text: string;
+};
+
+// Diff simples por linhas (LCS) entre o template da versão e o atual.
+// "removed" = linha só existe na versão; "added" = linha só existe no atual.
+function diffLines(versionText: string, currentText: string): DiffLine[] {
+  const a = versionText.split("\n");
+  const b = currentText.split("\n");
+  const m = a.length;
+  const n = b.length;
+  const lcs: number[][] = Array.from({ length: m + 1 }, () =>
+    new Array<number>(n + 1).fill(0),
+  );
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      lcs[i][j] =
+        a[i] === b[j]
+          ? lcs[i + 1][j + 1] + 1
+          : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      out.push({ kind: "same", text: a[i] });
+      i++;
+      j++;
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+      out.push({ kind: "removed", text: a[i] });
+      i++;
+    } else {
+      out.push({ kind: "added", text: b[j] });
+      j++;
+    }
+  }
+  while (i < m) out.push({ kind: "removed", text: a[i++] });
+  while (j < n) out.push({ kind: "added", text: b[j++] });
+  return out;
+}
+
 export default function AdminPromptPage() {
   const query = usePromptTemplate();
   const versions = usePromptTemplateVersions();
   const save = useSavePromptTemplate();
   const reset = useResetPromptTemplate();
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [viewingVersion, setViewingVersion] =
+    useState<PromptTemplateVersion | null>(null);
 
   const [draft, setDraft] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -112,6 +166,7 @@ export default function AdminPromptPage() {
     try {
       await save.mutateAsync(version.template);
       setDraft(version.template);
+      setViewingVersion(null);
       toast({
         title: "Versão restaurada",
         description: "As próximas gerações já usarão esta versão do template.",
@@ -315,7 +370,12 @@ export default function AdminPromptPage() {
                     className="flex items-center justify-between gap-3 py-3"
                     data-testid={`row-version-${v.id}`}
                   >
-                    <div className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => setViewingVersion(v)}
+                      className="min-w-0 flex-1 cursor-pointer rounded-md text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      data-testid={`button-ver-versao-${v.id}`}
+                    >
                       <p className="text-sm font-medium">
                         {new Date(v.savedAt).toLocaleString("pt-BR", {
                           dateStyle: "short",
@@ -334,7 +394,7 @@ export default function AdminPromptPage() {
                           {v.template.length > 80 ? "…" : ""}
                         </span>
                       </p>
-                    </div>
+                    </button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -352,6 +412,28 @@ export default function AdminPromptPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog
+        open={viewingVersion !== null}
+        onOpenChange={(open) => {
+          if (!open) setViewingVersion(null);
+        }}
+      >
+        <DialogContent
+          className="max-h-[85vh] max-w-3xl overflow-hidden"
+          data-testid="dialog-ver-versao"
+        >
+          {viewingVersion && (
+            <VersionDialogBody
+              version={viewingVersion}
+              currentTemplate={query.data?.template ?? DEFAULT_PROMPT_TEMPLATE}
+              restoring={restoringId === viewingVersion.id}
+              busy={busy}
+              onRestore={() => void onRestoreVersion(viewingVersion)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent data-testid="dialog-confirmar-avisos">
@@ -385,5 +467,126 @@ export default function AdminPromptPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function VersionDialogBody({
+  version,
+  currentTemplate,
+  restoring,
+  busy,
+  onRestore,
+}: {
+  version: PromptTemplateVersion;
+  currentTemplate: string;
+  restoring: boolean;
+  busy: boolean;
+  onRestore: () => void;
+}) {
+  const [showDiff, setShowDiff] = useState(false);
+  const isSame = version.template === currentTemplate;
+  const diff = useMemo(
+    () => (isSame ? [] : diffLines(version.template, currentTemplate)),
+    [isSame, version.template, currentTemplate],
+  );
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>
+          Versão de{" "}
+          {new Date(version.savedAt).toLocaleString("pt-BR", {
+            dateStyle: "short",
+            timeStyle: "short",
+          })}
+        </DialogTitle>
+        <DialogDescription>
+          Salvo por {version.savedBy}.{" "}
+          {isSame
+            ? "Esta versão é idêntica ao template atual."
+            : "Confira o texto completo antes de restaurar."}
+        </DialogDescription>
+      </DialogHeader>
+
+      {!isSame && (
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showDiff ? "outline" : "secondary"}
+            size="sm"
+            onClick={() => setShowDiff(false)}
+            data-testid="button-ver-texto"
+          >
+            Texto completo
+          </Button>
+          <Button
+            variant={showDiff ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setShowDiff(true)}
+            data-testid="button-ver-diferencas"
+          >
+            Diferenças vs. atual
+          </Button>
+        </div>
+      )}
+
+      <div className="max-h-[45vh] overflow-y-auto rounded-md border border-border bg-muted/40 p-3">
+        {showDiff && !isSame ? (
+          <div
+            className="whitespace-pre-wrap font-mono text-xs leading-relaxed"
+            data-testid="text-versao-diff"
+          >
+            {diff.map((line, idx) => (
+              <div
+                key={idx}
+                className={
+                  line.kind === "removed"
+                    ? "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400"
+                    : line.kind === "added"
+                      ? "bg-destructive/10 text-destructive line-through decoration-destructive/50"
+                      : "text-muted-foreground"
+                }
+              >
+                {line.kind === "removed"
+                  ? "+ "
+                  : line.kind === "added"
+                    ? "− "
+                    : "  "}
+                {line.text || "\u00a0"}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <pre
+            className="whitespace-pre-wrap font-mono text-xs leading-relaxed"
+            data-testid="text-versao-completa"
+          >
+            {version.template}
+          </pre>
+        )}
+      </div>
+      {showDiff && !isSame && (
+        <p className="text-xs text-muted-foreground">
+          <span className="text-yellow-600 dark:text-yellow-400">+ amarelo</span>
+          : entra se você restaurar ·{" "}
+          <span className="text-destructive">− riscado</span>: sai do template
+          atual
+        </p>
+      )}
+
+      <DialogFooter>
+        <Button
+          onClick={onRestore}
+          disabled={busy || isSame}
+          data-testid="button-restaurar-no-dialogo"
+        >
+          <RotateCcw className="size-4" />
+          {restoring
+            ? "Restaurando..."
+            : isSame
+              ? "Já é o template atual"
+              : "Restaurar esta versão"}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
