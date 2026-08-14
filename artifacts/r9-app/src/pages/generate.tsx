@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   ArrowLeft,
@@ -54,7 +54,11 @@ import { useReferences } from "@/hooks/use-references";
 import { useMetrics } from "@/hooks/use-metrics";
 import { useCreateGeneratedPost } from "@/hooks/use-generated-posts";
 import { initials, storedToMasked } from "@/lib/format";
-import { plausibleMetricValue } from "@/lib/constants";
+import {
+  AUX_PROMPT_PREFILL_EVENT,
+  AUX_PROMPT_PREFILL_KEY,
+  plausibleMetricValue,
+} from "@/lib/constants";
 
 type Phase = "form" | "generating" | "result";
 
@@ -91,6 +95,43 @@ export default function GeneratePage() {
   // Progresso real (0–100) do upload das fotos; null = fase de geração.
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);
+
+  // Pré-preenche as instruções adicionais com um prompt vindo de
+  // "Detalhes da geração" (botão "Usar como instruções").
+  useEffect(() => {
+    function applyPrefill(prompt: string | null) {
+      if (!prompt) return;
+      try {
+        sessionStorage.removeItem(AUX_PROMPT_PREFILL_KEY);
+      } catch {
+        // ignora
+      }
+      setAuxiliaryPrompt(prompt);
+      setPhase("form");
+      toast({
+        title: "Instruções pré-preenchidas",
+        description:
+          'O prompt da geração foi copiado para "Instruções adicionais" (último passo). Ajuste como quiser.',
+      });
+    }
+
+    function readStored(): string | null {
+      try {
+        return sessionStorage.getItem(AUX_PROMPT_PREFILL_KEY);
+      } catch {
+        return null;
+      }
+    }
+
+    applyPrefill(readStored());
+    const onEvent = (e: Event) => {
+      const prompt =
+        (e as CustomEvent<string>).detail ?? readStored();
+      applyPrefill(prompt);
+    };
+    window.addEventListener(AUX_PROMPT_PREFILL_EVENT, onEvent);
+    return () => window.removeEventListener(AUX_PROMPT_PREFILL_EVENT, onEvent);
+  }, []);
 
   const club: Club | undefined = useMemo(
     () => clubs.data?.find((c) => c.id === student?.clubId),

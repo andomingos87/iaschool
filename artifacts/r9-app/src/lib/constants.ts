@@ -23,6 +23,15 @@ export const BUCKETS = {
 } as const;
 
 /**
+ * Chave de sessionStorage usada para pré-preencher as "Instruções adicionais"
+ * da tela de geração com o prompt de uma geração antiga.
+ */
+export const AUX_PROMPT_PREFILL_KEY = "r9:aux-prompt-prefill";
+
+/** Evento disparado quando um prompt é enviado para a tela de geração. */
+export const AUX_PROMPT_PREFILL_EVENT = "r9-aux-prompt-prefill";
+
+/**
  * Gera valores plausíveis para uma métrica (apresentado como "IA").
  * Baseia-se no nome para dar números coerentes.
  */

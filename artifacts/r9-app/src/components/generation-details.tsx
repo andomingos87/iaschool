@@ -1,10 +1,15 @@
 import { useState } from "react";
-import { ChevronDown, Copy, FileText, Check } from "lucide-react";
+import { useLocation } from "wouter";
+import { ChevronDown, Copy, FileText, Check, Wand2 } from "lucide-react";
 import { cn } from "@workspace/iasport/lib/utils";
 import { Button } from "@workspace/iasport/components/ui/button";
 import { Badge } from "@workspace/iasport/components/ui/badge";
 import { toast } from "@workspace/iasport/hooks/use-toast";
 import type { GenerationDetails } from "@/lib/data";
+import {
+  AUX_PROMPT_PREFILL_EVENT,
+  AUX_PROMPT_PREFILL_KEY,
+} from "@/lib/constants";
 
 /** Formata bytes em unidade legível (pt-BR). */
 function formatBytes(bytes: number): string {
@@ -34,6 +39,25 @@ export function GenerationDetailsSection({
 }: GenerationDetailsSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [copied, setCopied] = useState(false);
+  const [, setLocation] = useLocation();
+
+  /**
+   * Envia o prompt desta geração para a tela de geração, pré-preenchendo o
+   * campo "Instruções adicionais". Usa sessionStorage + evento para funcionar
+   * tanto ao navegar de outra página quanto quando a tela já está montada.
+   */
+  function useAsInstructions() {
+    if (!details) return;
+    try {
+      sessionStorage.setItem(AUX_PROMPT_PREFILL_KEY, details.prompt);
+    } catch {
+      // sessionStorage indisponível: segue só com o evento
+    }
+    window.dispatchEvent(
+      new CustomEvent(AUX_PROMPT_PREFILL_EVENT, { detail: details.prompt }),
+    );
+    setLocation("/gerar");
+  }
 
   async function copyPrompt() {
     if (!details) return;
@@ -90,6 +114,15 @@ export function GenerationDetailsSection({
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Prompt final enviado
                   </p>
+                  <div className="flex shrink-0 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={useAsInstructions}
+                    data-testid="button-use-as-instructions"
+                  >
+                    <Wand2 className="size-3.5" /> Usar como instruções
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -103,6 +136,7 @@ export function GenerationDetailsSection({
                     )}
                     {copied ? "Copiado" : "Copiar"}
                   </Button>
+                  </div>
                 </div>
                 <p
                   className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted p-3 text-xs leading-relaxed text-foreground"
