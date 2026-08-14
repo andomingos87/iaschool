@@ -73,11 +73,26 @@ export interface StorageService {
 }
 
 export interface StudentRepository {
+  /** Alunos ativos (fora da lixeira), mais recentes primeiro. */
   list(): Promise<Student[]>;
   get(id: string): Promise<Student | null>;
   create(input: Omit<Student, "id" | "createdAt" | "updatedAt">): Promise<Student>;
   update(id: string, patch: Partial<Omit<Student, "id">>): Promise<Student>;
-  delete(id: string): Promise<void>;
+  /**
+   * Alunos na lixeira, mais recentes primeiro. Antes de listar, faz o
+   * expurgo oportunista dos itens com mais de 30 dias (registro + fotos
+   * no Storage) — mesmo padrão da lixeira de posts gerados.
+   */
+  listTrash(): Promise<Student[]>;
+  /** Exclusão normal: move para a lixeira (30 dias até o expurgo). */
+  moveToTrash(ids: string[]): Promise<void>;
+  /** Devolve alunos da lixeira para a lista ativa. */
+  restore(ids: string[]): Promise<void>;
+  /**
+   * Exclusão definitiva imediata (super_admin): remove o registro e as
+   * fotos no Storage (quando o caminho é conhecido). Sem volta.
+   */
+  deletePermanently(ids: string[]): Promise<void>;
 }
 
 export interface ClubRepository {

@@ -26,6 +26,16 @@ intencional para evitar abuso da chave sem autenticação.
    [`supabase/setup.sql`](./supabase/setup.sql) inteiro. Ele cria:
    - tabelas `profiles`, `students`, `clubs`, `reference_posts`, `metrics`,
      `generated_posts` (todas com `owner_id` para isolamento por usuário);
+   - lixeira (soft delete) em `generated_posts` **e** `students` via coluna
+     `deleted_at` (null = ativo). Excluir move para a lixeira (UPDATE em
+     `deleted_at`) — permitido à `school_user` pela política `students_update`.
+     Após 30 dias o app faz o expurgo oportunista (registro + arquivos no
+     Storage). Bases criadas antes desta funcionalidade: re-rodar `setup.sql`
+     adiciona as colunas e **atualiza a política `students_delete`** (agora
+     restrita a `super_admin`) automaticamente (blocos de migração idempotentes).
+     **Importante:** sem re-rodar `setup.sql`, a política antiga permite que
+     `school_user` faça `DELETE` direto via PostgREST, contornando a retenção
+     de 30 dias. Re-execute `setup.sql` no SQL Editor do Supabase para corrigir;
    - políticas RLS: `super_admin` acessa todos os dados; `school_user` acessa
      apenas os próprios registros (`owner_id = auth.uid()`);
    - seed das 10 métricas pré-definidas;

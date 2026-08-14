@@ -57,6 +57,8 @@ export interface Student {
   clubId?: string;
   createdAt: string;
   updatedAt: string;
+  /** Data em que foi movido para a lixeira (null/ausente = ativo). */
+  deletedAt?: string;
 }
 
 export interface Club {

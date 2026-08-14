@@ -65,8 +65,20 @@ create table if not exists public.students (
   photos jsonb not null default '[]'::jsonb,
   club_id uuid,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- Lixeira (soft delete): data em que foi movido; null = ativo.
+  -- Itens com mais de 30 dias na lixeira são expurgados pelo app.
+  deleted_at timestamptz
 );
+
+-- Migração de bases existentes: coluna deleted_at em students.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+    where table_schema='public' and table_name='students' and column_name='deleted_at') then
+    alter table public.students add column deleted_at timestamptz;
+  end if;
+end $$;
 
 -- Integridade do vínculo conta ↔ registro: se o registro students for
 -- excluído, o vínculo é desfeito automaticamente (a conta volta a aparecer
@@ -399,6 +411,25 @@ end;
 $$;
 grant execute on function public.unlink_student_account(uuid) to authenticated;
 
+-- Expurgo da lixeira de alunos com mais de 30 dias.
+-- SECURITY DEFINER: ignora a política students_delete (que restringe hard DELETE
+-- a super_admin) e executa o expurgo independentemente do papel do chamador.
+-- Notas:
+--  • Fotos no Storage NÃO são removidas aqui (PL/pgSQL não acessa a API do
+--    Storage). Um job/Edge Function agendado deve fazer a limpeza periódica.
+--  • O expurgo é idempotente: chamar mais de uma vez não tem efeito extra.
+create or replace function public.purge_expired_student_trash()
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  cutoff timestamptz := now() - (30 * interval '1 day');
+begin
+  delete from public.students
+  where deleted_at is not null and deleted_at < cutoff;
+end;
+$$;
+grant execute on function public.purge_expired_student_trash() to authenticated;
+
 -- Escolas aprovadas para o seletor do cadastro de aluno (acessível sem login;
 -- expõe apenas id e nome — nunca e-mail).
 create or replace function public.list_approved_schools()
@@ -531,10 +562,13 @@ create policy "students_update" on public.students
   using ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin())
   with check ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin());
 
+-- Hard DELETE restrito a super_admin: school_user usa UPDATE (deleted_at) para a lixeira.
+-- Isso garante a retenção de 30 dias — escola não consegue contornar o soft-delete
+-- chamando diretamente o endpoint PostgREST/Supabase.
 drop policy if exists "students_delete" on public.students;
 create policy "students_delete" on public.students
   for delete to authenticated
-  using ((owner_id = auth.uid() and public.is_school_user()) or public.is_super_admin());
+  using (public.is_super_admin());
 
 -- clubs
 drop policy if exists "clubs_select" on public.clubs;

@@ -8,6 +8,26 @@ export function useStudents() {
   return useQuery({ queryKey: qk.students, queryFn: () => data.students.list() });
 }
 
+/** Um aluno específico (página de detalhes). */
+export function useStudent(id: string | null) {
+  const data = getDataLayer();
+  return useQuery({
+    queryKey: qk.student(id ?? ""),
+    queryFn: () => data.students.get(id!),
+    enabled: !!id,
+  });
+}
+
+/** Alunos na lixeira (a listagem também dispara o expurgo oportunista). */
+export function useTrashedStudents(enabled = true) {
+  const data = getDataLayer();
+  return useQuery({
+    queryKey: qk.studentsTrash,
+    queryFn: () => data.students.listTrash(),
+    enabled,
+  });
+}
+
 /** IDs dos registros de students que já têm conta de aluno vinculada. */
 export function useLinkedStudentRecordIds() {
   const data = getDataLayer();
@@ -15,6 +35,14 @@ export function useLinkedStudentRecordIds() {
     queryKey: qk.linkedStudentRecordIds,
     queryFn: () => data.approvals.listLinkedStudentRecordIds(),
   });
+}
+
+function useInvalidateStudents() {
+  const qc = useQueryClient();
+  return () => {
+    void qc.invalidateQueries({ queryKey: qk.students });
+    void qc.invalidateQueries({ queryKey: qk.studentsTrash });
+  };
 }
 
 export function useCreateStudent() {
@@ -33,15 +61,39 @@ export function useUpdateStudent() {
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Partial<Omit<Student, "id">> }) =>
       data.students.update(id, patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.students }),
+    onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: qk.students });
+      qc.setQueryData(qk.student(updated.id), updated);
+    },
   });
 }
 
-export function useDeleteStudent() {
+/** Exclusão normal: move os alunos para a lixeira (30 dias). */
+export function useMoveStudentsToTrash() {
   const data = getDataLayer();
-  const qc = useQueryClient();
+  const invalidate = useInvalidateStudents();
   return useMutation({
-    mutationFn: (id: string) => data.students.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.students }),
+    mutationFn: (ids: string[]) => data.students.moveToTrash(ids),
+    onSuccess: invalidate,
+  });
+}
+
+/** Devolve alunos da lixeira para a lista ativa. */
+export function useRestoreStudents() {
+  const data = getDataLayer();
+  const invalidate = useInvalidateStudents();
+  return useMutation({
+    mutationFn: (ids: string[]) => data.students.restore(ids),
+    onSuccess: invalidate,
+  });
+}
+
+/** Exclusão definitiva: remove registro + fotos no Storage (super_admin). */
+export function useDeleteStudentsPermanently() {
+  const data = getDataLayer();
+  const invalidate = useInvalidateStudents();
+  return useMutation({
+    mutationFn: (ids: string[]) => data.students.deletePermanently(ids),
+    onSuccess: invalidate,
   });
 }

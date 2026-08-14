@@ -255,24 +255,89 @@ function makeCrud<T extends { id: string; createdAt: string }>(key: string) {
 // para que o vínculo de conta valide a posse também no modo mock.
 type OwnedStudent = Student & { ownerId?: string };
 const studentsCrud = makeCrud<OwnedStudent>("students");
+
+/** Expurgo oportunista da lixeira de alunos: itens com mais de 30 dias. */
+function purgeExpiredStudents(): void {
+  const cutoff = Date.now() - TRASH_RETENTION_DAYS * 24 * 3600 * 1000;
+  const items = readCollection<OwnedStudent>("students", []);
+  const expired = items.filter(
+    (s) => s.deletedAt && new Date(s.deletedAt).getTime() < cutoff,
+  );
+  if (expired.length === 0) return;
+  // No mock as fotos são data URLs (sem arquivo no Storage a remover).
+  writeCollection(
+    "students",
+    items.filter((s) => !expired.some((e) => e.id === s.id)),
+  );
+  unlinkStudentRecords(expired.map((s) => s.id));
+}
+
+/** Espelha a FK on delete set null do Supabase: desfaz vínculos de conta. */
+function unlinkStudentRecords(ids: string[]): void {
+  const links = readStudentLinks();
+  const orphaned = Object.keys(links).filter((pid) =>
+    ids.includes(links[pid]!),
+  );
+  if (orphaned.length > 0) {
+    for (const pid of orphaned) delete links[pid];
+    writeValue("student-links", links);
+  }
+}
+
 const students: StudentRepository = {
-  list: () => studentsCrud.list(),
+  async list() {
+    purgeExpiredStudents();
+    return (await studentsCrud.list()).filter((s) => !s.deletedAt);
+  },
   get: (id) => studentsCrud.get(id),
   create: (input) => {
     const session = readValue<Session>("session");
     return studentsCrud.create({ ...input, ownerId: session?.user.id });
   },
   update: (id, patch) => studentsCrud.update(id, patch),
-  delete: async (id) => {
-    await studentsCrud.delete(id);
-    // Espelha a FK on delete set null do Supabase: excluir o registro
-    // desfaz o vínculo, e a conta volta a aparecer no seletor.
-    const links = readStudentLinks();
-    const orphaned = Object.keys(links).filter((pid) => links[pid] === id);
-    if (orphaned.length > 0) {
-      for (const pid of orphaned) delete links[pid];
-      writeValue("student-links", links);
+  async listTrash() {
+    purgeExpiredStudents();
+    return (await studentsCrud.list())
+      .filter((s) => Boolean(s.deletedAt))
+      .sort(
+        (a, b) =>
+          new Date(b.deletedAt!).getTime() - new Date(a.deletedAt!).getTime(),
+      );
+  },
+  async moveToTrash(ids) {
+    await delay(300);
+    const deletedAt = nowIso();
+    const items = readCollection<OwnedStudent>("students", []);
+    writeCollection(
+      "students",
+      items.map((s) => (ids.includes(s.id) ? { ...s, deletedAt } : s)),
+    );
+  },
+  async restore(ids) {
+    await delay(300);
+    const items = readCollection<OwnedStudent>("students", []);
+    writeCollection(
+      "students",
+      items.map((s) =>
+        ids.includes(s.id) ? { ...s, deletedAt: undefined } : s,
+      ),
+    );
+  },
+  async deletePermanently(ids) {
+    await delay(300);
+    // Espelha a política RLS students_delete (super_admin only):
+    // school_user deve usar moveToTrash (UPDATE) para garantir a retenção.
+    const session = readValue<Session>("session");
+    if (session?.user.role !== "super_admin") {
+      throw new Error("Apenas administradores podem excluir alunos definitivamente.");
     }
+    // No mock as fotos são data URLs (sem arquivo no Storage a remover).
+    const items = readCollection<OwnedStudent>("students", []);
+    writeCollection(
+      "students",
+      items.filter((s) => !ids.includes(s.id)),
+    );
+    unlinkStudentRecords(ids);
   },
 };
 const clubs = makeCrud<Club>("clubs") as ClubRepository;

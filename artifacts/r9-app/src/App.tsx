@@ -18,6 +18,7 @@ import ResetPasswordPage from '@/pages/reset-password';
 import { isRecoveryPending } from '@/lib/recovery';
 import DashboardPage from '@/pages/dashboard';
 import StudentsPage from '@/pages/students';
+import StudentDetailPage from '@/pages/student-detail';
 import ClubsPage from '@/pages/clubs';
 import ReferencesPage from '@/pages/references';
 import GalleryPage from '@/pages/gallery';
@@ -56,6 +57,7 @@ function Pages() {
       <Route path="/" component={DashboardPage} />
       <Route path="/gerar" component={GeneratePage} />
       <Route path="/alunos" component={StudentsPage} />
+      <Route path="/alunos/:id" component={StudentDetailPage} />
       <Route path="/clubes" component={ClubsPage} />
       <Route path="/referencias" component={ReferencesPage} />
       <Route path="/galeria" component={GalleryPage} />

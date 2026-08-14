@@ -149,6 +149,31 @@ export default function GeneratePage() {
     return () => window.removeEventListener(AUX_PROMPT_PREFILL_EVENT, onEvent);
   }, []);
 
+  // Pré-seleciona o aluno vindo da página de detalhes (/gerar?aluno=<id>),
+  // refletindo também nos passos dependentes (foto e time).
+  const [prefillApplied, setPrefillApplied] = useState(false);
+  useEffect(() => {
+    if (prefillApplied || !students.data) return;
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("aluno");
+    if (!id) {
+      setPrefillApplied(true);
+      return;
+    }
+    setPrefillApplied(true);
+    const s = students.data.find((x) => x.id === id);
+    if (!s) return;
+    setStudent(s);
+    setPhoto(s.photos?.[0] ?? null);
+    setSelectedClubId(s.clubId ?? null);
+    setShowClubLogo(true);
+    setUniform(null);
+    // Remove o parâmetro para que "Gerar outra imagem" comece limpo.
+    const url = new URL(window.location.href);
+    url.searchParams.delete("aluno");
+    window.history.replaceState(null, "", url.toString());
+  }, [prefillApplied, students.data]);
+
   const club: Club | undefined = useMemo(
     () => clubs.data?.find((c) => c.id === selectedClubId),
     [clubs.data, selectedClubId],
@@ -540,7 +565,13 @@ export default function GeneratePage() {
                       data-testid={`select-student-${s.id}`}
                     >
                       <Avatar className="size-10">
-                        {s.photos?.[0] && <AvatarImage src={s.photos[0].url} alt={s.name} />}
+                        {s.photos?.[0] && (
+                          <AvatarImage
+                            src={s.photos[0].url}
+                            alt={s.name}
+                            className="object-cover"
+                          />
+                        )}
                         <AvatarFallback className="text-xs">{initials(s.name)}</AvatarFallback>
                       </Avatar>
                       <div className="min-w-0">

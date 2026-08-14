@@ -84,6 +84,7 @@ function toStudent(r: Row): Student {
     clubId: (r["club_id"] as string | null) ?? undefined,
     createdAt: r["created_at"] as string,
     updatedAt: r["updated_at"] as string,
+    deletedAt: (r["deleted_at"] as string | null) ?? undefined,
   };
 }
 
@@ -507,14 +508,144 @@ export function createSupabaseDataLayer(): DataLayer {
 
   // ---------- Repositórios ----------
 
+  /**
+   * Exclui definitivamente os alunos dados: primeiro as fotos no Storage
+   * (quando o caminho é conhecido), depois o registro. Se a remoção no
+   * Storage falhar, o registro correspondente é PRESERVADO — assim a
+   * exclusão pode ser tentada de novo e nenhum arquivo fica órfão.
+   * (Mesmo padrão de hardDeletePosts.)
+   */
+  async function hardDeleteStudents(
+    rows: Array<{ id: string; photos: StoredImage[] | null }>,
+  ): Promise<void> {
+    if (rows.length === 0) return;
+
+    const byBucket = new Map<string, Array<{ id: string; path: string }>>();
+    const deletableIds = new Set<string>();
+    for (const r of rows) {
+      const locs = (r.photos ?? [])
+        .map((img) => storedImageLocation(img))
+        .filter((l): l is { bucket: string; path: string } => l !== null);
+      if (locs.length === 0) {
+        deletableIds.add(r.id); // sem arquivo nosso no Storage
+        continue;
+      }
+      for (const loc of locs) {
+        byBucket.set(loc.bucket, [
+          ...(byBucket.get(loc.bucket) ?? []),
+          { id: r.id, path: loc.path },
+        ]);
+      }
+    }
+
+    let storageFailure: string | null = null;
+    const failedIds = new Set<string>();
+    for (const [bucket, entries] of byBucket) {
+      const { error } = await supabase.storage
+        .from(bucket)
+        .remove(entries.map((e) => e.path));
+      if (error) {
+        storageFailure = error.message;
+        for (const e of entries) failedIds.add(e.id);
+      }
+    }
+    for (const r of rows) {
+      if (!failedIds.has(r.id)) deletableIds.add(r.id);
+    }
+
+    if (deletableIds.size > 0) {
+      const { error } = await supabase
+        .from("students")
+        .delete()
+        .in("id", [...deletableIds]);
+      if (error) fail("Falha ao excluir alunos definitivamente", error);
+    }
+    if (storageFailure) {
+      throw new Error(
+        `Falha ao remover foto(s) no Storage: ${storageFailure}. Os alunos afetados foram mantidos — tente excluir de novo.`,
+      );
+    }
+  }
+
+  /**
+   * Expurgo oportunista: alunos há mais de 30 dias na lixeira.
+   * Usa a RPC `purge_expired_student_trash()` (SECURITY DEFINER) para
+   * contornar a política RLS students_delete (restrita a super_admin) —
+   * assim qualquer usuário autenticado dispara o expurgo de registros.
+   * Fotos no Storage tornam-se órfãs; a limpeza do Storage deve ser feita
+   * por um job/Edge Function agendado (ver SUPABASE.md).
+   */
+  async function purgeExpiredStudentTrash(): Promise<void> {
+    try {
+      await supabase.rpc("purge_expired_student_trash");
+    } catch {
+      // Best-effort: tentará de novo no próximo carregamento.
+      // Se a RPC ainda não existir no banco (setup.sql não re-executado),
+      // o erro é silenciado — a lixeira funcionará sem expurgo até que o
+      // setup.sql seja re-executado no SQL Editor do Supabase.
+    }
+  }
+
   const students: StudentRepository = {
     async list() {
+      void purgeExpiredStudentTrash();
       const { data, error } = await supabase
         .from("students")
         .select("*")
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
-      if (error) fail("Falha ao listar alunos", error);
+      if (error) {
+        // Banco ainda sem a migração da lixeira (coluna deleted_at ausente):
+        // lista sem o filtro para não quebrar a tela de Alunos.
+        // Rode supabase/setup.sql para habilitar a lixeira.
+        if (error.code === "42703") {
+          const { data: all, error: err2 } = await supabase
+            .from("students")
+            .select("*")
+            .order("created_at", { ascending: false });
+          if (err2) fail("Falha ao listar alunos", err2);
+          return refreshImages((all ?? []).map(toStudent), studentImages);
+        }
+        fail("Falha ao listar alunos", error);
+      }
       return refreshImages((data ?? []).map(toStudent), studentImages);
+    },
+    async listTrash() {
+      await purgeExpiredStudentTrash();
+      const { data, error } = await supabase
+        .from("students")
+        .select("*")
+        .not("deleted_at", "is", null)
+        .order("deleted_at", { ascending: false });
+      if (error) failTrash("Falha ao listar a lixeira de alunos", error);
+      return refreshImages((data ?? []).map(toStudent), studentImages);
+    },
+    async moveToTrash(ids) {
+      if (ids.length === 0) return;
+      const { error } = await supabase
+        .from("students")
+        .update({ deleted_at: new Date().toISOString() })
+        .in("id", ids);
+      if (error) failTrash("Falha ao mover alunos para a lixeira", error);
+    },
+    async restore(ids) {
+      if (ids.length === 0) return;
+      const { error } = await supabase
+        .from("students")
+        .update({ deleted_at: null })
+        .in("id", ids);
+      if (error) failTrash("Falha ao restaurar alunos", error);
+    },
+    async deletePermanently(ids) {
+      if (ids.length === 0) return;
+      const { data, error } = await supabase
+        .from("students")
+        .select("id, photos")
+        .in("id", ids);
+      if (error) fail("Falha ao excluir alunos definitivamente", error);
+      await hardDeleteStudents(
+        (data ?? []) as Array<{ id: string; photos: StoredImage[] | null }>,
+      );
     },
     async get(id) {
       const { data, error } = await supabase
@@ -546,10 +677,6 @@ export function createSupabaseDataLayer(): DataLayer {
         .single();
       if (error) fail("Falha ao atualizar aluno", error);
       return toStudent(data);
-    },
-    async delete(id) {
-      const { error } = await supabase.from("students").delete().eq("id", id);
-      if (error) fail("Falha ao remover aluno", error);
     },
   };
 
