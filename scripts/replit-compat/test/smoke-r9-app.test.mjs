@@ -1,54 +1,68 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer } from 'node:net';
 import { runSmokeTest } from '../smoke-r9-app.mjs';
 
-async function availablePort() {
-  const server = createServer();
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address();
-  await new Promise((resolve) => server.close(resolve));
-  return port;
+async function waitForFile(path) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      return await readFile(path, 'utf8');
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  throw new Error(`timed out waiting for ${path}`);
 }
 
-async function runTemporaryServer(statusCode) {
-  const directory = await mkdtemp(join(tmpdir(), 'r9-smoke-'));
+async function runTemporaryProcess(statusCode, { ignoreSigterm = false } = {}) {
+  const directory = await mkdtemp('/tmp/r9-smoke-');
   const marker = join(directory, 'terminated');
-  const port = await availablePort();
+  const ready = join(directory, 'ready');
   const source = [
-    "const http = require('node:http');",
     "const fs = require('node:fs');",
     `const marker = ${JSON.stringify(marker)};`,
-    `const server = http.createServer((request, response) => { response.writeHead(${statusCode}); response.end('ok'); });`,
-    `server.listen(${port}, '127.0.0.1');`,
-    "process.on('SIGTERM', () => server.close(() => { fs.writeFileSync(marker, 'terminated'); process.exit(0); }));",
+    `fs.writeFileSync(${JSON.stringify(ready)}, 'ready');`,
+    ignoreSigterm
+      ? "process.on('SIGTERM', () => {});"
+      : "process.on('SIGTERM', () => { fs.writeFileSync(marker, 'terminated'); process.exit(0); });",
+    'setInterval(() => {}, 1_000);',
   ].join(' ');
 
   const result = await runSmokeTest({
     command: process.execPath,
     args: ['-e', source],
-    url: `http://127.0.0.1:${port}/`,
+    url: 'http://r9.test/',
+    request: async () => {
+      await waitForFile(ready);
+      return { status: statusCode };
+    },
+    expectedBinding: null,
     timeoutMs: 5_000,
-    shutdownTimeoutMs: 1_000,
+    shutdownTimeoutMs: 100,
   });
 
   return { marker, result };
 }
 
-test('terminates the temporary server after a successful HTTP request', async () => {
-  const { marker, result } = await runTemporaryServer(200);
+test('terminates the smoke child after a successful HTTP response', async () => {
+  const { marker, result } = await runTemporaryProcess(200);
 
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(await readFile(marker, 'utf8'), 'terminated');
 });
 
-test('terminates the temporary server after a failed HTTP request', async () => {
-  const { marker, result } = await runTemporaryServer(500);
+test('terminates the smoke child after a failed HTTP response', async () => {
+  const { marker, result } = await runTemporaryProcess(500);
 
   assert.equal(result.ok, false);
-  assert.match(result.error, /HTTP 500/);
+  assert.match(result.error, /HTTP 500/, JSON.stringify(result));
   assert.equal(await readFile(marker, 'utf8'), 'terminated');
+});
+
+test('waits for child close after escalating shutdown to SIGKILL', async () => {
+  const { result } = await runTemporaryProcess(200, { ignoreSigterm: true });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(result.termination, { code: null, signal: 'SIGKILL' });
 });

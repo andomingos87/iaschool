@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { loadNativeTools } from './lib/native-tools.mjs';
 
 function run(command, args) {
@@ -14,7 +15,7 @@ function run(command, args) {
   });
 }
 
-export async function verifyNativeTools() {
+export async function verifyNativeTools({ runCommand = run } = {}) {
   const report = {
     package: '@workspace/r9-app',
     platform: process.platform,
@@ -25,8 +26,8 @@ export async function verifyNativeTools() {
 
   try {
     const loaded = await loadNativeTools();
-    const vite = await run('corepack', ['pnpm', '--filter', '@workspace/r9-app', 'exec', 'vite', '--version']);
     report.loaded = loaded.loaded;
+    const vite = await runCommand('corepack', ['pnpm', '--filter', '@workspace/r9-app', 'exec', 'vite', '--version']);
     report.viteVersion = vite.output.trim();
     if (vite.code !== 0) throw new Error(`Vite version command exited with code ${vite.code}`);
     report.status = 'passed';
@@ -37,6 +38,8 @@ export async function verifyNativeTools() {
   return report;
 }
 
-const report = await verifyNativeTools();
-console.log(JSON.stringify(report, null, 2));
-if (report.status !== 'passed') process.exitCode = 1;
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const report = await verifyNativeTools();
+  console.log(JSON.stringify(report, null, 2));
+  if (report.status !== 'passed') process.exitCode = 1;
+}
