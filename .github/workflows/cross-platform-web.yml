@@ -1,0 +1,75 @@
+name: cross-platform-web
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  cross-platform-web:
+    name: Web compatibility (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    env:
+      PORT: 5173
+      BASE_PATH: /
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+          - windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Run Replit preflight
+        run: pnpm run replit:preflight
+
+      - name: Verify native tools
+        run: pnpm run replit:verify-native
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Build R9 app
+        run: pnpm --filter @workspace/r9-app run build
+
+      - name: Run web smoke test
+        shell: bash
+        run: pnpm run replit:smoke:web > smoke-web.log 2>&1
+
+      - name: Sanitize smoke log
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f smoke-web.log ]; then
+            sed -E \
+              -e 's#/(Users|home|runner|workspace)/[^[:space:]]*#<path>#g' \
+              -e 's#[A-Za-z]:\\\\[^[:space:]]*#<path>#g' \
+              smoke-web.log > smoke-web-sanitized.log
+          else
+            printf '%s\n' 'Smoke log was not produced.' > smoke-web-sanitized.log
+          fi
+
+      - name: Upload sanitized smoke log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-log-${{ matrix.os }}
+          path: smoke-web-sanitized.log
+          if-no-files-found: ignore

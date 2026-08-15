@@ -60,3 +60,13 @@ test('runbook lists the reproducible bootstrap commands', async () => {
   assert.match(runbook, /pnpm run replit:verify-native/);
   assert.match(runbook, /pnpm run replit:smoke:web/);
 });
+
+test('CI tests macOS, Ubuntu and Windows', async () => {
+  const workflow = await readFile('.github/workflows/cross-platform-web.yml', 'utf8');
+
+  assert.match(workflow, /macos-latest/);
+  assert.match(workflow, /ubuntu-latest/);
+  assert.match(workflow, /windows-latest/);
+  assert.match(workflow, /replit:verify-native/);
+  assert.match(workflow, /replit:smoke:web/);
+});
