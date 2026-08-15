@@ -6,6 +6,7 @@ import {
   DEFAULT_PROMPT_TEMPLATE,
   PLACEHOLDER_DOCS,
   SAMPLE_CONTEXT,
+  buildGenerationPrompt,
   contextFromRequest,
   renderPromptTemplate,
   validatePromptTemplate,
@@ -518,5 +519,61 @@ describe("PLACEHOLDER_DOCS", () => {
   it("documenta a sintaxe de bloco invertido", () => {
     const texts = PLACEHOLDER_DOCS.map((d) => d.token + " " + d.description).join(" ");
     expect(texts).toMatch(/\{\{\^/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gerar sem métricas não deixa rastro vazio na arte (task #69)
+// ---------------------------------------------------------------------------
+
+describe("geração sem métricas — bloco {{#metricas}} omitido do prompt final", () => {
+  it("contextFromRequest com metrics vazio → flag metricas=false e valor vazio", () => {
+    const ctx = contextFromRequest(makeRequest({ metrics: [] }));
+    expect(ctx.flags.metricas).toBe(false);
+    expect(ctx.values.metricas).toBe("");
+  });
+
+  it("renderPromptTemplate com flag metricas=false remove o bloco inteiro", () => {
+    const ctx = contextFromRequest(makeRequest({ metrics: [] }));
+    const rendered = renderPromptTemplate(DEFAULT_PROMPT_TEMPLATE, ctx);
+    // O bloco deve ser removido: nem o delimitador nem o corpo aparecem
+    expect(rendered).not.toContain("{{#metricas}}");
+    expect(rendered).not.toContain("{{/metricas}}");
+    expect(rendered).not.toContain("Exiba com destaque estas estatísticas");
+  });
+
+  it("renderPromptTemplate com flag metricas=false não deixa texto vazio de métricas", () => {
+    const ctx = contextFromRequest(makeRequest({ metrics: [] }));
+    const rendered = renderPromptTemplate(DEFAULT_PROMPT_TEMPLATE, ctx);
+    // O valor placeholder também não deve aparecer (seria string vazia expandida)
+    expect(rendered).not.toMatch(/estatísticas.*:\s*[,.]?$/m);
+    // Sem espaços duplos que denunciem conteúdo excisado
+    expect(rendered).not.toMatch(/\s{2,}/);
+  });
+
+  it("buildGenerationPrompt com metrics vazio omite o bloco de métricas do prompt final", () => {
+    const request = makeRequest({ metrics: [] });
+    const prompt = buildGenerationPrompt(request);
+    expect(prompt).not.toContain("Exiba com destaque estas estatísticas");
+    expect(prompt).not.toContain("{{#metricas}}");
+    expect(prompt).not.toContain("{{/metricas}}");
+  });
+
+  it("buildGenerationPrompt com metrics preenchidos inclui o bloco de métricas", () => {
+    const request = makeRequest({
+      metrics: [{ metricId: "m1", name: "Gols", value: "10" }],
+    });
+    const prompt = buildGenerationPrompt(request);
+    expect(prompt).toContain("Exiba com destaque estas estatísticas");
+    expect(prompt).toContain("Gols: 10");
+  });
+
+  it("renderPromptTemplate com metrics vazio e template personalizado também omite o bloco", () => {
+    const customTemplate =
+      "Nome: {{nome_aluno}}. {{#metricas}}Stats: {{metricas}}.{{/metricas}} Fim.";
+    const ctx = contextFromRequest(makeRequest({ metrics: [] }));
+    const rendered = renderPromptTemplate(customTemplate, ctx);
+    expect(rendered).toBe("Nome: JOÃO. Fim.");
+    expect(rendered).not.toContain("Stats");
   });
 });
