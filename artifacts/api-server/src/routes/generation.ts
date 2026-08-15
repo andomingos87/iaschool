@@ -3,6 +3,12 @@ import multer from "multer";
 import OpenAI, { toFile } from "openai";
 import { requireSupabaseUser } from "../middlewares/supabase-auth";
 import { consumeDailyQuota, getDailyQuotaUsage } from "../lib/generation-quota";
+import {
+  newLogId,
+  writeGenerationLog,
+  type GenerationLogEntry,
+  type LogAttachment,
+} from "../lib/generation-log";
 
 // Geração da arte de post (R9 Escolinhas) com a OpenAI GPT Image.
 // A chave OPENAI_API_KEY fica somente no backend — nunca no navegador.
@@ -98,25 +104,92 @@ router.post(
     });
   },
   async (req, res) => {
+  // ---- Log de auditoria (best-effort, tela /admin/logs) ----
+  const startedAt = Date.now();
+  const logId = newLogId();
+  const rawPrompt = (req.body as { prompt?: unknown })?.["prompt"];
+  const files = (req.files ?? []) as Express.Multer.File[];
+
+  // Metadados opcionais enviados pelo app (aluno, flags, métricas...).
+  let clientMeta: Record<string, unknown> | null = null;
+  const rawMeta = (req.body as { meta?: unknown })?.["meta"];
+  if (typeof rawMeta === "string" && rawMeta.length <= 32_000) {
+    try {
+      const parsed: unknown = JSON.parse(rawMeta);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        clientMeta = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // meta inválido é ignorado — não impede a geração
+    }
+  }
+  const metaImages = Array.isArray(clientMeta?.["images"])
+    ? (clientMeta["images"] as Array<{ role?: unknown }>)
+    : [];
+  const attachments: LogAttachment[] = files.map((f, i) => ({
+    role:
+      typeof metaImages[i]?.role === "string"
+        ? (metaImages[i]!.role as string)
+        : `Imagem ${i + 1}`,
+    fileName: f.originalname || `imagem-${i + 1}`,
+    mimeType: f.mimetype,
+    sizeBytes: f.size,
+    buffer: f.buffer,
+  }));
+
+  let openaiResponse: Record<string, unknown> | null = null;
+  let resultB64: string | null = null;
+
+  /** Responde ao cliente e agenda a gravação do log (nunca bloqueia). */
+  function respond(status: number, body: Record<string, unknown>): void {
+    res.status(status).json(body);
+    const entry: GenerationLogEntry = {
+      id: logId,
+      userId: req.supabaseUserId ?? null,
+      userEmail: null, // resolvido pelo perfil na gravação
+      userName: null,
+      schoolName: null,
+      studentName:
+        typeof clientMeta?.["studentName"] === "string"
+          ? (clientMeta["studentName"] as string)
+          : null,
+      status: status >= 200 && status < 300 ? "success" : "error",
+      durationMs: Date.now() - startedAt,
+      prompt: typeof rawPrompt === "string" ? rawPrompt : null,
+      payload: {
+        model: "gpt-image-2",
+        size: "1024x1024",
+        imageCount: files.length,
+        totalImageBytes: files.reduce((sum, f) => sum + f.size, 0),
+        ...(clientMeta ? { client: clientMeta } : {}),
+      },
+      attachments,
+      openaiResponse,
+      serverStatus: status,
+      serverResponse: body,
+      resultB64,
+    };
+    void writeGenerationLog(entry);
+  }
+
   try {
     const apiKey = process.env["OPENAI_API_KEY"];
     if (!apiKey) {
-      res.status(503).json({
+      respond(503, {
         error:
           "OPENAI_API_KEY não configurada no servidor. Configure o secret para gerar imagens.",
       });
       return;
     }
 
-    const prompt = (req.body as { prompt?: unknown })?.["prompt"];
-    const files = (req.files ?? []) as Express.Multer.File[];
+    const prompt = rawPrompt;
 
     // Rajada: por usuário autenticado; sem usuário (modo dev), por IP.
     const burstKey = req.supabaseUserId
       ? `burst:user:${req.supabaseUserId}`
       : `burst:ip:${req.ip ?? "unknown"}`;
     if (consumeBucket(burstKey, RATE_WINDOW_MS, RATE_MAX_REQUESTS)) {
-      res.status(429).json({
+      respond(429, {
         error: "Muitas gerações em pouco tempo. Aguarde alguns minutos e tente de novo.",
       });
       return;
@@ -129,7 +202,7 @@ router.post(
         DAILY_MAX_REQUESTS,
       );
       if (quota.kind === "exceeded") {
-        res.status(429).json({
+        respond(429, {
           error: `Você atingiu a cota diária de ${DAILY_MAX_REQUESTS} gerações. Tente novamente amanhã.`,
         });
         return;
@@ -142,7 +215,7 @@ router.post(
           { reason: quota.reason, failures: quota.failures },
           "Cota diária persistida fora do ar — gerações bloqueadas (fail-closed)",
         );
-        res.status(503).json({
+        respond(503, {
           error:
             "O controle de cota de gerações está temporariamente indisponível. Para evitar gerações sem controle, novas gerações estão bloqueadas. Tente novamente em alguns minutos.",
         });
@@ -162,7 +235,7 @@ router.post(
             DAILY_MAX_REQUESTS,
           )
         ) {
-          res.status(429).json({
+          respond(429, {
             error: `Você atingiu a cota diária de ${DAILY_MAX_REQUESTS} gerações. Tente novamente amanhã.`,
           });
           return;
@@ -171,31 +244,27 @@ router.post(
     }
 
     if (!prompt || typeof prompt !== "string") {
-      res.status(400).json({ error: "Campo 'prompt' é obrigatório." });
+      respond(400, { error: "Campo 'prompt' é obrigatório." });
       return;
     }
     if (prompt.length > MAX_PROMPT_CHARS) {
-      res.status(400).json({ error: "Prompt longo demais." });
+      respond(400, { error: "Prompt longo demais." });
       return;
     }
     if (files.length === 0) {
-      res.status(400).json({
+      respond(400, {
         error: "Envie ao menos uma imagem (referência e foto do aluno).",
       });
       return;
     }
     if (files.length > MAX_IMAGES) {
-      res
-        .status(400)
-        .json({ error: `No máximo ${MAX_IMAGES} imagens por geração.` });
+      respond(400, { error: `No máximo ${MAX_IMAGES} imagens por geração.` });
       return;
     }
 
     const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
     if (totalBytes > MAX_TOTAL_BYTES) {
-      res
-        .status(400)
-        .json({ error: "Imagens grandes demais no total (máx. 24 MB)." });
+      respond(400, { error: "Imagens grandes demais no total (máx. 24 MB)." });
       return;
     }
 
@@ -219,14 +288,51 @@ router.post(
     });
 
     const b64 = result.data?.[0]?.b64_json;
+    // Metadados da resposta da OpenAI — nunca o base64 (gigante).
+    openaiResponse = {
+      created: result.created ?? null,
+      usage: (result as { usage?: unknown }).usage ?? null,
+      imageReturned: Boolean(b64),
+      imageBytes: b64 ? Math.floor((b64.length * 3) / 4) : 0,
+    };
     if (!b64) {
-      res
-        .status(502)
-        .json({ error: "A OpenAI não retornou imagem. Tente novamente." });
+      respond(502, { error: "A OpenAI não retornou imagem. Tente novamente." });
       return;
     }
 
-    res.json({ imageUrl: `data:image/png;base64,${b64}` });
+    resultB64 = b64;
+    // O corpo real leva a imagem; o log guarda só um resumo (ver respond()).
+    res.json({ imageUrl: `data:image/png;base64,${b64}`, logId });
+    const entry: GenerationLogEntry = {
+      id: logId,
+      userId: req.supabaseUserId ?? null,
+      userEmail: null,
+      userName: null,
+      schoolName: null,
+      studentName:
+        typeof clientMeta?.["studentName"] === "string"
+          ? (clientMeta["studentName"] as string)
+          : null,
+      status: "success",
+      durationMs: Date.now() - startedAt,
+      prompt,
+      payload: {
+        model: "gpt-image-2",
+        size: "1024x1024",
+        imageCount: files.length,
+        totalImageBytes: totalBytes,
+        ...(clientMeta ? { client: clientMeta } : {}),
+      },
+      attachments,
+      openaiResponse,
+      serverStatus: 200,
+      serverResponse: {
+        imageUrl: `data:image/png;base64,<${Math.floor((b64.length * 3) / 4)} bytes>`,
+        logId,
+      },
+      resultB64,
+    };
+    void writeGenerationLog(entry);
   } catch (err) {
     req.log.error({ err }, "Falha na geração de imagem");
     const message =
@@ -237,7 +343,15 @@ router.post(
           : "Erro inesperado na geração.";
     const status =
       err instanceof OpenAI.APIError && err.status ? err.status : 500;
-    res.status(status >= 400 && status < 600 ? status : 500).json({
+    if (err instanceof OpenAI.APIError) {
+      openaiResponse = {
+        status: err.status ?? null,
+        code: (err as { code?: unknown }).code ?? null,
+        type: (err as { type?: unknown }).type ?? null,
+        message: err.message,
+      };
+    }
+    respond(status >= 400 && status < 600 ? status : 500, {
       error: message,
     });
   }

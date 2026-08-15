@@ -229,6 +229,10 @@ export function createSupabaseDataLayer(): DataLayer {
   }
 
   const auth: AuthService = {
+    async getAccessToken() {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token ?? null;
+    },
     async getSession() {
       const { data, error } = await supabase.auth.getSession();
       if (error) fail("Falha ao recuperar sessão", error);

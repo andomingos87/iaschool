@@ -12,6 +12,7 @@ import {
   Settings2,
   LogOut,
   Moon,
+  ScrollText,
   Sun,
   UserCheck,
 } from "lucide-react";
@@ -50,6 +51,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import { initials } from "@/lib/format";
 import { getDataLayer } from "@/lib/data";
+import { LOGS_ADMIN_EMAIL } from "@/lib/constants";
 
 /**
  * Contador de cadastros pendentes para o badge do menu "Aprovações".
@@ -98,6 +100,13 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/prompt", label: "Prompt de geração", icon: Settings2 },
 ];
 
+/** Item visível SOMENTE para o admin da IAsport (e-mail exato). */
+const LOGS_NAV: NavItem = {
+  href: "/admin/logs",
+  label: "Logs de geração",
+  icon: ScrollText,
+};
+
 const STUDENT_NAV: NavItem[] = [
   { href: "/", label: "Meu perfil", icon: Home },
 ];
@@ -113,11 +122,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { session, signOut } = useAuth();
   const { theme, toggle } = useTheme();
   const user = session?.user;
+  const isLogsAdmin =
+    user?.role === "super_admin" &&
+    user.email.toLowerCase() === LOGS_ADMIN_EMAIL;
   const nav =
     user?.role === "student"
       ? STUDENT_NAV
       : user?.role === "super_admin"
-        ? [...NAV, ...ADMIN_NAV]
+        ? [...NAV, ...ADMIN_NAV, ...(isLogsAdmin ? [LOGS_NAV] : [])]
         : NAV;
   const pendingCount = usePendingCount(user?.role === "super_admin");
 

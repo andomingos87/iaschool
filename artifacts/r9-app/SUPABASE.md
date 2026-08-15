@@ -43,7 +43,14 @@ intencional para evitar abuso da chave sem autenticação.
      servidas via URLs assinadas (1 ano de validade), nunca como URLs públicas.
    - tabela `generation_usage` + função `consume_generation_quota` (cota
      diária de gerações persistida — bases criadas antes desta funcionalidade
-     devem rodar [`supabase/generation-quota.sql`](./supabase/generation-quota.sql)).
+     devem rodar [`supabase/generation-quota.sql`](./supabase/generation-quota.sql));
+   - tabela `generation_logs` + bucket privado `generation-logs` (auditoria
+     das gerações na tela `/admin/logs`, exclusiva do admin da IAsport —
+     bases criadas antes desta funcionalidade devem rodar
+     [`supabase/generation-logs.sql`](./supabase/generation-logs.sql)).
+     A tabela tem RLS ligada e **sem políticas**: só o api-server
+     (service_role) escreve e lê; a tela consome a API `/api/generation/logs`,
+     que exige super_admin com o e-mail exato do admin.
 2. **Habilite o cadastro por e-mail** no Supabase: Authentication →
    Sign In / Up → Email → "Enable email signups" (ativado). O cadastro
    público do app depende disso; a segurança fica garantida pelo fluxo de

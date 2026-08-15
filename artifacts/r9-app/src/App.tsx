@@ -25,6 +25,8 @@ import GalleryPage from '@/pages/gallery';
 import MetricsPage from '@/pages/metrics';
 import GeneratePage from '@/pages/generate';
 import AdminPromptPage from '@/pages/admin-prompt';
+import AdminLogsPage from '@/pages/admin-logs';
+import { LOGS_ADMIN_EMAIL } from '@/lib/constants';
 import ApprovalsPage from '@/pages/approvals';
 import StudentAreaPage from '@/pages/student-area';
 import PendingApprovalPage from '@/pages/pending-approval';
@@ -51,6 +53,10 @@ function Pages() {
   }
 
   const isSuperAdmin = role === 'super_admin';
+  // Logs de geração: além de super_admin, exige o e-mail exato do admin.
+  const isLogsAdmin =
+    isSuperAdmin &&
+    session?.user.email.toLowerCase() === LOGS_ADMIN_EMAIL;
 
   return (
     <Switch>
@@ -65,6 +71,9 @@ function Pages() {
       {/* Rotas de super_admin */}
       <Route path="/admin/prompt">
         {isSuperAdmin ? <AdminPromptPage /> : <NotFound />}
+      </Route>
+      <Route path="/admin/logs">
+        {isLogsAdmin ? <AdminLogsPage /> : <NotFound />}
       </Route>
       {isSuperAdmin && (
         <Route path="/aprovacoes" component={ApprovalsPage} />

@@ -60,6 +60,11 @@ export interface AuthService {
   updatePassword(newPassword: string): Promise<void>;
   /** Equivalente a supabase.auth.onAuthStateChange(). Retorna unsubscribe. */
   onAuthStateChange(cb: (session: Session | null) => void): () => void;
+  /**
+   * Access token JWT da sessão atual (para chamadas autenticadas ao
+   * api-server, ex.: logs de geração). Retorna null no mock/sem sessão.
+   */
+  getAccessToken(): Promise<string | null>;
 }
 
 /** Equivalente ao Supabase Storage (upload em bucket + URL pública). */
@@ -151,7 +156,7 @@ export interface ImageGenerationService {
   generate(
     request: GenerationRequest,
     onUploadProgress?: (percent: number) => void,
-  ): Promise<{ imageUrl: string; details: GenerationDetails }>;
+  ): Promise<{ imageUrl: string; details: GenerationDetails; logId?: string }>;
 
   /**
    * Saldo da cota diária de gerações do usuário. Retorna `null` quando o

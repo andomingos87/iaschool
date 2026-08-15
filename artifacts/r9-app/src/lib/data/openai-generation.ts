@@ -45,7 +45,10 @@ function uploadWithProgress(
   headers: Record<string, string>,
   timeoutMs: number,
   onUploadProgress?: (percent: number) => void,
-): Promise<{ status: number; body: { imageUrl?: string; error?: string } | null }> {
+): Promise<{
+  status: number;
+  body: { imageUrl?: string; error?: string; logId?: string } | null;
+}> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
@@ -60,11 +63,13 @@ function uploadWithProgress(
     };
     xhr.upload.onload = () => onUploadProgress?.(100);
     xhr.onload = () => {
-      let body: { imageUrl?: string; error?: string } | null = null;
+      let body: { imageUrl?: string; error?: string; logId?: string } | null =
+        null;
       try {
         body = JSON.parse(xhr.responseText) as {
           imageUrl?: string;
           error?: string;
+          logId?: string;
         };
       } catch {
         body = null;
@@ -178,6 +183,22 @@ export function createOpenAIGenerationService(
       const prompt = buildGenerationPrompt(request, template);
       const formData = new FormData();
       formData.append("prompt", prompt);
+      // Metadados p/ o log de auditoria do admin (nunca bytes de imagem).
+      formData.append(
+        "meta",
+        JSON.stringify({
+          studentName: request.student.name,
+          model: GENERATION_MODEL,
+          size: GENERATION_SIZE,
+          showClubLogo: request.showClubLogo,
+          includeR9Logo: request.includeR9Logo,
+          clubName: request.club?.name ?? null,
+          uniformIncluded: Boolean(request.uniform),
+          metrics: request.metrics,
+          auxiliaryPrompt: request.auxiliaryPrompt ?? null,
+          images: imagesMeta,
+        }),
+      );
       for (const file of files) {
         formData.append("images", file, file.name);
       }
@@ -205,6 +226,7 @@ export function createOpenAIGenerationService(
 
       return {
         imageUrl: body.imageUrl,
+        logId: body.logId,
         details: {
           prompt,
           model: GENERATION_MODEL,

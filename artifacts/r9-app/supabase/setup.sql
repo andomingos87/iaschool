@@ -799,3 +799,41 @@ grant execute on function public.consume_generation_quota(uuid, integer)
 --   Authentication → Sign In / Up → Email → "Enable email signups" (ativado).
 -- Contas pendentes/recusadas não leem nenhum dado (RLS acima).
 -- ------------------------------------------------------------
+
+-- ------------------------------------------------------------
+-- 8. Logs de geração de imagem (tela /admin/logs — somente admin IAsport)
+-- Mesmo conteúdo de supabase/generation-logs.sql (idempotente).
+-- ------------------------------------------------------------
+
+create table if not exists public.generation_logs (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  user_id uuid,
+  user_email text,
+  user_name text,
+  school_name text,
+  student_name text,
+  status text not null check (status in ('success', 'error')),
+  duration_ms integer,
+  prompt text,
+  payload jsonb,
+  attachments jsonb not null default '[]'::jsonb,
+  openai_response jsonb,
+  server_status integer,
+  server_response jsonb,
+  result_thumb_path text,
+  result_url text
+);
+
+create index if not exists generation_logs_created_at_idx
+  on public.generation_logs (created_at desc);
+create index if not exists generation_logs_status_idx
+  on public.generation_logs (status);
+
+-- RLS ligada e SEM políticas: apenas o service_role (api-server) acessa.
+alter table public.generation_logs enable row level security;
+
+-- Bucket privado das miniaturas (anexos + resultado); URLs assinadas via API.
+insert into storage.buckets (id, name, public)
+values ('generation-logs', 'generation-logs', false)
+on conflict (id) do update set public = false;

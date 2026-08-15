@@ -318,7 +318,7 @@ export default function GeneratePage() {
     setPhase("generating");
     setUploadProgress(0);
     try {
-      const { imageUrl, details } = await getDataLayer().generation.generate(
+      const { imageUrl, details, logId } = await getDataLayer().generation.generate(
         request,
         (percent) => setUploadProgress(percent < 100 ? percent : null),
       );
@@ -352,6 +352,25 @@ export default function GeneratePage() {
           metrics: metricValues,
           details,
         });
+        // Vincula a URL do post salvo ao log de auditoria (best-effort).
+        if (logId && savedUrl.startsWith("http")) {
+          void (async () => {
+            try {
+              const token = await getDataLayer().auth.getAccessToken();
+              if (!token) return;
+              await fetch(`/api/generation/logs/${logId}/result`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ imageUrl: savedUrl }),
+              });
+            } catch {
+              // log é best-effort — nunca incomoda o usuário
+            }
+          })();
+        }
       } catch {
         toast({
           variant: "destructive",

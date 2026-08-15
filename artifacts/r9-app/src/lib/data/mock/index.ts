@@ -85,6 +85,11 @@ function allUsers(): AppUser[] {
 }
 
 const auth: AuthService = {
+  // Mock não tem JWT real — rotas autenticadas do api-server ficam
+  // indisponíveis em modo demonstração.
+  async getAccessToken() {
+    return null;
+  },
   async getSession() {
     await delay(200);
     const session = readValue<Session>("session");
