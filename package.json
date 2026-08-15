@@ -8,7 +8,10 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "replit:preflight": "node scripts/replit-compat/preflight.mjs",
-    "replit:install": "corepack pnpm install --frozen-lockfile"
+    "replit:install": "corepack pnpm install --frozen-lockfile",
+    "replit:verify-native": "node scripts/replit-compat/verify-native-tools.mjs",
+    "replit:smoke:web": "node scripts/replit-compat/smoke-r9-app.mjs",
+    "replit:test": "node --test scripts/replit-compat/test/*.test.mjs"
   },
   "packageManager": "pnpm@11.17.0",
   "private": true,
