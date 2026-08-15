@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -51,4 +51,12 @@ test('exits 2 for an unsupported repository without a known recipe', async () =>
   });
   assert.equal(result.status, 2);
   assert.match(result.stdout, /"proposedRecipe": null/);
+});
+
+test('runbook lists the reproducible bootstrap commands', async () => {
+  const runbook = await readFile('docs/development/replit-cross-platform.md', 'utf8');
+
+  assert.match(runbook, /corepack pnpm install --frozen-lockfile/);
+  assert.match(runbook, /pnpm run replit:verify-native/);
+  assert.match(runbook, /pnpm run replit:smoke:web/);
 });

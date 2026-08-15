@@ -4,6 +4,11 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Run & Operate
 
+- Cross-platform web bootstrap: see [`docs/development/replit-cross-platform.md`](docs/development/replit-cross-platform.md)
+- `corepack pnpm install --frozen-lockfile` — deterministic dependency install
+- `pnpm run replit:preflight` — read-only compatibility diagnosis
+- `pnpm run replit:verify-native` — verify Vite native tooling
+- `pnpm run replit:smoke:web` — start and HTTP-check the R9 web app
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
@@ -38,7 +43,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Keep `.env` local-only; document variable names, never values.
+- Run the cross-platform bootstrap in the documented order before diagnosing a native-tool error.
+- `.replit` remains the source of truth for Replit workflows and deployment configuration.
 
 ## Pointers
 
