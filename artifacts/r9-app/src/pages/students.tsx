@@ -93,11 +93,9 @@ type DeleteMode = "trash" | "permanent";
 const VIEW_MODE_KEY = "r9:students-view-mode";
 
 function readViewMode(): ViewMode {
-  try {
-    return localStorage.getItem(VIEW_MODE_KEY) === "list" ? "list" : "cards";
-  } catch {
-    return "cards";
-  }
+  // Lista é sempre o padrão; o localStorage só persiste mudanças feitas
+  // pelo usuário durante a sessão (não sobrepõe o padrão ao recarregar).
+  return "list";
 }
 
 /** Dias restantes até o expurgo definitivo de um item da lixeira. */

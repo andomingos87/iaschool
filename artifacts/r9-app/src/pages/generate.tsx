@@ -193,7 +193,7 @@ export default function GeneratePage() {
       case 5:
         return !!reference;
       case 6:
-        return Object.values(selectedMetrics).some((v) => v.trim() !== "");
+        return true;
       default:
         return true;
     }
@@ -942,7 +942,7 @@ export default function GeneratePage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-muted-foreground">
-                    Selecione métricas e informe os valores.
+                    Opcional — selecione métricas e informe os valores, ou pule direto para gerar.
                   </p>
                   <Button
                     variant="secondary"
@@ -1093,6 +1093,6 @@ function stepTitle(step: number): string {
     "Incluir logo R9",
     "Escolher uniforme (opcional)",
     "Selecionar referência",
-    "Escolher métricas",
+    "Métricas (opcional)",
   ][step];
 }
