@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import OpenAI, { toFile } from "openai";
+import { OpenAI, toFile } from "openai";
 import { requireSupabaseUser } from "../middlewares/supabase-auth";
 import { consumeDailyQuota, getDailyQuotaUsage } from "../lib/generation-quota";
 import {

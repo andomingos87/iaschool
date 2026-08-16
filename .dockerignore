@@ -1,0 +1,13 @@
+.git
+.vercel
+.pnpm-store
+node_modules
+**/node_modules
+**/dist
+**/.tsbuildinfo
+.env
+.env.*
+!.env.example
+screenshots
+reports
+docs/development/evidence

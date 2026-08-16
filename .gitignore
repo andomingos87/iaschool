@@ -57,3 +57,5 @@ Thumbs.db
 /docs/development/evidence/
 /docs/development/**/*.tmp.*
 /docs/development/**/*.report.*
+.vercel
+.env*

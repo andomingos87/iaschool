@@ -87,6 +87,10 @@ Confirme a porta real no ambiente antes de compartilhar uma URL.
 
 ## Testes e validação
 
+- Para testes autenticados de aceitação, use exclusivamente a conta de QA
+  configurada localmente nas variáveis `IASPORT_TEST_EMAIL` e
+  `IASPORT_TEST_PASSWORD`. Nunca grave os valores dessas variáveis no
+  repositório, em `AGENTS.md`, nos logs, capturas de tela ou commits.
 - Testes dos scripts de compatibilidade: `pnpm run test:compat`.
 - Typecheck completo: `pnpm run typecheck`.
 - Build completo: `pnpm run build`.

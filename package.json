@@ -13,6 +13,9 @@
   },
   "packageManager": "pnpm@11.17.0",
   "private": true,
+  "dependencies": {
+    "express": "^5.2.1"
+  },
   "devDependencies": {
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
