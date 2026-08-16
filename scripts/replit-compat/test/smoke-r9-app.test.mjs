@@ -60,6 +60,31 @@ test('terminates the smoke child after a failed HTTP response', async () => {
   assert.equal(await readFile(marker, 'utf8'), 'terminated');
 });
 
+test('accepts HTTP success when the child prints no bind banner', async () => {
+  const directory = await mkdtemp('/tmp/r9-smoke-');
+  const ready = join(directory, 'ready');
+  const source = [
+    "const fs = require('node:fs');",
+    `fs.writeFileSync(${JSON.stringify(ready)}, 'ready');`,
+    'setInterval(() => {}, 1_000);',
+  ].join(' ');
+
+  const result = await runSmokeTest({
+    command: process.execPath,
+    args: ['-e', source],
+    url: 'http://r9.test/',
+    request: async () => {
+      await waitForFile(ready);
+      return { status: 200 };
+    },
+    expectedBinding: 'http://127.0.0.1:5173/',
+    timeoutMs: 5_000,
+    shutdownTimeoutMs: 100,
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
 test('waits for child close after escalating shutdown to SIGKILL', async () => {
   const { result } = await runTemporaryProcess(200, { ignoreSigterm: true });
 

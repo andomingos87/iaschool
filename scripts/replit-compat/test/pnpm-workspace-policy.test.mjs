@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validatePnpmWorkspacePolicy } from '../lib/preflight.mjs';
+import { validatePnpmWorkspacePolicy } from '../lib/workspace-policy.mjs';
 
 test('accepts a cross-platform pnpm workspace native-tool policy', () => {
   const result = validatePnpmWorkspacePolicy({

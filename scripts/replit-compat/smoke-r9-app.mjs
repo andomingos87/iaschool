@@ -69,7 +69,7 @@ export async function runSmokeTest({
         const response = await request(url);
         if (response.status >= 200 && response.status < 400) {
           const serverOutput = lastLines(output);
-          result = expectedBinding && !serverOutput.includes(expectedBinding)
+          result = expectedBinding && serverOutput && !serverOutput.includes(expectedBinding)
             ? { ok: false, error: `server did not confirm binding ${expectedBinding}`, output: serverOutput }
             : { ok: true, status: response.status, output: serverOutput };
           break;
