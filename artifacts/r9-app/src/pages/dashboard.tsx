@@ -99,7 +99,7 @@ export default function DashboardPage() {
             <div>
               <h2 className="text-lg font-bold">Gere um post com métricas</h2>
               <p className="text-sm text-muted-foreground">
-                Escolha o aluno, aplique as cores do clube e compartilhe no WhatsApp.
+                Escolha o aluno, aplique a identidade da escola e compartilhe no WhatsApp.
               </p>
             </div>
           </div>
@@ -121,9 +121,9 @@ export default function DashboardPage() {
         />
         <StatCard
           icon={<Shield className="size-6" />}
-          label="Clubes"
+          label="Escolas"
           value={clubs.data?.length ?? 0}
-          href="/clubes"
+          href="/escolas"
           loading={clubs.isLoading}
         />
         <StatCard

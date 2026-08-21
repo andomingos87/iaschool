@@ -64,7 +64,7 @@ function Pages() {
       <Route path="/gerar" component={GeneratePage} />
       <Route path="/alunos" component={StudentsPage} />
       <Route path="/alunos/:id" component={StudentDetailPage} />
-      <Route path="/clubes" component={ClubsPage} />
+      <Route path="/escolas" component={ClubsPage} />
       <Route path="/referencias" component={ReferencesPage} />
       <Route path="/galeria" component={GalleryPage} />
       <Route path="/metricas" component={MetricsPage} />

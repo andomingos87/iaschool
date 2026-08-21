@@ -15,7 +15,7 @@ export const DEFAULT_PROMPT_TEMPLATE = [
   "{{#brasao}}Inclua o brasão do clube {{nome_clube}} (imagem enviada) em posição de destaque discreto.{{/brasao}}",
   "{{#cores_clube}}Use as cores oficiais do clube na composição: {{cores_clube}}.{{/cores_clube}}",
   "{{#uniforme}}Uma das imagens enviadas mostra o uniforme do clube — use-o como referência de vestuário/cores.{{/uniforme}}",
-  "{{#logo_r9}}Inclua a marca 'R9 ESCOLINHAS' de forma discreta (selo/rodapé), usando o logotipo IAsport enviado como referência de marca.{{/logo_r9}}",
+  "{{#logo_r9}}Inclua o logotipo enviado como selo de marca discreto (rodapé), reproduzindo-o fielmente e sem escrever nenhum nome de marca.{{/logo_r9}}",
   "{{#prompt_auxiliar}}Instruções adicionais desta geração: {{prompt_auxiliar}}{{/prompt_auxiliar}}",
   "Texto em português do Brasil, sem erros de ortografia. Resultado profissional, pronto para publicação.",
 ].join("\n");

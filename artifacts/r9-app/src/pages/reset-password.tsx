@@ -11,7 +11,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@workspace/iasport/components/ui/form";
-import { Input } from "@workspace/iasport/components/ui/input";
+import { PasswordInput } from "@workspace/iasport/components/ui/password-input";
 import { Button } from "@workspace/iasport/components/ui/button";
 import {
   Card,
@@ -21,7 +21,8 @@ import {
   CardTitle,
 } from "@workspace/iasport/components/ui/card";
 import { toast } from "@workspace/iasport/hooks/use-toast";
-import { R9Logo } from "@/components/r9-logo";
+import { BrandLogo } from "@/components/brand-logo";
+import { iaschool } from "@/config/iaschool";
 import { getDataLayer } from "@/lib/data";
 import { clearRecoveryPending } from "@/lib/recovery";
 
@@ -76,7 +77,7 @@ export default function ResetPasswordPage({ onDone }: { onDone: () => void }) {
 
       <div className="relative w-full max-w-md space-y-6">
         <div className="flex flex-col items-center gap-3 text-center">
-          <R9Logo className="scale-125" />
+          <BrandLogo className="scale-125" />
         </div>
 
         <Card className="border-border">
@@ -86,7 +87,7 @@ export default function ResetPasswordPage({ onDone }: { onDone: () => void }) {
               Definir nova senha
             </CardTitle>
             <CardDescription>
-              Escolha uma nova senha para a sua conta R9.
+              Escolha uma nova senha para a sua conta {iaschool.brand.name}.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -99,8 +100,7 @@ export default function ResetPasswordPage({ onDone }: { onDone: () => void }) {
                     <FormItem>
                       <FormLabel>Nova senha</FormLabel>
                       <FormControl>
-                        <Input
-                          type="password"
+                        <PasswordInput
                           placeholder="••••••"
                           autoComplete="new-password"
                           data-testid="input-new-password"
@@ -118,8 +118,7 @@ export default function ResetPasswordPage({ onDone }: { onDone: () => void }) {
                     <FormItem>
                       <FormLabel>Confirmar nova senha</FormLabel>
                       <FormControl>
-                        <Input
-                          type="password"
+                        <PasswordInput
                           placeholder="••••••"
                           autoComplete="new-password"
                           data-testid="input-confirm-password"

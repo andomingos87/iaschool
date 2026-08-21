@@ -45,8 +45,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@workspace/iasport/components/ui/dropdown-menu";
-import { R9Logo } from "@/components/r9-logo";
+import { BrandLogo } from "@/components/brand-logo";
 import { DemoIndicator } from "@/components/demo-indicator";
+import { iaschool } from "@/config/iaschool";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import { initials } from "@/lib/format";
@@ -89,7 +90,7 @@ const NAV: NavItem[] = [
   { href: "/gerar", label: "Gerar imagem", icon: Sparkles, highlight: true },
   { href: "/galeria", label: "Galeria", icon: GalleryVerticalEnd },
   { href: "/alunos", label: "Alunos", icon: Users },
-  { href: "/clubes", label: "Clubes", icon: Shield },
+  { href: "/escolas", label: iaschool.modules.schools, icon: Shield },
   { href: "/referencias", label: "Referências", icon: Images },
   { href: "/metricas", label: "Métricas", icon: BarChart3 },
 ];
@@ -100,7 +101,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/prompt", label: "Prompt de geração", icon: Settings2 },
 ];
 
-/** Item visível SOMENTE para o admin da IAsport (e-mail exato). */
+/** Item visível somente para o administrador de auditoria configurado. */
 const LOGS_NAV: NavItem = {
   href: "/admin/logs",
   label: "Logs de geração",
@@ -112,9 +113,10 @@ const STUDENT_NAV: NavItem[] = [
 ];
 
 function roleLabel(role: string) {
-  if (role === "super_admin") return "Administrador";
-  if (role === "student") return "Aluno";
-  return "Escolinha";
+  if (role in iaschool.roles) {
+    return iaschool.roles[role as keyof typeof iaschool.roles];
+  }
+  return "Usuário";
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -138,7 +140,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Sidebar>
         <SidebarHeader className="border-b border-sidebar-border p-3">
           <Link href="/" data-testid="link-logo">
-            <R9Logo />
+            <BrandLogo />
           </Link>
         </SidebarHeader>
         <SidebarContent>
@@ -192,7 +194,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-2">
             <Avatar className="size-8">
               <AvatarFallback className="bg-primary text-xs text-primary-foreground">
-                {user ? initials(user.name) : "R9"}
+                {user ? initials(user.name) : iaschool.brand.shortName}
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1 leading-tight">
@@ -234,7 +236,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 >
                   <Avatar className="size-7">
                     <AvatarFallback className="bg-primary text-xs text-primary-foreground">
-                      {user ? initials(user.name) : "R9"}
+                      {user ? initials(user.name) : iaschool.brand.shortName}
                     </AvatarFallback>
                   </Avatar>
                 </Button>

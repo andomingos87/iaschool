@@ -46,7 +46,7 @@ export default function ClubsPage() {
     if (!toDelete) return;
     try {
       await del.mutateAsync(toDelete.id);
-      toast({ title: "Clube excluído", description: toDelete.name });
+      toast({ title: "Escola excluída", description: toDelete.name });
       setToDelete(null);
     } catch {
       toast({ variant: "destructive", title: "Não foi possível excluir" });
@@ -56,11 +56,11 @@ export default function ClubsPage() {
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
-        title="Clubes"
-        description="Gerencie brasões, uniformes e cores das marcas."
+        title="Escolas"
+        description="Gerencie logo, uniforme e identidade visual de cada escola."
         action={
           <Button onClick={openNew} data-testid="button-new-club">
-            <Plus className="size-4" /> Novo clube
+            <Plus className="size-4" /> Nova escola
           </Button>
         }
       />
@@ -72,11 +72,11 @@ export default function ClubsPage() {
       ) : (clubs.data?.length ?? 0) === 0 ? (
         <EmptyState
           icon={<Shield className="size-6" />}
-          title="Nenhum clube cadastrado"
-          description="Cadastre um clube para aplicar cores e brasão nas imagens geradas."
+          title="Nenhuma escola cadastrada"
+          description="Cadastre uma escola para aplicar logo, uniforme e cores nas imagens geradas."
           action={
             <Button onClick={openNew} data-testid="button-empty-new-club">
-              <Plus className="size-4" /> Cadastrar clube
+              <Plus className="size-4" /> Cadastrar escola
             </Button>
           }
         />
@@ -173,7 +173,7 @@ export default function ClubsPage() {
       <ConfirmDelete
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}
-        title="Excluir clube?"
+        title="Excluir escola?"
         description={`Isso removerá "${toDelete?.name}" permanentemente.`}
         onConfirm={confirmDelete}
         loading={del.isPending}

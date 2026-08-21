@@ -19,6 +19,7 @@ import {
   FormMessage,
 } from "@workspace/iasport/components/ui/form";
 import { Input } from "@workspace/iasport/components/ui/input";
+import { PasswordInput } from "@workspace/iasport/components/ui/password-input";
 import { Button } from "@workspace/iasport/components/ui/button";
 import {
   Card,
@@ -110,7 +111,7 @@ export function SignupCard({ onBack }: { onBack: () => void }) {
           </CardTitle>
           <CardDescription>
             Sua conta foi criada e está aguardando aprovação. O administrador
-            da R9 vai liberar seu acesso — depois disso é só entrar com seu
+            da IAschool vai liberar seu acesso — depois disso é só entrar com seu
             e-mail e senha.
           </CardDescription>
         </CardHeader>
@@ -133,8 +134,8 @@ export function SignupCard({ onBack }: { onBack: () => void }) {
     return (
       <Card className="border-border">
         <CardHeader>
-          <CardTitle>Criar conta</CardTitle>
-          <CardDescription>Como você quer usar o R9 Escolinhas?</CardDescription>
+          <CardTitle>Escolha uma opção</CardTitle>
+          <CardDescription>Como você quer usar a plataforma?</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <button
@@ -205,7 +206,7 @@ export function SignupCard({ onBack }: { onBack: () => void }) {
                     <FormLabel>Nome da escola</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Ex.: R9 Osasco"
+                        placeholder="Ex.: Escola Horizonte"
                         data-testid="input-signup-school-name"
                         {...field}
                       />
@@ -240,8 +241,7 @@ export function SignupCard({ onBack }: { onBack: () => void }) {
                   <FormItem>
                     <FormLabel>Senha</FormLabel>
                     <FormControl>
-                      <Input
-                        type="password"
+                      <PasswordInput
                         placeholder="••••••"
                         autoComplete="new-password"
                         data-testid="input-signup-school-password"
@@ -342,8 +342,7 @@ export function SignupCard({ onBack }: { onBack: () => void }) {
                 <FormItem>
                   <FormLabel>Senha</FormLabel>
                   <FormControl>
-                    <Input
-                      type="password"
+                    <PasswordInput
                       placeholder="••••••"
                       autoComplete="new-password"
                       data-testid="input-signup-student-password"

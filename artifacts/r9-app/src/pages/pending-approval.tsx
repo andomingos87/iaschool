@@ -7,7 +7,8 @@ import {
   CardTitle,
 } from "@workspace/iasport/components/ui/card";
 import { Button } from "@workspace/iasport/components/ui/button";
-import { R9Logo } from "@/components/r9-logo";
+import { BrandLogo } from "@/components/brand-logo";
+import { iaschool } from "@/config/iaschool";
 import { DemoIndicator } from "@/components/demo-indicator";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -27,7 +28,7 @@ export default function PendingApprovalPage() {
       </div>
       <div className="relative w-full max-w-md space-y-6">
         <div className="flex justify-center">
-          <R9Logo className="scale-125" />
+          <BrandLogo className="scale-125" />
         </div>
         <Card className="border-border">
           <CardHeader>
@@ -41,8 +42,8 @@ export default function PendingApprovalPage() {
             </CardTitle>
             <CardDescription data-testid="text-approval-status">
               {rejected
-                ? "Seu cadastro foi recusado pelo administrador. Se você acredita que houve um engano, entre em contato com a R9."
-                : "Seu cadastro foi recebido! O acesso será liberado assim que o administrador da R9 aprovar sua conta. Volte a entrar mais tarde."}
+                ? "Seu cadastro foi recusado pelo administrador. Se você acredita que houve um engano, entre em contato com a equipe da IAschool."
+                : `Seu cadastro foi recebido! O acesso será liberado assim que um administrador da ${iaschool.brand.name} aprovar sua conta. Volte a entrar mais tarde.`}
             </CardDescription>
           </CardHeader>
           <CardContent>

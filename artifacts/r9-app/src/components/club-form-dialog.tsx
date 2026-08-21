@@ -30,7 +30,7 @@ import type { Club, StoredImage } from "@/lib/data";
 import { BUCKETS } from "@/lib/constants";
 
 const schema = z.object({
-  name: z.string().min(2, "Informe o nome do clube"),
+  name: z.string().min(2, "Informe o nome da escola"),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -83,10 +83,10 @@ export function ClubFormDialog({ open, onOpenChange, club, onSaved }: Props) {
       let saved: Club;
       if (club) {
         saved = await update.mutateAsync({ id: club.id, patch: payload });
-        toast({ title: "Clube atualizado", description: values.name });
+        toast({ title: "Escola atualizada", description: values.name });
       } else {
         saved = await create.mutateAsync(payload);
-        toast({ title: "Clube cadastrado", description: values.name });
+        toast({ title: "Escola cadastrada", description: values.name });
       }
       onOpenChange(false);
       onSaved?.(saved);
@@ -103,9 +103,9 @@ export function ClubFormDialog({ open, onOpenChange, club, onSaved }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{club ? "Editar clube" : "Novo clube"}</DialogTitle>
+          <DialogTitle>{club ? "Editar escola" : "Nova escola"}</DialogTitle>
           <DialogDescription>
-            Defina nome, brasão, uniformes e até 3 cores da marca.
+            Defina nome, logo, uniformes e até 3 cores da marca.
           </DialogDescription>
         </DialogHeader>
 
@@ -116,9 +116,9 @@ export function ClubFormDialog({ open, onOpenChange, club, onSaved }: Props) {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Nome do clube *</FormLabel>
+              <FormLabel>Nome da escola *</FormLabel>
                   <FormControl>
-                    <Input placeholder="Ex.: R9 Osasco" data-testid="input-club-name" {...field} />
+                    <Input placeholder="Ex.: Escola Horizonte" data-testid="input-club-name" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -126,13 +126,13 @@ export function ClubFormDialog({ open, onOpenChange, club, onSaved }: Props) {
             />
 
             <div className="space-y-2">
-              <Label>Brasão / logo (uma imagem)</Label>
+              <Label>Logo da escola (uma imagem)</Label>
               <MultiUpload
                 bucket={BUCKETS.clubs}
                 value={logo}
                 onChange={setLogo}
                 single
-                label="Arraste o brasão aqui ou clique para selecionar"
+                label="Arraste o logo aqui ou clique para selecionar"
                 data-testid="upload-club-logo"
               />
             </div>

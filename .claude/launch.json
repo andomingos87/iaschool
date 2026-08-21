@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "r9-app",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=5174",
+        "BASE_PATH=/",
+        "pnpm",
+        "--filter",
+        "@workspace/r9-app",
+        "run",
+        "dev"
+      ],
+      "port": 5174
+    }
+  ]
+}

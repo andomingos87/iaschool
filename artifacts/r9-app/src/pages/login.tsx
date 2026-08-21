@@ -12,6 +12,7 @@ import {
   FormMessage,
 } from "@workspace/iasport/components/ui/form";
 import { Input } from "@workspace/iasport/components/ui/input";
+import { PasswordInput } from "@workspace/iasport/components/ui/password-input";
 import { Button } from "@workspace/iasport/components/ui/button";
 import {
   Card,
@@ -21,7 +22,8 @@ import {
   CardTitle,
 } from "@workspace/iasport/components/ui/card";
 import { toast } from "@workspace/iasport/hooks/use-toast";
-import { R9Logo } from "@/components/r9-logo";
+import { BrandLogo } from "@/components/brand-logo";
+import { iaschool } from "@/config/iaschool";
 import { DemoIndicator } from "@/components/demo-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { getDataLayer } from "@/lib/data";
@@ -39,8 +41,8 @@ const forgotSchema = z.object({
 type ForgotValues = z.infer<typeof forgotSchema>;
 
 const DEMO_USERS = [
-  { email: "admin@r9.com.br", role: "Administrador R9" },
-  { email: "escola@r9.com.br", role: "Escolinha R9 Osasco" },
+  { email: "admin@iaschool.demo", role: "Administrador IAschool" },
+  { email: "professor@iaschool.demo", role: "Professor da Escola Horizonte" },
   { email: "aluno@r9.com.br", role: "Aluno Demo" },
 ];
 
@@ -108,14 +110,11 @@ export default function LoginPage() {
 
       <div className="relative w-full max-w-md space-y-6">
         <div className="flex flex-col items-center gap-3 text-center">
-          <R9Logo className="scale-125" />
+          <BrandLogo className="scale-125" />
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              Ferramenta de bastidor
+              {mode === "signup" ? "Criar conta" : "Faça seu login"}
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Cadastre alunos, gerencie clubes e gere posts com métricas em segundos.
-            </p>
           </div>
         </div>
 
@@ -210,7 +209,7 @@ export default function LoginPage() {
         <Card className="border-border">
           <CardHeader>
             <CardTitle>Entrar</CardTitle>
-            <CardDescription>Acesse com sua conta R9.</CardDescription>
+            <CardDescription>Acesse com sua conta {iaschool.brand.name}.</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
@@ -241,8 +240,7 @@ export default function LoginPage() {
                     <FormItem>
                       <FormLabel>Senha</FormLabel>
                       <FormControl>
-                        <Input
-                          type="password"
+                        <PasswordInput
                           placeholder="••••••"
                           autoComplete="current-password"
                           data-testid="input-password"

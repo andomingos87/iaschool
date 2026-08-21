@@ -1,4 +1,4 @@
-// Entidades de domínio do app R9 Escolinhas.
+// Entidades de domínio do app IAsport.
 // Estes tipos espelham as futuras tabelas do Supabase (snake_case nas colunas
 // será mapeado nos repositórios reais; aqui usamos camelCase no domínio).
 

@@ -1,4 +1,4 @@
-// Constantes de domínio do R9 Escolinhas.
+// Constantes de domínio do IAsport.
 
 /** Posições de futebol (pt-BR). */
 export const POSITIONS = [

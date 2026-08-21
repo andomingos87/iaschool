@@ -386,7 +386,7 @@ As imagens seguintes, na ordem em que foram enviadas, são:
   detalhes. Não invente patrocínio, número nem nome nas costas.
 {{/uniforme}}
 {{#logo_r9}}
-- LOGOTIPO DA MARCA — logotipo R9 / IAsport. Reproduza fielmente como selo de
+- LOGOTIPO DA MARCA — logotipo IAsport. Reproduza fielmente como selo de
   marca, sem redesenhar.
 {{/logo_r9}}
 Não existem outras imagens além destas. Não presuma imagens ausentes.
@@ -413,14 +413,13 @@ correta do português do Brasil. Não acrescente nenhum texto além destes:
 {{#posicao}}- Posição: "{{posicao}}"{{/posicao}}
 {{#metricas}}- Estatísticas, cada uma com o número grande e o rótulo menor
   acompanhando: {{metricas}}{{/metricas}}
-{{#logo_r9}}- Assinatura de marca: "R9 ESCOLINHAS"{{/logo_r9}}
 
 COMPOSIÇÃO
 Hierarquia visual, do mais para o menos proeminente:
 1) o aluno  2) o nome  3) os valores das estatísticas  4) elementos de marca.
 {{#brasao}}Brasão: pequeno e integrado ao layout (canto superior ou junto ao
 nome), nítido, sem competir com o rosto do aluno.{{/brasao}}
-{{#logo_r9}}Marca R9 ESCOLINHAS: selo pequeno no rodapé, legível, nunca
+{{#logo_r9}}Selo de marca: pequeno no rodapé, legível, nunca
 cortado.{{/logo_r9}}
 Margem de segurança de 6% em todas as bordas — nenhum texto, número ou logo pode
 encostar na borda ou ser cortado.
@@ -507,7 +506,7 @@ describe("Prompt novo do admin", () => {
     };
     const rendered = renderPromptTemplate(ADMIN_PROMPT_NOVO, ctx);
     expect(rendered).not.toContain("LOGOTIPO DA MARCA");
-    expect(rendered).not.toContain("R9 ESCOLINHAS");
+    expect(rendered).not.toContain("Selo de marca");
   });
 });
 

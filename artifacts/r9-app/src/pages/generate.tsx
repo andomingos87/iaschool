@@ -60,6 +60,7 @@ import { useCreateGeneratedPost } from "@/hooks/use-generated-posts";
 import { useGenerationQuota } from "@/hooks/use-generation-quota";
 import { useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
+import { iaschool } from "@/config/iaschool";
 import { initials, storedToMasked } from "@/lib/format";
 import {
   AUX_PROMPT_PREFILL_EVENT,
@@ -71,9 +72,9 @@ type Phase = "form" | "generating" | "result";
 
 const STEP_META = [
   { key: "aluno", label: "Aluno", icon: Users },
-  { key: "time", label: "Time", icon: Shield },
-  { key: "brasao", label: "Brasão", icon: Shield },
-  { key: "r9", label: "Logo R9", icon: Sparkles },
+  { key: "time", label: "Escola", icon: Shield },
+  { key: "brasao", label: "Logo", icon: Shield },
+  { key: "r9", label: "Logo IAschool", icon: Sparkles },
   { key: "uniforme", label: "Uniforme", icon: Shirt },
   { key: "referencia", label: "Referência", icon: Images },
   { key: "metricas", label: "Métricas", icon: BarChart3 },
@@ -395,7 +396,7 @@ export default function GeneratePage() {
     if (!resultUrl) return;
     const a = document.createElement("a");
     a.href = resultUrl;
-    a.download = `r9-${student?.name.replace(/\s+/g, "-").toLowerCase() ?? "post"}.png`;
+    a.download = `iaschool-${student?.name.replace(/\s+/g, "-").toLowerCase() ?? "post"}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -404,7 +405,7 @@ export default function GeneratePage() {
   function sendWhatsapp() {
     if (!student) return;
     const digits = student.whatsapp.replace(/\D/g, "");
-    const msg = `Olá! Confira o card de desempenho do ${student.name} na R9 Escolinhas. Baixe a imagem gerada e mande junto com esta mensagem. Vamos pra cima!`;
+    const msg = iaschool.generation.shareMessage(student.name);
     window.open(
       `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,
       "_blank",
@@ -648,19 +649,19 @@ export default function GeneratePage() {
                   <>
                     {student?.clubId ? (
                       <p className="text-sm text-muted-foreground">
-                        Time vinculado no cadastro do aluno já vem pré-selecionado.
-                        Você pode trocar por outro ou seguir sem time.
+                        Escola vinculada no cadastro do aluno já vem pré-selecionada.
+                        Você pode trocar por outra ou seguir sem escola.
                       </p>
                     ) : (
                       <p className="text-sm text-muted-foreground">
-                        Este aluno não tem time vinculado. Selecione um clube
-                        existente, crie um novo ou siga sem time.
+                        Este aluno não tem escola vinculada. Selecione uma escola
+                        existente, crie uma nova ou siga sem escola.
                       </p>
                     )}
 
                     {(clubs.data?.length ?? 0) === 0 ? (
                       <div className="rounded-md border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
-                        Nenhum clube cadastrado — crie um novo para usar brasão,
+                        Nenhuma escola cadastrada — crie uma nova para usar logo,
                         cores e uniformes na imagem.
                       </div>
                     ) : (
@@ -680,9 +681,9 @@ export default function GeneratePage() {
                             <Shield className="size-5 text-muted-foreground" />
                           </div>
                           <div className="min-w-0">
-                            <p className="font-medium">Sem time</p>
+                            <p className="font-medium">Sem escola</p>
                             <p className="text-xs text-muted-foreground">
-                              Gerar sem brasão, cores e uniforme
+                              Gerar sem logo, cores e uniforme
                             </p>
                           </div>
                         </button>
@@ -736,7 +737,7 @@ export default function GeneratePage() {
                                 setClubDialogEditing(c);
                                 setClubDialogOpen(true);
                               }}
-                              title="Editar clube / adicionar uniforme"
+                              title="Editar escola / adicionar uniforme"
                               data-testid={`button-edit-club-${c.id}`}
                             >
                               <Pencil className="size-4" />
@@ -754,17 +755,17 @@ export default function GeneratePage() {
                       }}
                       data-testid="button-new-club-wizard"
                     >
-                      <Plus className="size-4" /> Criar novo time
+                      <Plus className="size-4" /> Criar nova escola
                     </Button>
 
                     {student &&
                       (selectedClubId ?? null) !== (student.clubId ?? null) && (
                         <div className="rounded-md border border-border bg-card/50 p-4">
                           <p className="text-sm font-medium">
-                            Salvar este time no cadastro do aluno?
+                            Salvar esta escola no cadastro do aluno?
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Se não salvar, o time vale só para esta geração.
+                            Se não salvar, a escola vale só para esta geração.
                           </p>
                           <Button
                             size="sm"
@@ -810,7 +811,7 @@ export default function GeneratePage() {
                         onClick={() => setShowClubLogo(true)}
                         data-testid="button-club-logo-yes"
                       >
-                        Exibir brasão
+                        Exibir logo
                       </Button>
                       <Button
                         variant={!showClubLogo ? "default" : "outline"}
@@ -825,7 +826,7 @@ export default function GeneratePage() {
               </div>
             )}
 
-            {/* STEP 3 — logo R9 */}
+            {/* STEP 3 — logo da plataforma */}
             {step === 3 && (
               <label
                 className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-4"
@@ -837,9 +838,9 @@ export default function GeneratePage() {
                   data-testid="checkbox-r9"
                 />
                 <div>
-                  <p className="font-medium">Incluir logo R9</p>
+                  <p className="font-medium">Incluir logo IAschool</p>
                   <p className="text-sm text-muted-foreground">
-                    Adiciona a marca R9 Escolinhas no canto da imagem.
+                    Adiciona a marca IAschool no canto da imagem.
                   </p>
                 </div>
               </label>
@@ -850,8 +851,8 @@ export default function GeneratePage() {
               <div className="space-y-3">
                 {!club ? (
                   <p className="text-sm text-muted-foreground">
-                    Nenhum time selecionado — a imagem será gerada sem uniforme.
-                    Volte ao passo "Time" para escolher um clube.
+                    Nenhuma escola selecionada — a imagem será gerada sem uniforme.
+                    Volte ao passo "Escola" para escolher uma escola.
                   </p>
                 ) : !hasUniforms ? (
                   <div className="space-y-3">
@@ -1087,9 +1088,9 @@ export default function GeneratePage() {
         <p className="mt-3 text-center text-xs text-muted-foreground">
           Aluno: <span className="font-medium text-foreground">{student.name}</span>
           {" · "}WhatsApp: {storedToMasked(student.whatsapp)}
-          {" · "}Time:{" "}
+          {" · "}Escola:{" "}
           <span className="font-medium text-foreground">
-            {club?.name ?? "Sem time"}
+            {club?.name ?? "Sem escola"}
           </span>
         </p>
       )}
@@ -1107,9 +1108,9 @@ export default function GeneratePage() {
 function stepTitle(step: number): string {
   return [
     "Selecionar aluno e foto",
-    "Escolher time (clube)",
-    "Exibir brasão do clube?",
-    "Incluir logo R9",
+    "Escolher escola",
+    "Exibir logo da escola?",
+    "Incluir logo IAschool",
     "Escolher uniforme (opcional)",
     "Selecionar referência",
     "Métricas (opcional)",
