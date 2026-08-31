@@ -27,6 +27,12 @@ export function LogoPage() {
   return (
     <div className="space-y-8">
       <section className="space-y-4">
+        <p className="max-w-2xl rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground">
+          <strong className="text-foreground">Marca legada.</strong> Os arquivos
+          abaixo ainda são o logotipo <em>IAsport</em>, anterior à pivotagem para
+          IAschool, e usam a paleta antiga — não os tokens deste design system.
+          Substituí-los pela marca IAschool é trabalho em aberto.
+        </p>
         <p className="max-w-2xl text-sm text-muted-foreground">
           O logotipo destaca as iniciais “IA” em verde neon, remetendo à figura
           de um gráfico — as métricas e dados fornecidos pela plataforma. Por

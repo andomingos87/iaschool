@@ -12,7 +12,7 @@
 @source "./components";
 
 
-/* Prometo — fonte oficial da marca IAsport (arquivos enviados pelo usuário, embutidos em base64) */
+/* Prometo — fonte herdada da marca legada IAsport (arquivos enviados pelo usuário, embutidos em base64) */
 @font-face {
   font-family: "Prometo";
   font-style: normal;

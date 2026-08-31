@@ -191,9 +191,9 @@ export type NavGroup = {
 };
 
 export const DESIGN_SYSTEM = {
-  title: 'IAsport Design System',
+  title: 'IAschool Design System',
   description:
-    'Sistema visual da IAsport — plataforma de métricas, dados esportivos e geração de imagens para atletas, treinadores e escolinhas de futebol. Cinza escuro, cinza azulado e verde neon, com a tipografia Prometo. Modo escuro é o padrão.',
+    'Sistema visual da IAschool — plataforma de métricas, dados escolares e geração de imagens para alunos, professores e escolas. Paleta fria: azul como cor principal, vermelho como destaque e branco nas superfícies claras, com a tipografia Prometo. Modo escuro é o padrão.',
 } as const;
 
 export const OVERVIEW_ENTRY: PreviewEntry = {
@@ -211,7 +211,7 @@ export const NAV_GROUPS: NavGroup[] = [
         id: 'brand-logo',
         name: 'Logotipo',
         description:
-          'Versões do logotipo IAsport e regras de aplicação sobre fundos claros e escuros.',
+          'Versões do logotipo legado IAsport (ainda não substituído pela marca IAschool) e regras de aplicação sobre fundos claros e escuros.',
         Page: LogoPage,
       },
     ],

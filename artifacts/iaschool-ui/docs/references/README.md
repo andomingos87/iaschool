@@ -1,6 +1,11 @@
-# Referências da marca IAsport
+# Referências da marca IAsport (legado — pré-pivotagem)
 
 Materiais enviados pelo usuário em 11/08/2026 (apresentação de marca + arquivos oficiais).
+
+> **Legado.** Estes são os arquivos originais da marca **IAsport**, anteriores à
+> pivotagem para IAschool. Os logotipos e a paleta abaixo descrevem os assets como
+> eles são hoje no repositório — não a identidade IAschool. Substituí-los é trabalho
+> em aberto; ver `docs/pivotagem-iaschool.md` na raiz.
 
 ## logos/ (kind: brand-asset — marcas oficiais)
 

@@ -1,4 +1,4 @@
-# Consuming IAsport Design System in web apps
+# Consuming IAschool Design System in web apps
 
 Read `artifacts/iaschool-ui/docs/AGENTS.md` first. This guide covers
 React/Vite and other shadcn/Tailwind web consumers. If the app already contains

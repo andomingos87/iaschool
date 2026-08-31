@@ -1,4 +1,4 @@
-# Migrating web UI to IAsport Design System
+# Migrating web UI to IAschool Design System
 
 Read `artifacts/iaschool-ui/docs/AGENTS.md` and
 `artifacts/iaschool-ui/docs/consuming-web.md` first. Use this guide

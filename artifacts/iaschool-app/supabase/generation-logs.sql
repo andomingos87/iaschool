@@ -6,7 +6,7 @@
 -- A tabela é escrita e lida SOMENTE pelo api-server (service_role).
 -- Clientes autenticados não têm nenhuma política — a RLS bloqueia tudo.
 -- A tela /admin/logs consulta via API, que exige super_admin com o
--- e-mail exato do administrador da IAsport.
+-- e-mail exato do administrador da IAschool.
 -- ------------------------------------------------------------
 
 create table if not exists public.generation_logs (

@@ -1,4 +1,4 @@
-# IAsport Design System design system
+# IAschool Design System
 
 This package defines the visual language for the project. Use it whenever you
 build or restyle UI so every surface looks like the same product. It is a real
@@ -36,8 +36,8 @@ on it and import its theme and components directly.
   from the source; omit it when the source documents no usage rules.
 - `src/preview/demos/<component>.tsx` — component stories. Keep these stories and
   the registry aligned with the final web component inventory.
-- `docs/references/` — brand references: `logos/` (official IAsport marks; primary
-  is `logo1-cor1.png`), `fonts/` (Prometo TTFs, embedded as base64 `@font-face` in
+- `docs/references/` — brand references: `logos/` (legacy IAsport marks, still
+  awaiting IAschool replacements; primary is `logo1-cor1.png`), `fonts/` (Prometo TTFs, embedded as base64 `@font-face` in
   `scripts/theme-template.css` so they survive token regeneration), and `brand/`
   (brand-deck pages). See `docs/references/README.md` for the manifest. Header
   logo copies live in `public/logo-{color,dark,light}.png`.

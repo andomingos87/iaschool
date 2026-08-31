@@ -93,9 +93,9 @@ export async function runSmokeTest({
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const result = await runSmokeTest();
   if (result.ok) {
-    console.log(`R9 smoke passed with HTTP ${result.status} at 127.0.0.1:5173.`);
+    console.log(`IAschool smoke passed with HTTP ${result.status} at 127.0.0.1:5173.`);
   } else {
-    console.error(`R9 smoke failed: ${result.error}`);
+    console.error(`IAschool smoke failed: ${result.error}`);
     if (result.output) console.error(result.output);
     process.exitCode = 1;
   }

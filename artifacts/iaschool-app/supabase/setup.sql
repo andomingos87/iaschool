@@ -746,7 +746,7 @@ grant execute on function public.consume_generation_quota(uuid, integer)
 -- ------------------------------------------------------------
 
 -- ------------------------------------------------------------
--- 8. Logs de geração de imagem (tela /admin/logs — somente admin IAsport)
+-- 8. Logs de geração de imagem (tela /admin/logs — somente admin IAschool)
 -- Mesmo conteúdo de supabase/generation-logs.sql (idempotente).
 -- ------------------------------------------------------------
 

@@ -1,4 +1,4 @@
-# Consuming IAsport Design System in Expo apps
+# Consuming IAschool Design System in Expo apps
 
 Read `artifacts/iaschool-ui/docs/AGENTS.md` first. React Native does
 not consume the web CSS or DOM components. It imports portable tokens, native

@@ -1,4 +1,4 @@
-# Migrating Expo UI to IAsport Design System
+# Migrating Expo UI to IAschool Design System
 
 Read `artifacts/iaschool-ui/docs/AGENTS.md` and
 `artifacts/iaschool-ui/docs/consuming-expo.md` first. Use this guide

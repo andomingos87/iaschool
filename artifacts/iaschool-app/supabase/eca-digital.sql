@@ -53,7 +53,7 @@ alter table public.profiles add constraint profiles_age_bracket_check
 --
 -- A faixa 'adolescente' cobre 12 a 17 e não distingue 15 de 17, então o corte
 -- exato dos 16 anos é decidido pela aplicação a partir da data de nascimento
--- (artifacts/r9-app/src/lib/eca.ts) ANTES de chamar o signUp. Guardar a data
+-- (artifacts/iaschool-app/src/lib/eca.ts) ANTES de chamar o signUp. Guardar a data
 -- exata no perfil resolveria a checagem no banco, mas violaria a minimização
 -- do dado de aferição (Decreto, art. 24, § 3º) — a troca é deliberada.
 alter table public.profiles drop constraint if exists profiles_guardian_required_check;

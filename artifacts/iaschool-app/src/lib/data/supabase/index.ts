@@ -51,6 +51,28 @@ function fail(context: string, error: { message: string } | null): never {
   throw new Error(`${context}: ${error?.message ?? "erro desconhecido"}`);
 }
 
+/**
+ * Mensagem de erro de uma edge function. O supabase-js só entrega
+ * "Edge Function returned a non-2xx status code"; a razão real vem no corpo
+ * JSON (`{ error }`), acessível pela Response guardada em `context`.
+ */
+async function edgeFunctionMessage(
+  error: unknown,
+  context: string,
+): Promise<string> {
+  const response = (error as { context?: Response }).context;
+  if (response && typeof response.json === "function") {
+    try {
+      const body = await response.clone().json();
+      if (typeof body?.error === "string") return body.error;
+    } catch {
+      // Corpo vazio ou não-JSON: cai no texto genérico abaixo.
+    }
+  }
+  const message = error instanceof Error ? error.message : "erro desconhecido";
+  return `${context}: ${message}`;
+}
+
 /** Erro de lixeira com dica quando a migração ainda não foi aplicada. */
 function failTrash(
   context: string,
@@ -1251,23 +1273,30 @@ export function createSupabaseDataLayer(): DataLayer {
 
   /**
    * Verificação do WhatsApp do responsável legal.
-   * O código sai por uma edge function (`send-guardian-code`) e nunca volta ao
-   * cliente; a confirmação é feita por RPC `confirm_guardian_code`, que grava
+   * O código sai por uma edge function (`send-guardian-code`); a confirmação é
+   * feita por RPC `confirm_guardian_code`, que grava
    * `guardian.whatsappVerifiedAt` com security definer.
    * Base: Decreto nº 12.880/2026, art. 35.
+   *
+   * Enquanto a função estiver em modo simulação (fase MVP — pendência 7 de
+   * docs/pendencias-producao.md) ela devolve `demoCode` e a tela exibe o aviso
+   * "Modo demonstração". Com o envio real ligado, `demoCode` some da resposta
+   * e o código passa a existir só no WhatsApp do responsável.
    */
   const guardianVerification: GuardianVerificationService = {
     async requestCode(studentId) {
-      const { error } = await supabase.functions.invoke("send-guardian-code", {
-        body: { studentId },
-      });
+      const { data, error } = await supabase.functions.invoke<{
+        demoCode?: string;
+      }>("send-guardian-code", { body: { studentId } });
       if (error) {
         throw new Error(
-          `Falha ao enviar o código para o responsável: ${error.message}`,
+          await edgeFunctionMessage(
+            error,
+            "Falha ao enviar o código para o responsável",
+          ),
         );
       }
-      // Em produção o código nunca retorna ao cliente.
-      return {};
+      return { demoCode: data?.demoCode };
     },
     async confirmCode(studentId, code) {
       const { error } = await supabase.rpc("confirm_guardian_code", {
