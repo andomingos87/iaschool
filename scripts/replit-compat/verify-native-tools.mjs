@@ -17,7 +17,7 @@ function run(command, args) {
 
 export async function verifyNativeTools({ runCommand = run } = {}) {
   const report = {
-    package: '@workspace/r9-app',
+    package: '@workspace/iaschool-app',
     platform: process.platform,
     arch: process.arch,
     loaded: [],
@@ -27,7 +27,7 @@ export async function verifyNativeTools({ runCommand = run } = {}) {
   try {
     const loaded = await loadNativeTools();
     report.loaded = loaded.loaded;
-    const vite = await runCommand('corepack', ['pnpm', '--filter', '@workspace/r9-app', 'exec', 'vite', '--version']);
+    const vite = await runCommand('corepack', ['pnpm', '--filter', '@workspace/iaschool-app', 'exec', 'vite', '--version']);
     report.viteVersion = vite.output.trim();
     if (vite.code !== 0) throw new Error(`Vite version command exited with code ${vite.code}`);
     report.status = 'passed';

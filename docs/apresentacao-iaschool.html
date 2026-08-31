@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IASchool — Apresentação</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ===========================================
+   TEMA — mude estas variáveis para mudar tudo
+   Estilo: Split Pastel (pêssego / lavanda / tinta)
+   =========================================== */
+:root{
+  /* Superfícies pastel */
+  --peach:#F6E7DA;
+  --lavender:#E5DFF2;
+  --mint:#DCEFE2;
+  --butter:#F7F0D4;
+  --white:#FFFFFF;
+
+  /* Tinta */
+  --ink:#191419;
+  --ink-soft:#5C5460;
+  --ink-faint:rgba(25,20,25,.22);
+
+  /* Acentos */
+  --violet:#8B6BB5;
+  --rose:#D9748F;
+  --green:#3F8F6A;
+  --amber:#D9A32C;
+
+  /* Badges */
+  --badge-mint:#C6EFD6;
+  --badge-yellow:#F4EFC0;
+  --badge-pink:#F2D2E2;
+  --badge-sky:#CFE4F5;
+
+  /* Chrome do palco */
+  --stage-bg:#12101A;
+  --slide-bg:var(--peach);
+
+  /* Tipografia — autorada em 1920×1080 */
+  --font:'Outfit',sans-serif;
+
+  /* Movimento */
+  --ease:cubic-bezier(.16,1,.3,1);
+  --dur:.75s;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+
+/* ===========================================
+   PALCO FIXO 16:9 (viewport-base.css)
+   Slides são autorados a 1920×1080 e o palco
+   inteiro é escalado por transform.
+   =========================================== */
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--stage-bg,#000)}
+.deck-viewport{position:fixed;inset:0;overflow:hidden;background:var(--stage-bg,#000)}
+.deck-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0;background:var(--slide-bg,#fff)}
+.slide{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden;display:block;visibility:hidden;opacity:0;pointer-events:none;background:var(--slide-bg,#fff)}
+.slide.active,.slide.visible{visibility:visible;opacity:1;pointer-events:auto;z-index:1}
+img,video,canvas,svg{max-width:100%;max-height:100%}
+.deck-controls{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000}
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,body{width:1920px;height:auto;overflow:visible;background:#fff}
+  .deck-viewport{position:static;overflow:visible;background:#fff}
+  .deck-stage{position:static;width:auto;height:auto;transform:none!important;background:none}
+  .slide{position:relative;display:block!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;width:1920px;height:1080px;break-after:page;page-break-after:always}
+  .slide:last-child{break-after:auto;page-break-after:auto}
+  .deck-controls,.progress,.edit-hotzone,.edit-toggle,.edit-hint{display:none!important}
+  /* No PDF nada anima: tudo já entra no estado final */
+  .reveal{opacity:1!important;transform:none!important;transition:none!important}
+  .stack .ph,.mess i,.folder{opacity:1!important;transition:none!important}
+  .folder{transform:none!important}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.2s!important}
+}
+
+/* ===========================================
+   BASE
+   =========================================== */
+body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
+.slide{padding:0}
+
+/* Fundos por slide */
+.bg-peach{background:var(--peach)}
+.bg-lav{background:var(--lavender)}
+.bg-mint{background:var(--mint)}
+.bg-butter{background:var(--butter)}
+.bg-ink{background:var(--ink)}
+
+/* Malha quadriculada suave — textura de fundo do sistema */
+.grid-overlay{position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(var(--ink) 1px,transparent 1px),linear-gradient(90deg,var(--ink) 1px,transparent 1px);
+  background-size:48px 48px;opacity:.05}
+.bg-ink .grid-overlay{background-image:linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px);opacity:.06}
+
+/* ===========================================
+   CABEÇALHO PADRÃO DE SLIDE
+   =========================================== */
+.wrap{position:absolute;inset:0;padding:88px 110px 92px;display:flex;flex-direction:column}
+.kicker{display:inline-flex;align-items:center;gap:16px;font-size:20px;font-weight:600;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--ink-soft)}
+.kicker::before{content:"";width:52px;height:3px;background:var(--violet);border-radius:2px}
+.bg-ink .kicker{color:rgba(255,255,255,.6)}
+.bg-ink .kicker::before{background:var(--badge-mint)}
+h2{font-size:82px;font-weight:800;letter-spacing:-.042em;line-height:1.02;margin-top:22px}
+.bg-ink h2{color:#fff}
+.lead{margin-top:20px;font-size:32px;font-weight:400;line-height:1.4;color:#3A333F;max-width:1300px}
+.bg-ink .lead{color:rgba(255,255,255,.72)}
+
+/* Rodapé fixo de slide */
+.pagenum{position:absolute;right:110px;bottom:56px;font-size:20px;font-weight:600;color:var(--ink-faint);letter-spacing:.06em}
+.bg-ink .pagenum{color:rgba(255,255,255,.28)}
+.slidefoot{position:absolute;left:110px;bottom:56px;font-size:20px;font-weight:400;color:var(--ink-soft)}
+.bg-ink .slidefoot{color:rgba(255,255,255,.5)}
+
+/* ===========================================
+   CARTÃO — elemento base do sistema
+   borda de tinta + sombra dura deslocada
+   =========================================== */
+.card{background:var(--white);border:2px solid var(--ink);border-radius:26px;
+  box-shadow:10px 12px 0 rgba(25,20,25,.13);padding:38px 36px}
+.bg-ink .card{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.24);box-shadow:none;color:#fff}
+
+/* Pílula / badge */
+.badge{display:inline-flex;align-items:center;gap:12px;padding:14px 28px;border-radius:999px;
+  font-size:23px;font-weight:600;border:2px solid var(--ink);background:var(--white)}
+.badge.mint{background:var(--badge-mint)}
+.badge.yellow{background:var(--badge-yellow)}
+.badge.pink{background:var(--badge-pink)}
+.badge.sky{background:var(--badge-sky)}
+
+/* ===========================================
+   SLIDE 1 — CAPA
+   =========================================== */
+.split{position:absolute;inset:0;display:grid;grid-template-columns:1080px 840px}
+.pane-r{position:relative;overflow:hidden;background:var(--lavender)}
+.pane-r .grid-overlay{opacity:.06}
+.cover{position:absolute;left:110px;top:0;height:100%;width:900px;display:flex;flex-direction:column;justify-content:center;gap:32px}
+.cover h1{font-size:148px;font-weight:800;letter-spacing:-.048em;line-height:.9}
+.cover h1 em{font-style:normal;display:block;color:var(--violet);font-size:104px;letter-spacing:-.04em;margin-top:6px}
+.cover .sub{font-size:34px;font-weight:400;line-height:1.35;color:#3A333F;max-width:770px}
+.cover .badges{display:flex;gap:16px;margin-top:6px}
+.stack{position:absolute;right:118px;top:210px;width:566px;height:660px}
+.stack .ph{position:absolute;width:342px;height:262px;border-radius:26px;border:2px solid var(--ink);
+  box-shadow:12px 14px 0 rgba(25,20,25,.14);display:flex;align-items:flex-end;padding:26px;font-size:25px;font-weight:600}
+.ph1{left:0;top:6px;transform:rotate(-7deg);background:#F8D9C8}
+.ph2{right:0;top:186px;transform:rotate(5deg);background:#D6E9F5;justify-content:flex-end}
+.ph3{left:52px;bottom:0;transform:rotate(-2deg);background:#E9DFF8}
+.tag{position:absolute;top:-17px;left:26px;background:var(--ink);color:#fff;padding:8px 18px;border-radius:999px;
+  font-size:18px;font-weight:500;letter-spacing:.04em}
+
+/* ===========================================
+   SLIDE 2 — GRADE DE PROBLEMAS
+   =========================================== */
+.pgrid{margin-top:auto;margin-bottom:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:38px;padding-top:44px}
+.pcard{background:var(--white);border:2px solid var(--ink);border-radius:26px;box-shadow:10px 12px 0 rgba(25,20,25,.13);
+  padding:34px 32px;display:flex;flex-direction:column;gap:20px;min-height:300px}
+.pcard .n{width:56px;height:56px;border-radius:50%;border:2px solid var(--ink);display:grid;place-items:center;
+  font-size:24px;font-weight:700;flex:none}
+.pcard p{font-size:32px;font-weight:600;line-height:1.24;letter-spacing:-.02em}
+.pcard.quote{background:var(--violet);color:#fff;justify-content:center;align-items:flex-start}
+.pcard.quote p{font-size:40px;font-weight:700;line-height:1.16}
+.pcard.quote span{font-size:22px;font-weight:400;opacity:.82;margin-top:14px;display:block}
+
+/* ===========================================
+   SLIDE 3 — LINHAS DE CUSTO
+   =========================================== */
+.rows{margin-top:auto;margin-bottom:auto;display:flex;flex-direction:column;gap:20px;padding-top:40px}
+.row{display:grid;grid-template-columns:330px 1fr;align-items:center;gap:40px;
+  background:var(--white);border:2px solid var(--ink);border-radius:22px;padding:28px 36px;box-shadow:8px 10px 0 rgba(25,20,25,.11)}
+.row .lbl{font-size:34px;font-weight:700;letter-spacing:-.02em}
+.row .val{font-size:29px;font-weight:400;line-height:1.32;color:#3A333F}
+.row.alert{background:#FBE9EE;border-color:var(--rose);box-shadow:8px 10px 0 rgba(217,116,143,.28)}
+.row.alert .lbl{color:#A63A57}
+.row.alert .val strong{font-weight:700;color:#A63A57}
+
+/* ===========================================
+   SLIDE 4 — DECLARAÇÃO + PILARES
+   =========================================== */
+.statement{margin-top:auto;margin-bottom:auto;font-size:66px;font-weight:700;line-height:1.14;letter-spacing:-.035em;max-width:1560px}
+.statement mark{background:none;color:var(--violet)}
+.pillars{margin-top:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
+.pillar{border:2px solid var(--ink);border-radius:26px;padding:36px 34px;box-shadow:10px 12px 0 rgba(25,20,25,.13)}
+.pillar h3{font-size:44px;font-weight:800;letter-spacing:-.03em}
+.pillar p{margin-top:14px;font-size:26px;font-weight:400;line-height:1.36;color:#3A333F}
+.pi1{background:var(--badge-mint)} .pi2{background:var(--badge-yellow)} .pi3{background:var(--badge-pink)}
+
+/* ===========================================
+   SLIDE 5 — 4 PASSOS
+   =========================================== */
+.steps{margin-top:auto;margin-bottom:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:36px;position:relative;padding-top:56px}
+.steps::before{content:"";position:absolute;left:60px;right:60px;top:118px;height:3px;
+  background:repeating-linear-gradient(90deg,var(--ink-faint) 0 14px,transparent 14px 26px)}
+.step{position:relative;display:flex;flex-direction:column;gap:22px}
+.step .dot{width:88px;height:88px;border-radius:50%;background:var(--white);border:3px solid var(--ink);
+  display:grid;place-items:center;font-size:36px;font-weight:800;box-shadow:6px 7px 0 rgba(25,20,25,.14)}
+.step h3{font-size:40px;font-weight:800;letter-spacing:-.03em;margin-top:6px}
+.step p{font-size:25px;font-weight:400;line-height:1.36;color:#3A333F}
+.step:nth-child(1) .dot{background:var(--badge-mint)}
+.step:nth-child(2) .dot{background:var(--badge-sky)}
+.step:nth-child(3) .dot{background:var(--badge-yellow)}
+.step:nth-child(4) .dot{background:var(--badge-pink)}
+
+/* ===========================================
+   SLIDE 6 — ANTES / DEPOIS DA SEPARAÇÃO
+   =========================================== */
+.f1{margin-top:auto;margin-bottom:auto;display:grid;grid-template-columns:760px 1fr;gap:70px;align-items:center;padding-top:36px}
+.blist{display:flex;flex-direction:column;gap:26px}
+.bitem{display:flex;gap:20px;align-items:flex-start}
+.bitem .mk{width:34px;height:34px;border-radius:50%;background:var(--violet);flex:none;margin-top:5px;
+  display:grid;place-items:center;color:#fff;font-size:19px;font-weight:700}
+.bitem p{font-size:30px;font-weight:500;line-height:1.32}
+.statline{margin-top:8px;display:inline-flex;align-items:center;gap:18px;background:var(--ink);color:#fff;
+  padding:22px 32px;border-radius:20px;font-size:30px;font-weight:600}
+.statline b{font-size:34px;font-weight:800;color:var(--badge-mint)}
+
+.vis{display:grid;grid-template-columns:1fr 66px 1fr;gap:0;align-items:center}
+.vis .arrow{display:grid;place-items:center;font-size:44px;color:var(--ink-soft);font-weight:300}
+.vpanel{border:2px solid var(--ink);border-radius:24px;padding:24px;height:498px;position:relative;background:var(--white);
+  box-shadow:8px 10px 0 rgba(25,20,25,.11)}
+.vpanel .cap{position:absolute;top:-16px;left:24px;background:var(--ink);color:#fff;font-size:17px;font-weight:600;
+  letter-spacing:.14em;text-transform:uppercase;padding:6px 16px;border-radius:999px}
+.mess{position:relative;height:100%}
+.mess i{position:absolute;width:104px;height:80px;border-radius:10px;border:2px solid var(--ink)}
+.folders{display:flex;flex-direction:column;gap:16px;justify-content:center;height:100%}
+.folder{border:2px solid var(--ink);border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:14px;background:#FCFAF7}
+.folder .nm{font-size:21px;font-weight:600;flex:1}
+.folder .th{display:flex;gap:7px}
+.folder .th i{width:34px;height:34px;border-radius:8px;border:1.5px solid var(--ink)}
+.folder .ct{font-size:17px;font-weight:600;color:var(--ink-soft);white-space:nowrap}
+
+/* ===========================================
+   SLIDE 7 — DUAS SAÍDAS
+   =========================================== */
+.outs{margin-top:auto;display:grid;grid-template-columns:1fr 1fr;gap:44px}
+.out{border:2px solid var(--ink);border-radius:28px;padding:38px 38px 34px;background:var(--white);
+  box-shadow:10px 12px 0 rgba(25,20,25,.13);display:flex;flex-direction:column;gap:24px}
+.out .htag{display:inline-flex;align-self:flex-start;padding:11px 24px;border-radius:999px;border:2px solid var(--ink);
+  font-size:20px;font-weight:600;letter-spacing:.06em}
+.out h3{font-size:46px;font-weight:800;letter-spacing:-.032em;line-height:1.08}
+.out p{font-size:26px;font-weight:400;line-height:1.36;color:#3A333F}
+.mock{margin-top:auto;height:196px;border-radius:18px;position:relative;overflow:hidden;border:2px solid var(--ink)}
+.mock.wa{background:#DCEFE2;display:flex;flex-direction:column;justify-content:center;gap:12px;padding:22px}
+.bub{align-self:flex-end;background:#fff;border:2px solid var(--ink);border-radius:16px 16px 4px 16px;padding:12px 18px;
+  font-size:20px;font-weight:500;max-width:76%}
+.bub.ph{height:76px;width:130px;background:linear-gradient(150deg,#F6C177,#E0834A);padding:0}
+.mock.art{background:linear-gradient(140deg,#C9B7E8,#F2A6A0);display:grid;place-items:center}
+.mock.art .frame{width:78%;height:74%;border:3px solid var(--ink);border-radius:14px;background:rgba(255,255,255,.86);
+  display:grid;place-items:center;font-size:26px;font-weight:800;letter-spacing:-.02em;text-align:center;line-height:1.16}
+.batchbar{margin-top:36px;background:var(--ink);color:#fff;border-radius:22px;padding:30px 42px;
+  display:flex;align-items:center;justify-content:space-between}
+.batchbar span{font-size:31px;font-weight:500}
+.batchbar b{font-size:40px;font-weight:800;color:var(--badge-yellow);letter-spacing:-.02em}
+
+/* ===========================================
+   SLIDE 8 — PROTEÇÃO (slide escuro)
+   =========================================== */
+.prot{margin-top:auto;margin-bottom:0;display:grid;grid-template-columns:1fr 1fr;gap:26px 40px;padding-top:44px}
+.pitem{display:flex;gap:20px;align-items:flex-start;background:rgba(255,255,255,.055);
+  border:1px solid rgba(255,255,255,.16);border-radius:20px;padding:24px 26px}
+.pitem .ck{width:38px;height:38px;border-radius:50%;background:var(--badge-mint);color:var(--ink);flex:none;
+  display:grid;place-items:center;font-size:21px;font-weight:800}
+.pitem b{display:block;color:#fff;font-size:28px;font-weight:700;letter-spacing:-.02em}
+.pitem span{display:block;margin-top:7px;font-size:22px;font-weight:300;line-height:1.36;color:rgba(255,255,255,.68)}
+.legalbar{margin-top:32px;display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.legalbar .lb{border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:12px 24px;font-size:20px;
+  font-weight:500;color:rgba(255,255,255,.82)}
+
+/* ===========================================
+   SLIDE 9 — ANTES × DEPOIS
+   =========================================== */
+.cmp{margin-top:auto;margin-bottom:auto;display:grid;grid-template-columns:1fr 1fr;gap:44px;padding-top:34px}
+.cmp .colhead{font-size:24px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:22px}
+.cmp .a .colhead{color:var(--ink-soft)}
+.cmp .b .colhead{color:var(--green)}
+.cline{display:flex;align-items:center;gap:16px;padding:20px 26px;border-radius:16px;margin-bottom:14px;font-size:27px;line-height:1.3}
+.cmp .a .cline{background:rgba(25,20,25,.055);color:var(--ink-soft);font-weight:400;border:1px solid rgba(25,20,25,.12)}
+.cmp .b .cline{background:var(--white);border:2px solid var(--ink);font-weight:600;box-shadow:5px 6px 0 rgba(25,20,25,.11)}
+.cmp .b .cline::before{content:"✓";color:var(--green);font-weight:800;font-size:26px;flex:none}
+.closer{margin-top:26px;font-size:34px;font-weight:700;letter-spacing:-.025em;text-align:center}
+.closer mark{background:var(--badge-yellow);padding:2px 10px;border-radius:8px;color:var(--ink)}
+
+/* ===========================================
+   SLIDE 10 — PRÓXIMO PASSO
+   =========================================== */
+.weeks{margin-top:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
+.week{border:2px solid var(--ink);border-radius:26px;padding:34px 32px;background:var(--white);
+  box-shadow:10px 12px 0 rgba(25,20,25,.13)}
+.week .w{display:inline-block;padding:9px 20px;border-radius:999px;font-size:19px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;border:2px solid var(--ink);margin-bottom:20px}
+.week:nth-child(1) .w{background:var(--badge-mint)}
+.week:nth-child(2) .w{background:var(--badge-sky)}
+.week:nth-child(3) .w{background:var(--badge-pink)}
+.week p{font-size:29px;font-weight:500;line-height:1.3}
+.cta{margin-top:40px;background:var(--ink);color:#fff;border-radius:28px;padding:44px 52px;
+  display:flex;align-items:center;justify-content:space-between;gap:40px}
+.cta .t{font-size:24px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.cta .q{font-size:48px;font-weight:800;letter-spacing:-.035em;margin-top:10px}
+.cta .mk{font-size:100px;line-height:1;color:var(--badge-yellow);font-weight:800}
+
+/* ===========================================
+   ANIMAÇÃO — revela ao entrar no slide
+   =========================================== */
+.reveal{opacity:0;transform:translateY(32px);transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease)}
+.slide.visible .reveal{opacity:1;transform:translateY(0)}
+.d1{transition-delay:.06s}.d2{transition-delay:.14s}.d3{transition-delay:.22s}.d4{transition-delay:.3s}
+.d5{transition-delay:.38s}.d6{transition-delay:.46s}.d7{transition-delay:.54s}.d8{transition-delay:.62s}
+.d9{transition-delay:.7s}.d10{transition-delay:.78s}
+
+/* Cartões da capa entram girando */
+.stack .ph{opacity:0;transition:opacity .9s var(--ease),transform .9s var(--ease)}
+.slide.visible .ph1{opacity:1;transition-delay:.42s}
+.slide.visible .ph2{opacity:1;transition-delay:.56s}
+.slide.visible .ph3{opacity:1;transition-delay:.7s}
+
+/* Fotos bagunçadas → pastas organizadas (slide 6) */
+.mess i{opacity:0;transition:opacity .6s var(--ease)}
+.slide.visible .mess i{opacity:1}
+.folder{opacity:0;transform:translateX(26px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+.slide.visible .folder{opacity:1;transform:translateX(0)}
+.slide.visible .folder:nth-child(1){transition-delay:.5s}
+.slide.visible .folder:nth-child(2){transition-delay:.62s}
+.slide.visible .folder:nth-child(3){transition-delay:.74s}
+.slide.visible .folder:nth-child(4){transition-delay:.86s}
+.slide.visible .folder:nth-child(5){transition-delay:.98s}
+
+/* ===========================================
+   CHROME FORA DO PALCO
+   =========================================== */
+.progress{position:fixed;left:0;top:0;height:4px;background:var(--violet);z-index:1000;transition:width .4s var(--ease)}
+.deck-controls{display:flex;gap:10px;align-items:center;background:rgba(255,255,255,.9);border:1px solid rgba(25,20,25,.14);
+  border-radius:999px;padding:8px 14px;font-family:var(--font);font-size:14px;font-weight:600;color:var(--ink);
+  box-shadow:0 6px 22px rgba(0,0,0,.18);opacity:0;transition:opacity .3s}
+.deck-controls:hover,.deck-viewport:hover ~ .deck-controls{opacity:1}
+.deck-controls button{border:none;background:none;font:inherit;cursor:pointer;padding:4px 8px;border-radius:999px;color:inherit}
+.deck-controls button:hover{background:rgba(25,20,25,.08)}
+
+/* Edição inline */
+.edit-hotzone{position:fixed;top:0;left:0;width:80px;height:80px;z-index:10000;cursor:pointer}
+.edit-toggle{position:fixed;top:16px;left:16px;z-index:10001;opacity:0;pointer-events:none;transition:opacity .3s ease;
+  width:44px;height:44px;border-radius:50%;border:1px solid rgba(25,20,25,.16);background:#fff;font-size:19px;cursor:pointer;
+  box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.edit-toggle.show,.edit-toggle.active{opacity:1;pointer-events:auto}
+.edit-toggle.active{background:var(--badge-yellow)}
+body.editing [contenteditable="true"]{outline:2px dashed var(--violet);outline-offset:4px;border-radius:4px}
+.edit-hint{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10001;background:var(--ink);color:#fff;
+  font-family:var(--font);font-size:14px;font-weight:500;padding:10px 20px;border-radius:999px;display:none}
+body.editing .edit-hint{display:block}
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+<!-- ============ SLIDE 1 — CAPA ============
+     Fala: ler só a frase da capa. Nada mais. -->
+<section class="slide title-slide bg-peach">
+  <div class="split"><div></div><div class="pane-r"><div class="grid-overlay"></div></div></div>
+  <div class="cover">
+    <div class="kicker reveal d1">Para redes de escolas</div>
+    <h1 class="reveal d2">IASchool<em>fotos no lugar certo</em></h1>
+    <p class="sub reveal d3">A escola sobe as fotos do evento. O sistema separa por aluno e entrega para os pais &mdash; com autorização registrada.</p>
+    <div class="badges reveal d4">
+      <span class="badge mint">Organiza</span>
+      <span class="badge yellow">Cria</span>
+      <span class="badge pink">Protege</span>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="ph ph1"><span class="tag">Turma 3º A</span>Ana Beatriz</div>
+    <div class="ph ph2"><span class="tag">Turma 3º A</span>Miguel</div>
+    <div class="ph ph3"><span class="tag">Turma 3º A</span>Helena</div>
+  </div>
+  <div class="slidefoot">Em conformidade com o ECA Digital &middot; Lei nº 15.211/2025 &middot; Agosto 2026</div>
+</section>
+
+<!-- ============ SLIDE 2 — O PROBLEMA ============
+     Fala: deixar a diretora confirmar cada item. Este slide é dela. -->
+<section class="slide bg-peach">
+  <div class="grid-overlay"></div>
+  <div class="wrap">
+    <div class="kicker reveal d1">O problema</div>
+    <h2 class="reveal d2">Hoje, depois de cada evento&hellip;</h2>
+    <div class="pgrid">
+      <div class="pcard reveal d3"><span class="n">1</span><p>2.000 fotos no celular das professoras</p></div>
+      <div class="pcard reveal d4"><span class="n">2</span><p>Alguém precisa olhar foto por foto para achar cada aluno</p></div>
+      <div class="pcard reveal d5"><span class="n">3</span><p>O envio vira grupo de WhatsApp, link genérico&hellip; ou nada</p></div>
+      <div class="pcard reveal d6"><span class="n">4</span><p>Foto de aluno circula em celular pessoal, sem controle</p></div>
+      <div class="pcard reveal d7"><span class="n">5</span><p>Rede social da escola desatualizada</p></div>
+      <div class="pcard quote reveal d8"><p>Falta tempo.<br>Não falta material.</p><span>O conteúdo existe — só não chega a lugar nenhum.</span></div>
+    </div>
+  </div>
+  <div class="pagenum">02</div>
+</section>
+
+<!-- ============ SLIDE 3 — O QUE ISSO CUSTA ============
+     Fala: o risco é o gancho para o slide 8. Não aprofundar aqui. -->
+<section class="slide bg-lav">
+  <div class="grid-overlay"></div>
+  <div class="wrap">
+    <div class="kicker reveal d1">O custo</div>
+    <h2 class="reveal d2">O que isso custa</h2>
+    <div class="rows">
+      <div class="row reveal d3"><div class="lbl">Tempo</div><div class="val">6 a 10 horas de coordenação por evento, só para separar e enviar</div></div>
+      <div class="row reveal d4"><div class="lbl">Relação com os pais</div><div class="val">Pai que não recebe a foto do filho reclama &mdash; e lembra na rematrícula</div></div>
+      <div class="row reveal d5"><div class="lbl">Marketing</div><div class="val">Conteúdo real da escola parado no celular de alguém</div></div>
+      <div class="row alert reveal d6"><div class="lbl">Risco</div><div class="val">Imagem de menor sem autorização registrada &mdash; <strong>ECA Digital vigente desde 17/03/2026</strong></div></div>
+    </div>
+  </div>
+  <div class="pagenum">03</div>
+</section>
+
+<!-- ============ SLIDE 4 — A SOLUÇÃO EM UMA FRASE ============ -->
+<section class="slide bg-mint">
+  <div class="grid-overlay"></div>
+  <div class="wrap">
+    <div class="kicker reveal d1">A solução</div>
+    <p class="statement reveal d2">A escola sobe as fotos do evento.<br>O IASchool separa por aluno e entrega para os pais &mdash; <mark>com autorização registrada</mark>.</p>
+    <div class="pillars">
+      <div class="pillar pi1 reveal d4"><h3>Organiza</h3><p>Reconhecimento facial separa as fotos por aluno</p></div>
+      <div class="pillar pi2 reveal d5"><h3>Cria</h3><p>Artes prontas em lote para WhatsApp e redes sociais</p></div>
+      <div class="pillar pi3 reveal d6"><h3>Protege</h3><p>Só sai o que tem autorização do responsável</p></div>
+    </div>
+  </div>
+  <div class="pagenum">04</div>
+</section>
+
+<!-- ============ SLIDE 5 — COMO FUNCIONA ============ -->
+<section class="slide bg-peach">
+  <div class="grid-overlay"></div>
+  <div class="wrap">
+    <div class="kicker reveal d1">Como funciona</div>
+    <h2 class="reveal d2">Quatro passos</h2>
+    <div class="steps">
+      <div class="step reveal d3"><div class="dot">1</div><h3>Cadastro</h3><p>A escola importa a lista de alunos e responsáveis. Uma vez só.</p></div>
+      <div class="step reveal d4"><div class="dot">2</div><h3>Upload</h3><p>Arrasta as fotos do evento: 300, 1.000, 2.000 de uma vez.</p></div>
+      <div class="step reveal d5"><div class="dot">3</div><h3>Separação</h3><p>Cada foto vai para a pasta do aluno correspondente.</p></div>
+      <div class="step reveal d6"><div class="dot">4</div><h3>Entrega</h3><p>WhatsApp do responsável ou publicação com arte.</p></div>
+    </div>
+  </div>
+  <div class="pagenum">05</div>
+</section>
+
+<!-- ============ SLIDE 6 — SEPARAR AS FOTOS ============ -->
+<section class="slide bg-butter">
+  <div class="grid-overlay"></div>
+  <div class="wrap">
+    <div class="kicker reveal d1">Funcionalidade 1</div>
+    <h2 class="reveal d2">Separar as fotos</h2>
+    <div class="f1">
+      <div class="blist">
+        <div class="bitem reveal d3"><span class="mk">1</span><p>Upload em massa &mdash; milhares de fotos por evento</p></div>
+        <div class="bitem reveal d4"><span class="mk">2</span><p>Reconhecimento facial identifica cada aluno na foto</p></div>
+        <div class="bitem reveal d5"><span class="mk">3</span><p>Foto com 5 crianças aparece na pasta das 5</p></div>
+        <div class="bitem reveal d6"><span class="mk">4</span><p>Rosto não identificado vai para revisão manual da escola</p></div>
+        <div class="statline reveal d7">O que levava um dia leva <b>minutos</b></div>
+      </div>
+      <div class="vis reveal d8">
+        <div class="vpanel">
+          <span class="cap">Antes</span>
+          <div class="mess">
+            <i style="left:6px;top:18px;transform:rotate(-9deg);background:#F6C177"></i>
+            <i style="left:128px;top:6px;transform:rotate(6deg);background:#9FC6B4"></i>
+            <i style="left:236px;top:40px;transform:rotate(-4deg);background:#F2A6A0"></i>
+            <i style="left:36px;top:118px;transform:rotate(11deg);background:#C9B7E8"></i>
+            <i style="left:162px;top:130px;transform:rotate(-7deg);background:#F5D98C"></i>
+            <i style="left:268px;top:158px;transform:rotate(3deg);background:#A8C8E8"></i>
+            <i style="left:16px;top:236px;transform:rotate(-3deg);background:#EFB6C8"></i>
+            <i style="left:140px;top:252px;transform:rotate(8deg);background:#BFD9A8"></i>
+            <i style="left:254px;top:284px;transform:rotate(-11deg);background:#F0BFA0"></i>
+            <i style="left:64px;top:352px;transform:rotate(5deg);background:#D8C6B0"></i>
+            <i style="left:190px;top:372px;transform:rotate(-6deg);background:#B8D9D2"></i>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="vpanel">
+          <span class="cap">Depois</span>
+          <div class="folders">
+            <div class="folder"><span class="th"><i style="background:#F6C177"></i><i style="background:#F5D98C"></i></span><span class="nm">Ana Beatriz</span><span class="ct">14 fotos</span></div>
+            <div class="folder"><span class="th"><i style="background:#9FC6B4"></i><i style="background:#BFD9A8"></i></span><span class="nm">Miguel</span><span class="ct">9 fotos</span></div>
+            <div class="folder"><span class="th"><i style="background:#F2A6A0"></i><i style="background:#EFB6C8"></i></span><span class="nm">Helena</span><span class="ct">21 fotos</span></div>
+            <div class="folder"><span class="th"><i style="background:#C9B7E8"></i><i style="background:#A8C8E8"></i></span><span class="nm">Théo</span><span class="ct">11 fotos</span></div>
+            <div class="folder"><span class="th"><i style="background:#D8C6B0"></i><i style="background:#B8D9D2"></i></span><span class="nm">Revisão manual</span><span class="ct">6 fotos</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pagenum">06</div>
+</section>
+
+<!-- ============ SLIDE 7 — CRIAR E ENVIAR ============
+     Fala: deixar a imagem falar. Este slide vende sozinho. -->
+<section class="slide bg-lav">
+  <div class="grid-overlay"></div>
+  <div class="wrap">
+    <div class="kicker reveal d1">Funcionalidade 2</div>
+    <h2 class="reveal d2">Criar e enviar</h2>
+    <p class="lead reveal d3">Duas saídas. A escola escolhe.</p>
+    <div class="outs">
+      <div class="out reveal d4">
+        <span class="htag">Foto crua</span>
+        <h3>Direto para o WhatsApp do responsável</h3>
+        <p>As fotos do filho, como saíram da câmera, no número cadastrado e verificado.</p>
+        <div class="mock wa">
+          <div class="bub ph"></div>
+          <div class="bub">As fotos da Ana no Dia do Índio 💛</div>
+        </div>
+      </div>
+      <div class="out reveal d5">
+        <span class="htag">Foto com arte</span>
+        <h3>Lote de imagens com o tema do evento</h3>
+        <p>Dia do Índio, Festa Junina, formatura &mdash; prontas para as redes sociais da escola.</p>
+        <div class="mock art"><div class="frame">DIA DO ÍNDIO<br>2026</div></div>
+      </div>
+    </div>
+    <div class="batchbar reveal d6">
+      <span>Em lote:</span>
+      <b>1 arte &times; 200 alunos = 200 imagens personalizadas</b>
+      <span>em uma rodada</span>
+    </div>
+  </div>
+  <div class="pagenum">07</div>
+</section>
+
+<!-- ============ SLIDE 8 — PROTEÇÃO ============
+     Fala: slide de diferenciação. Apresentar como está construído. -->
+<section class="slide bg-ink">
+  <div class="grid-overlay"></div>
+  <div class="wrap">
+    <div class="kicker reveal d1">Proteção</div>
+    <h2 class="reveal d2">Imagem de menor: o que o produto faz por padrão</h2>
+    <div class="prot">
+      <div class="pitem reveal d3"><span class="ck">✓</span><span><b>Autorização por aluno</b><span>O responsável registra o que autoriza: WhatsApp, rede social, ou nada.</span></span></div>
+      <div class="pitem reveal d4"><span class="ck">✓</span><span><b>Sem autorização, não sai</b><span>O sistema bloqueia. Não depende de alguém lembrar.</span></span></div>
+      <div class="pitem reveal d5"><span class="ck">✓</span><span><b>Envio só para número verificado</b><span>Apenas o WhatsApp do responsável cadastrado e confirmado.</span></span></div>
+      <div class="pitem reveal d6"><span class="ck">✓</span><span><b>Registro de tudo</b><span>Quem enviou, o quê, para quem e quando &mdash; auditável.</span></span></div>
+      <div class="pitem reveal d7"><span class="ck">✓</span><span><b>Biometria de finalidade única</b><span>Usada só para separar as fotos. Nunca para perfil ou publicidade.</span></span></div>
+      <div class="pitem reveal d8"><span class="ck">✓</span><span><b>Revogação a qualquer momento</b><span>O responsável muda de ideia e o material sai do ar.</span></span></div>
+    </div>
+    <div class="legalbar reveal d9">
+      <span class="lb">Imagem gerada por IA vem sempre identificada como tal</span>
+      <span class="lb">Lei nº 15.211/2025 &mdash; ECA Digital</span>
+      <span class="lb">Decreto nº 12.880/2026</span>
+      <span class="lb">LGPD</span>
+    </div>
+  </div>
+  <div class="pagenum">08</div>
+</section>
+
+<!-- ============ SLIDE 9 — ANTES × DEPOIS ============ -->
+<section class="slide bg-mint">
+  <div class="grid-overlay"></div>
+  <div class="wrap">
+    <div class="kicker reveal d1">O ganho</div>
+    <h2 class="reveal d2">O que a escola ganha</h2>
+    <div class="cmp">
+      <div class="a reveal d3">
+        <div class="colhead">Antes</div>
+        <div class="cline">Um dia separando fotos</div>
+        <div class="cline">Pai reclama que não recebeu</div>
+        <div class="cline">Rede social parada</div>
+        <div class="cline">Autorização no papel, perdida</div>
+        <div class="cline">Foto no celular da professora</div>
+      </div>
+      <div class="b reveal d4">
+        <div class="colhead">Com IASchool</div>
+        <div class="cline">Minutos</div>
+        <div class="cline">Todo responsável recebe as fotos do filho</div>
+        <div class="cline">Conteúdo pronto a cada evento</div>
+        <div class="cline">Registro digital, auditável</div>
+        <div class="cline">Acervo da escola, controlado</div>
+      </div>
+    </div>
+    <p class="closer reveal d5">Mais tempo para a equipe, mais proximidade com as famílias, <mark>menos exposição jurídica</mark>.</p>
+  </div>
+  <div class="pagenum">09</div>
+</section>
+
+<!-- ============ SLIDE 10 — PRÓXIMO PASSO ============ -->
+<section class="slide bg-peach">
+  <div class="grid-overlay"></div>
+  <div class="wrap">
+    <div class="kicker reveal d1">Próximo passo</div>
+    <h2 class="reveal d2">Piloto em uma escola da rede, um evento</h2>
+    <div class="weeks">
+      <div class="week reveal d3"><span class="w">Semana 1</span><p>Importação da lista de alunos e coleta das autorizações</p></div>
+      <div class="week reveal d4"><span class="w">Semana 2</span><p>Primeiro evento processado ponta a ponta</p></div>
+      <div class="week reveal d5"><span class="w">Semana 3</span><p>Resultado apresentado à direção e decisão sobre a rede</p></div>
+    </div>
+    <div class="cta reveal d6">
+      <div>
+        <div class="t">Pedido desta reunião</div>
+        <div class="q">Escolher a escola e a data do evento.</div>
+      </div>
+      <div class="mk">→</div>
+    </div>
+  </div>
+  <div class="pagenum">10</div>
+</section>
+
+</main>
+</div>
+
+<!-- Chrome de apresentação, fora do palco -->
+<nav class="deck-controls" aria-label="Navegação da apresentação">
+  <button id="btnPrev" aria-label="Slide anterior">←</button>
+  <span id="counter">1 / 10</span>
+  <button id="btnNext" aria-label="Próximo slide">→</button>
+</nav>
+
+<!-- Edição inline -->
+<div class="edit-hotzone" aria-hidden="true"></div>
+<button class="edit-toggle" id="editToggle" title="Modo edição (E)">✏️</button>
+<div class="edit-hint">Modo edição — clique em qualquer texto para alterar &middot; Ctrl+S salva &middot; E sai</div>
+
+<script>
+/* ===========================================
+   CONTROLADOR DA APRESENTAÇÃO
+   Teclado, roda do mouse, toque e escala do palco
+   =========================================== */
+/* Dimensões do palco — o build mobile substitui esta linha */
+const STAGE_W = 1920, STAGE_H = 1080;
+
+class SlidePresentation {
+  constructor(){
+    this.slides = document.querySelectorAll('.slide');
+    this.stage  = document.getElementById('deckStage');
+    this.bar    = document.getElementById('progress');
+    this.counter= document.getElementById('counter');
+    this.current = 0;
+    this.setupStageScale();
+    this.setupKeyboardNav();
+    this.setupTouchNav();
+    this.setupWheelNav();
+    document.getElementById('btnPrev').addEventListener('click', () => this.prev());
+    document.getElementById('btnNext').addEventListener('click', () => this.next());
+    this.showSlide(0);
+  }
+
+  /* Escala o palco 1920×1080 inteiro para caber na janela (letterbox) */
+  setupStageScale(){
+    const scale = () => {
+      const f = Math.min(window.innerWidth/STAGE_W, window.innerHeight/STAGE_H);
+      const x = (window.innerWidth  - STAGE_W*f)/2;
+      const y = (window.innerHeight - STAGE_H*f)/2;
+      this.stage.style.transform = 'translate('+x+'px,'+y+'px) scale('+f+')';
+    };
+    scale();
+    window.addEventListener('resize', scale);
+  }
+
+  setupKeyboardNav(){
+    document.addEventListener('keydown', e => {
+      if (document.body.classList.contains('editing')) return;
+      if (['ArrowRight','ArrowDown',' ','PageDown'].includes(e.key)){ e.preventDefault(); this.next(); }
+      if (['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){ e.preventDefault(); this.prev(); }
+      if (e.key === 'Home'){ this.showSlide(0); }
+      if (e.key === 'End'){ this.showSlide(this.slides.length-1); }
+    });
+  }
+
+  setupTouchNav(){
+    let x0 = null;
+    document.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, {passive:true});
+    document.addEventListener('touchend', e => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      if (Math.abs(dx) > 55) (dx < 0 ? this.next() : this.prev());
+      x0 = null;
+    }, {passive:true});
+  }
+
+  setupWheelNav(){
+    let lock = false;
+    document.addEventListener('wheel', e => {
+      if (lock || document.body.classList.contains('editing')) return;
+      if (Math.abs(e.deltaY) < 24) return;
+      lock = true;
+      (e.deltaY > 0 ? this.next() : this.prev());
+      setTimeout(() => { lock = false; }, 700);
+    }, {passive:true});
+  }
+
+  next(){ this.showSlide(this.current + 1); }
+  prev(){ this.showSlide(this.current - 1); }
+
+  showSlide(i){
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((s, n) => {
+      s.classList.toggle('active',  n === this.current);
+      s.classList.toggle('visible', n === this.current);
+    });
+    this.bar.style.width = (((this.current + 1) / this.slides.length) * 100) + '%';
+    this.counter.textContent = (this.current + 1) + ' / ' + this.slides.length;
+  }
+}
+const deck = new SlidePresentation();
+
+/* ===========================================
+   EDIÇÃO INLINE
+   Hover no canto superior esquerdo ou tecla E.
+   Salva em localStorage; Ctrl+S baixa o HTML.
+   =========================================== */
+const editor = {
+  isActive: false,
+  sel: 'h1, h2, h3, p, span, div.q, div.t, .cline, .nm, .ct, .cap, .badge, .htag, .frame, .w, .lbl, .val, .colhead',
+  toggleEditMode(){
+    this.isActive = !this.isActive;
+    document.body.classList.toggle('editing', this.isActive);
+    document.getElementById('editToggle').classList.toggle('active', this.isActive);
+    document.querySelectorAll('.deck-stage ' + this.sel).forEach(el => {
+      if (el.querySelector(this.sel)) return;      /* só folhas de texto */
+      el.contentEditable = this.isActive ? 'true' : 'false';
+    });
+    if (!this.isActive) this.save();
+  },
+  save(){
+    try { localStorage.setItem('iaschool-deck', document.getElementById('deckStage').innerHTML); } catch(e){}
+  },
+  restore(){
+    try {
+      const html = localStorage.getItem('iaschool-deck');
+      if (html) document.getElementById('deckStage').innerHTML = html;
+    } catch(e){}
+  },
+  download(){
+    this.save();
+    const blob = new Blob(['<!DOCTYPE html>\n' + document.documentElement.outerHTML], {type:'text/html'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'apresentacao-iaschool.html';
+    a.click();
+  }
+};
+
+const hotzone   = document.querySelector('.edit-hotzone');
+const editToggle= document.getElementById('editToggle');
+let hideTimeout = null;
+
+hotzone.addEventListener('mouseenter', () => { clearTimeout(hideTimeout); editToggle.classList.add('show'); });
+hotzone.addEventListener('mouseleave', () => { hideTimeout = setTimeout(() => { if (!editor.isActive) editToggle.classList.remove('show'); }, 400); });
+editToggle.addEventListener('mouseenter', () => clearTimeout(hideTimeout));
+editToggle.addEventListener('mouseleave', () => { hideTimeout = setTimeout(() => { if (!editor.isActive) editToggle.classList.remove('show'); }, 400); });
+editToggle.addEventListener('click', () => editor.toggleEditMode());
+hotzone.addEventListener('click', () => editor.toggleEditMode());
+
+document.addEventListener('keydown', e => {
+  if ((e.key === 'e' || e.key === 'E') && !e.target.getAttribute('contenteditable')) editor.toggleEditMode();
+  if ((e.ctrlKey || e.metaKey) && e.key === 's'){ e.preventDefault(); editor.download(); }
+});
+</script>
+</body>
+</html>

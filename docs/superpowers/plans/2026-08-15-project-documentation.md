@@ -24,7 +24,7 @@
 - Modify: `AGENTS.md`
 
 **Interfaces:**
-- Consumes: root `package.json`, `pnpm-workspace.yaml`, package manifests, existing `replit.md`, and `artifacts/iasport/docs/AGENTS.md`.
+- Consumes: root `package.json`, `pnpm-workspace.yaml`, package manifests, existing `replit.md`, and `artifacts/iaschool-ui/docs/AGENTS.md`.
 - Produces: actionable root-level instructions for agents working anywhere in the workspace.
 
 - [ ] **Step 1: Preserve the existing collaboration rules**
@@ -45,7 +45,7 @@
 - Create: `README.md`
 
 **Interfaces:**
-- Consumes: root scripts, workspace manifests, existing documentation, and `artifacts/iasport/public/logo-color.png`.
+- Consumes: root scripts, workspace manifests, existing documentation, and `artifacts/iaschool-ui/public/logo-color.png`.
 - Produces: a concise project entry point with quickstart, architecture map, validation commands, and documentation links.
 
 - [ ] **Step 1: Write the README structure**
@@ -54,7 +54,7 @@
 
 - [ ] **Step 2: Add valid relative links and logo**
 
-  Link to existing guides under `docs/` and `artifacts/iasport/docs/`; use the logo path relative to the repository root.
+  Link to existing guides under `docs/` and `artifacts/iaschool-ui/docs/`; use the logo path relative to the repository root.
 
 - [ ] **Step 3: Inspect the completed README**
 

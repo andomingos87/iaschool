@@ -16,7 +16,7 @@ apresente exatamente três opções mutuamente exclusivas, numeradas como `1`,
 
 ## Visão geral do projeto
 
-Este repositório é um workspace pnpm para o IAsport. Ele reúne a aplicação web
+Este repositório é um workspace pnpm para o IAschool. Ele reúne a aplicação web
 Vite/React, o design system compartilhado, um servidor HTTP Express, contratos
 OpenAPI, clientes gerados, validações Zod, persistência PostgreSQL/Drizzle e
 scripts locais de verificação multiplataforma.
@@ -41,8 +41,8 @@ protótipo, código local, integração configurada e evidência de produção.
 
 ## Mapa do workspace
 
-- `artifacts/r9-app/` — aplicação web principal baseada em Vite.
-- `artifacts/iasport/` — design system IAsport, tokens, componentes e preview.
+- `artifacts/iaschool-app/` — aplicação web principal baseada em Vite.
+- `artifacts/iaschool-ui/` — design system IAschool, tokens, componentes e preview.
 - `artifacts/api-server/` — servidor Express e fluxo de geração de imagens.
 - `artifacts/mockup-sandbox/` — sandbox para prototipação visual.
 - `lib/api-spec/` — contrato OpenAPI e configuração do Orval.
@@ -76,9 +76,9 @@ PORT=5000 BASE_PATH=/ pnpm run build
 Para iniciar superfícies específicas:
 
 ```bash
-pnpm --filter @workspace/r9-app run dev
+pnpm --filter @workspace/iaschool-app run dev
 pnpm --filter @workspace/api-server run dev
-pnpm --filter @workspace/iasport run dev
+pnpm --filter @workspace/iaschool-ui run dev
 pnpm --filter @workspace/mockup-sandbox run dev
 ```
 
@@ -100,21 +100,55 @@ Confirme a porta real no ambiente antes de compartilhar uma URL.
 - Sempre informe separadamente checks não executados por falta de dependência,
   serviço, credencial, navegador, hardware ou ambiente remoto.
 
-## Design system IAsport
+## Design system IAschool
 
-- A fonte de verdade visual é `artifacts/iasport/tokens.json`.
-- Edite tokens e regenere os arquivos com `pnpm --filter @workspace/iasport run tokens`.
+- A fonte de verdade visual é `artifacts/iaschool-ui/tokens.json`.
+- Edite tokens e regenere os arquivos com `pnpm --filter @workspace/iaschool-ui run tokens`.
 - Não edite manualmente `src/index.css` ou `src/generated/tokens.tsx`.
-- Use os componentes e tokens de `@workspace/iasport`; não copie valores ou
+- Use os componentes e tokens de `@workspace/iaschool-ui`; não copie valores ou
   componentes para uma aplicação consumidora.
 - Cada componente web relevante deve manter sua história em
-  `artifacts/iasport/src/preview/demos/` e seu registro em
-  `artifacts/iasport/src/preview/registry.tsx`.
+  `artifacts/iaschool-ui/src/preview/demos/` e seu registro em
+  `artifacts/iaschool-ui/src/preview/registry.tsx`.
 - Siga os guias específicos antes de alterar UI:
-  - Web: `artifacts/iasport/docs/consuming-web.md`.
-  - Expo: `artifacts/iasport/docs/consuming-expo.md`.
-  - Migração web: `artifacts/iasport/docs/migrating-web.md`.
-  - Migração Expo: `artifacts/iasport/docs/migrating-expo.md`.
+  - Web: `artifacts/iaschool-ui/docs/consuming-web.md`.
+  - Expo: `artifacts/iaschool-ui/docs/consuming-expo.md`.
+  - Migração web: `artifacts/iaschool-ui/docs/migrating-web.md`.
+  - Migração Expo: `artifacts/iaschool-ui/docs/migrating-expo.md`.
+
+## MCP do Supabase — regra obrigatória
+
+**Sempre use o servidor MCP declarado em `.mcp.json` na raiz deste repositório.
+Nunca use o conector Supabase do Claude Code / claude.ai.**
+
+O conector pessoal enxerga todos os projetos da conta e não tem vínculo com
+este repositório — usá-lo aqui é como operar o banco errado por engano. O
+servidor de projeto está travado no ref correto e é a única forma autorizada
+de tocar no banco do IAschool.
+
+- Servidor: `supabase-iaschool` (declarado em [`.mcp.json`](./.mcp.json)).
+- Escopo: `--project-ref=jtyyauivokutperouqyh`. As ferramentas de conta
+  (`list_projects`, `create_project`, `pause_project`…) **não existem** aqui,
+  de propósito.
+- Ferramentas: todas as de projeto, com escrita habilitada — `docs`,
+  `database`, `debugging`, `development`, `functions`, `branching`, `storage`
+  (23 ferramentas, sem `--read-only`).
+- Credencial: `SUPABASE_ACCESS_TOKEN` lido de `.env.local` em tempo de
+  execução. O token nunca entra no `.mcp.json`, na linha de comando, no Git,
+  em logs ou em mensagens.
+
+Como identificar qual está em uso: as ferramentas do servidor de projeto
+aparecem com o prefixo `mcp__supabase-iaschool__`. Qualquer outro prefixo
+(hash aleatório) é o conector pessoal — **não use**.
+
+Se o servidor não subir, ele falha com mensagem explícita: `.env.local`
+ausente (rode o Claude Code a partir da raiz do repo) ou
+`SUPABASE_ACCESS_TOKEN` vazio (gere um Personal Access Token em
+Supabase → Account → Access Tokens). Não contorne o erro caindo no conector.
+
+> `apply_migration` e `execute_sql` escrevem no banco real deste produto, que
+> guarda dados de crianças e adolescentes. Valem as mesmas regras da seção
+> "Estilo e segurança": só com autorização explícita e ambiente confirmado.
 
 ## API, banco e geração de código
 

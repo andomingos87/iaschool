@@ -7,7 +7,7 @@ import {
   signLogFile,
 } from "../lib/generation-log";
 
-// API de leitura dos logs de geração (restrita ao admin da IAsport) e
+// API de leitura dos logs de geração (restrita ao admin da IAschool) e
 // vinculação do resultado final (feita pelo app após salvar o post).
 
 const router: IRouter = Router();

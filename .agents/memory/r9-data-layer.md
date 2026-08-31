@@ -3,7 +3,7 @@ name: R9 app data-layer swap points
 description: How the R9 Escolinhas app isolates mock data/auth/storage; security rules for the Supabase swap.
 ---
 
-The R9 Escolinhas app (artifacts/r9-app) can run on mocks (localStorage) or real Supabase depending on env vars.
+The R9 Escolinhas app (artifacts/iaschool-app) can run on mocks (localStorage) or real Supabase depending on env vars.
 
 **Rule:** all screens access data only via `getDataLayer()` from `src/lib/data` — never import mock implementations directly.
 

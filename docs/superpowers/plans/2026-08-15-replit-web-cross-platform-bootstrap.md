@@ -32,7 +32,7 @@
 | `scripts/replit-compat/lib/native-tools.mjs` | Native-tool checks for Rollup, esbuild, LightningCSS and Vite. |
 | `scripts/replit-compat/preflight.mjs` | CLI rendering the diagnosis and exits nonzero for unsupported or ambiguous repositories. |
 | `scripts/replit-compat/verify-native-tools.mjs` | CLI proving native tool loading on the current platform. |
-| `scripts/replit-compat/smoke-r9-app.mjs` | Starts the existing R9 Vite app, waits for readiness, makes an HTTP request, and always terminates the child process. |
+| `scripts/replit-compat/smoke-web-app.mjs` | Starts the existing R9 Vite app, waits for readiness, makes an HTTP request, and always terminates the child process. |
 | `scripts/replit-compat/test/*.test.mjs` | Node tests for platform detection, Replit restriction detection, report masking, and process cleanup. |
 | `docs/development/replit-cross-platform.md` | Developer runbook, supported environments, commands, secrets boundary and recovery guide. |
 | `.github/workflows/cross-platform-web.yml` | macOS, Ubuntu and Windows frozen-install/typecheck/build/native/HTTP CI matrix. |
@@ -59,7 +59,7 @@ Run:
 git status --short
 node --version
 pnpm --version
-pnpm --filter @workspace/r9-app run dev -- --host 127.0.0.1 --port 5173
+pnpm --filter @workspace/iaschool-app run dev -- --host 127.0.0.1 --port 5173
 ```
 
 Expected: the last command fails on macOS with a native Rollup module error for
@@ -247,9 +247,9 @@ git commit -m "fix: support native web tooling across development platforms"
 **Files:**
 - Create: `scripts/replit-compat/lib/native-tools.mjs`
 - Create: `scripts/replit-compat/verify-native-tools.mjs`
-- Create: `scripts/replit-compat/smoke-r9-app.mjs`
+- Create: `scripts/replit-compat/smoke-web-app.mjs`
 - Create: `scripts/replit-compat/test/native-tools.test.mjs`
-- Create: `scripts/replit-compat/test/smoke-r9-app.test.mjs`
+- Create: `scripts/replit-compat/test/smoke-web-app.test.mjs`
 - Modify: `package.json`
 
 **Interfaces:**
@@ -279,7 +279,7 @@ cleanup handler runs after a successful request and after a failed request.
 Run:
 
 ```bash
-node --test scripts/replit-compat/test/native-tools.test.mjs scripts/replit-compat/test/smoke-r9-app.test.mjs
+node --test scripts/replit-compat/test/native-tools.test.mjs scripts/replit-compat/test/smoke-web-app.test.mjs
 ```
 
 Expected: FAIL because the native verification and smoke utilities do not yet
@@ -288,16 +288,16 @@ exist.
 - [ ] **Step 3: Implement native-tool verification**
 
 `verify-native-tools.mjs` must import Rollup, esbuild, LightningCSS and Vite,
-then execute `corepack pnpm --filter @workspace/r9-app exec vite --version`.
+then execute `corepack pnpm --filter @workspace/iaschool-app exec vite --version`.
 It emits package name, current OS, current CPU and pass/fail status; it never
 prints environment values.
 
 - [ ] **Step 4: Implement the R9 HTTP smoke test**
 
-`smoke-r9-app.mjs` must spawn:
+`smoke-web-app.mjs` must spawn:
 
 ```bash
-corepack pnpm --filter @workspace/r9-app run dev -- --host 127.0.0.1 --port 5173
+corepack pnpm --filter @workspace/iaschool-app run dev -- --host 127.0.0.1 --port 5173
 ```
 
 Wait at most 30 seconds for `GET http://127.0.0.1:5173/` to return a `2xx` or
@@ -312,7 +312,7 @@ Add to `package.json`:
 
 ```json
 "replit:verify-native": "node scripts/replit-compat/verify-native-tools.mjs",
-"replit:smoke:web": "node scripts/replit-compat/smoke-r9-app.mjs",
+"replit:smoke:web": "node scripts/replit-compat/smoke-web-app.mjs",
 "replit:test": "node --test scripts/replit-compat/test/*.test.mjs"
 ```
 
@@ -325,7 +325,7 @@ pnpm run replit:test
 pnpm run replit:verify-native
 pnpm run replit:smoke:web
 pnpm run typecheck
-pnpm --filter @workspace/r9-app run build
+pnpm --filter @workspace/iaschool-app run build
 ```
 
 Expected: all compatibility checks pass; native reporting includes Rollup,
@@ -384,7 +384,7 @@ pnpm run replit:preflight
 pnpm run replit:verify-native
 pnpm run replit:smoke:web
 pnpm run typecheck
-pnpm --filter @workspace/r9-app run build
+pnpm --filter @workspace/iaschool-app run build
 ```
 
 Explain that `.env` is local-only, list variable names without values, describe
@@ -453,7 +453,7 @@ corepack pnpm install --frozen-lockfile
 pnpm run replit:preflight
 pnpm run replit:verify-native
 pnpm run typecheck
-pnpm --filter @workspace/r9-app run build
+pnpm --filter @workspace/iaschool-app run build
 pnpm run replit:smoke:web
 ```
 
@@ -469,7 +469,7 @@ pnpm run replit:test
 pnpm run replit:preflight
 pnpm run replit:verify-native
 pnpm run typecheck
-pnpm --filter @workspace/r9-app run build
+pnpm --filter @workspace/iaschool-app run build
 pnpm run replit:smoke:web
 ```
 
@@ -597,7 +597,7 @@ local skills directory until the user explicitly authorizes distribution.
 
 - [ ] Review `git status --short` and identify all user-owned versus plan-owned changes.
 - [ ] Run `corepack pnpm install --frozen-lockfile` from a clean dependency directory.
-- [ ] Run `pnpm run replit:test`, `pnpm run replit:preflight`, `pnpm run replit:verify-native`, `pnpm run typecheck`, `pnpm --filter @workspace/r9-app run build`, and `pnpm run replit:smoke:web`.
+- [ ] Run `pnpm run replit:test`, `pnpm run replit:preflight`, `pnpm run replit:verify-native`, `pnpm run typecheck`, `pnpm --filter @workspace/iaschool-app run build`, and `pnpm run replit:smoke:web`.
 - [ ] Complete desktop and 390px mobile browser smoke tests; retain local screenshots only as evidence.
 - [ ] Confirm GitHub Actions has completed macOS, Ubuntu and Windows jobs successfully before claiming cross-platform CI proof.
 - [ ] Confirm no `.env` value, secret, deployment, migration, or Replit remote configuration change is present in the diff.

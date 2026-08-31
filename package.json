@@ -7,8 +7,9 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "deck:build": "node scripts/deck/build.mjs",
     "verify:native": "node scripts/replit-compat/verify-native-tools.mjs",
-    "smoke:web": "node scripts/replit-compat/smoke-r9-app.mjs",
+    "smoke:web": "node scripts/replit-compat/smoke-web-app.mjs",
     "test:compat": "node --test scripts/replit-compat/test/*.test.mjs"
   },
   "packageManager": "pnpm@11.17.0",

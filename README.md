@@ -1,14 +1,15 @@
 <div align="center">
 
-<img src="./artifacts/iasport/public/logo-color.png" alt="IAsport" height="72" />
+<img src="./artifacts/iaschool-ui/public/logo-color.png" alt="IAschool" height="72" />
 
-# IAsport
+# IAschool
 
-Workspace web e design system para criação de imagens esportivas com IA.
+Workspace web e design system do IAschool — fotos escolares organizadas por
+aluno e entregues aos responsáveis.
 
 </div>
 
-Este repositório reúne a base técnica do IAsport: aplicação web em React/Vite,
+Este repositório reúne a base técnica do IAschool: aplicação web em React/Vite,
 design system compartilhado, API Express, contrato OpenAPI, validações Zod,
 persistência com Drizzle/PostgreSQL e ferramentas para desenvolvimento
 local em macOS, Linux e Windows.
@@ -31,7 +32,7 @@ PORT=5000 BASE_PATH=/ pnpm run build
 Para iniciar a aplicação web:
 
 ```bash
-pnpm --filter @workspace/r9-app run dev
+pnpm --filter @workspace/iaschool-app run dev
 ```
 
 Para iniciar a API:
@@ -44,8 +45,8 @@ pnpm --filter @workspace/api-server run dev
 
 | Diretório | Responsabilidade |
 | --- | --- |
-| `artifacts/r9-app` | Aplicação web principal em Vite/React |
-| `artifacts/iasport` | Tokens, componentes e preview do design system |
+| `artifacts/iaschool-app` | Aplicação web principal em Vite/React |
+| `artifacts/iaschool-ui` | Tokens, componentes e preview do design system |
 | `artifacts/api-server` | API Express e processamento no servidor |
 | `artifacts/mockup-sandbox` | Prototipação visual com o design system |
 | `lib/api-spec` | Contrato OpenAPI e geração de código |
@@ -73,18 +74,18 @@ contrato, regenere os artefatos:
 pnpm --filter @workspace/api-spec run codegen
 ```
 
-O design system usa `artifacts/iasport/tokens.json` como fonte de verdade:
+O design system usa `artifacts/iaschool-ui/tokens.json` como fonte de verdade:
 
 ```bash
-pnpm --filter @workspace/iasport run tokens
+pnpm --filter @workspace/iaschool-ui run tokens
 ```
 
 Leia os guias de consumo antes de alterar uma interface:
 
 - [Desenvolvimento web multiplataforma](docs/development/cross-platform-web.md)
-- [Consumo web do design system](artifacts/iasport/docs/consuming-web.md)
-- [Consumo Expo do design system](artifacts/iasport/docs/consuming-expo.md)
-- [Referências visuais e de marca](artifacts/iasport/docs/references/README.md)
+- [Consumo web do design system](artifacts/iaschool-ui/docs/consuming-web.md)
+- [Consumo Expo do design system](artifacts/iaschool-ui/docs/consuming-expo.md)
+- [Referências visuais e de marca](artifacts/iaschool-ui/docs/references/README.md)
 
 ## Banco e ambiente
 

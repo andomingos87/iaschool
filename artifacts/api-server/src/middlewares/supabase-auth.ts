@@ -10,7 +10,7 @@ declare global {
   }
 }
 
-// Validação de sessão do Supabase (app R9 Escolinhas).
+// Validação de sessão do Supabase (app IAschool).
 // Quando SUPABASE_URL/SUPABASE_ANON_KEY estão configuradas, o endpoint exige
 // um access token válido (Authorization: Bearer <jwt>) e o valida chamando
 // o Auth do Supabase (GET /auth/v1/user). Sem essas variáveis, o app roda em

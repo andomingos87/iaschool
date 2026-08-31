@@ -14,7 +14,7 @@ corepack pnpm install --frozen-lockfile
 pnpm run verify:native
 pnpm run smoke:web
 pnpm run typecheck
-pnpm --filter @workspace/r9-app run build
+pnpm --filter @workspace/iaschool-app run build
 ```
 
 `verify:native` confirms that Vite and its native tooling can load on the
