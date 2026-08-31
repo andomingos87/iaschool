@@ -20,52 +20,99 @@ para validar o token do usuário na rota de geração de imagem.
 e com `OPENAI_API_KEY` presente, a rota de geração retorna 503 — isso é
 intencional para evitar abuso da chave sem autenticação.
 
-## Setup do banco (uma vez)
+## Schema do banco
 
-> **Base criada antes da pivotagem (R9/IAsport)?** Rode primeiro
-> [`supabase/pivot-fase0.sql`](./supabase/pivot-fase0.sql), que remove as
-> colunas e tabelas do domínio de futebol (posição, altura, peso, uniformes e
-> métricas). Depois siga o passo 1. Bases novas já nascem limpas.
+O banco atual foi provisionado do zero em **30/08/2026** por 7 migrations
+aplicadas via MCP:
 
-1. Abra o SQL Editor no painel do Supabase e rode o script
-   [`supabase/setup.sql`](./supabase/setup.sql) inteiro. Ele cria:
-   - tabelas `profiles`, `students`, `clubs` (identidade visual da escola),
-     `reference_posts`, `generated_posts` (todas com `owner_id` para
-     isolamento por usuário);
-   - lixeira (soft delete) em `generated_posts` **e** `students` via coluna
-     `deleted_at` (null = ativo). Excluir move para a lixeira (UPDATE em
-     `deleted_at`) — permitido à `school_user` pela política `students_update`.
-     Após 30 dias o app faz o expurgo oportunista (registro + arquivos no
-     Storage). Bases criadas antes desta funcionalidade: re-rodar `setup.sql`
-     adiciona as colunas e **atualiza a política `students_delete`** (agora
-     restrita a `super_admin`) automaticamente (blocos de migração idempotentes).
-     **Importante:** sem re-rodar `setup.sql`, a política antiga permite que
-     `school_user` faça `DELETE` direto via PostgREST, contornando a retenção
-     de 30 dias. Re-execute `setup.sql` no SQL Editor do Supabase para corrigir;
-   - políticas RLS: `super_admin` acessa todos os dados; `school_user` acessa
-     apenas os próprios registros (`owner_id = auth.uid()`);
-   - buckets **privados** `students`, `clubs`, `references`, `generated` — imagens são
-     servidas via URLs assinadas (1 ano de validade), nunca como URLs públicas.
-   - tabela `generation_usage` + função `consume_generation_quota` (cota
-     diária de gerações persistida — bases criadas antes desta funcionalidade
-     devem rodar [`supabase/generation-quota.sql`](./supabase/generation-quota.sql));
-   - tabela `generation_logs` + bucket privado `generation-logs` (auditoria
-     das gerações na tela `/admin/logs`, exclusiva do admin da IAschool —
-     bases criadas antes desta funcionalidade devem rodar
-     [`supabase/generation-logs.sql`](./supabase/generation-logs.sql)).
-     A tabela tem RLS ligada e **sem políticas**: só o api-server
-     (service_role) escreve e lê; a tela consome a API `/api/generation/logs`,
-     que exige super_admin com o e-mail exato do admin.
-2. **Habilite o cadastro por e-mail** no Supabase: Authentication →
-   Sign In / Up → Email → "Enable email signups" (ativado). O cadastro
-   público do app depende disso; a segurança fica garantida pelo fluxo de
-   aprovação (contas novas nascem pendentes e não leem nenhum dado).
-3. Crie o super admin em Authentication → Users → "Add user"
-   (marque *Auto confirm user*).
-4. No SQL Editor, rode o script [`supabase/create-super-admin.sql`](./supabase/create-super-admin.sql).
-   Ele localiza o usuário pelo e-mail e insere/atualiza o perfil com
-   `role = 'super_admin'` e `approval_status = 'approved'` automaticamente.
-   ⚠️ Recomendamos trocar a senha após o primeiro login.
+| Versão | Migration |
+| --- | --- |
+| `20260830154203` | `iaschool_core_tables` |
+| `20260830154226` | `iaschool_auth_helper_functions` |
+| `20260830154256` | `iaschool_signup_trigger_and_rls` |
+| `20260830154305` | `iaschool_storage_buckets_and_policies` |
+| `20260830154315` | `iaschool_generation_quota_and_logs` |
+| `20260830154340` | `iaschool_eca_digital` |
+| `20260830154404` | `iaschool_revoke_trigger_functions_from_api` |
+
+### Como alterar o schema
+
+> **Regra:** toda mudança de schema entra por `apply_migration` do servidor MCP
+> `supabase-iaschool` (declarado em `.mcp.json` na raiz do repositório).
+> **Não use o SQL Editor do painel para mudar schema** — o que não passa por
+> migration não fica no histórico e o próximo ambiente nasce diferente.
+
+O fluxo é:
+
+1. Aplicar a migration por `apply_migration`, com nome descritivo em
+   `snake_case` (prefixo `iaschool_`).
+2. Atualizar, no mesmo commit, o arquivo SQL de referência correspondente em
+   [`supabase/`](./supabase/).
+3. Confirmar com `list_migrations` / `list_tables`.
+
+O SQL Editor continua válido para **consulta** e para operações pontuais de
+dado (não de schema), como rodar
+[`supabase/create-super-admin.sql`](./supabase/create-super-admin.sql).
+
+### Arquivos SQL de referência
+
+Os scripts em [`supabase/`](./supabase/) são a **leitura humana** do schema, não
+o mecanismo de aplicação. Mantenha-os fiéis ao banco.
+
+| Arquivo | O que descreve |
+| --- | --- |
+| [`setup.sql`](./supabase/setup.sql) | `profiles`, `students`, `clubs`, `reference_posts`, `generated_posts`, `prompt_settings`, `prompt_template_versions`, funções auxiliares de RLS, buckets e políticas de Storage |
+| [`eca-digital.sql`](./supabase/eca-digital.sql) | `guardian_verification_codes`, `share_logs`, `confirm_guardian_code()` e o trigger `handle_new_user` com os campos de consentimento |
+| [`generation-quota.sql`](./supabase/generation-quota.sql) | `generation_usage` + `consume_generation_quota()` |
+| [`generation-logs.sql`](./supabase/generation-logs.sql) | `generation_logs` + bucket privado `generation-logs` |
+| [`create-super-admin.sql`](./supabase/create-super-admin.sql) | Operação de dado: promove um usuário a `super_admin` aprovado |
+| [`pivot-fase0.sql`](./supabase/pivot-fase0.sql) | Migration da pivotagem para bases anteriores a 30/08/2026 (remove posição, altura, peso, uniformes e métricas). ⚠️ Apaga dados. Bases novas já nascem limpas |
+
+### Tabelas em `public`
+
+Todas com RLS habilitada.
+
+| Tabela | Papel |
+| --- | --- |
+| `profiles` | Usuário do produto: `role`, `approval_status`, vínculo com escola/aluno |
+| `students` | Aluno cadastrado pela escola; soft delete via `deleted_at` |
+| `clubs` | Identidade visual da escola (logo e cores) — nome de tabela herdado; consolidar em `schools` é decisão da Fase 1 |
+| `reference_posts` | Modelos de arte (referência de estilo) |
+| `generated_posts` | Artes geradas; soft delete via `deleted_at` |
+| `prompt_settings` / `prompt_template_versions` | Template de prompt e seu histórico |
+| `generation_usage` | Cota diária de geração, persistida |
+| `generation_logs` | Auditoria das gerações (tela `/admin/logs`). RLS ligada e **sem políticas**: só o api-server (service_role) lê e escreve |
+| `guardian_verification_codes` | OTP de verificação do responsável (ECA Digital) |
+| `share_logs` | Trilha imutável de compartilhamento (ECA Digital) |
+
+Pontos de RLS e retenção que importam:
+
+- Isolamento por usuário: `super_admin` vê tudo; `school_user` acessa apenas os
+  próprios registros (`owner_id = auth.uid()`). Isso **não** é multi-tenancy de
+  escola — trocar para `school_id` é a Fase 1 da pivotagem.
+- Lixeira de 30 dias em `students` e `generated_posts`: excluir é `UPDATE` em
+  `deleted_at`. A política `students_delete` é restrita a `super_admin`
+  justamente para que `school_user` não contorne a retenção via `DELETE` direto
+  no PostgREST. O expurgo (registro + arquivos no Storage) é oportunista.
+- Buckets **privados** `students`, `clubs`, `references`, `generated` e
+  `generation-logs` — imagens servidas por URLs assinadas (TTL 1 ano), nunca
+  públicas.
+
+### Configuração do projeto (uma vez, no painel)
+
+1. **Habilite o cadastro por e-mail**: Authentication → Sign In / Up → Email →
+   "Enable email signups". O cadastro público do app depende disso; a segurança
+   fica no fluxo de aprovação (contas novas nascem `pending` e não leem dado).
+2. Crie o super admin em Authentication → Users → "Add user" (marque
+   *Auto confirm user*).
+3. Rode [`supabase/create-super-admin.sql`](./supabase/create-super-admin.sql)
+   no SQL Editor. Ele localiza o usuário pelo e-mail e insere/atualiza o perfil
+   com `role = 'super_admin'` e `approval_status = 'approved'`.
+   ⚠️ Troque a senha após o primeiro login.
+
+Itens de configuração ainda pendentes (SMTP próprio, confirmação de e-mail,
+rate limits) estão em
+[`docs/pendencias-producao.md`](../../docs/pendencias-producao.md).
 
 ## Cadastro público e aprovação
 
@@ -146,7 +193,8 @@ Observações:
 
 Papéis: `super_admin`, `school_user` e `student` (coluna `role` em
 `profiles`); `approval_status` controla o acesso (`pending`/`approved`/
-`rejected`).
+`rejected`). O papel `guardian` (responsável) previsto na pivotagem ainda não
+existe.
 Usuário logado sem linha em `profiles` é tratado como deslogado no frontend
 e bloqueado na rota de geração (HTTP 403) no backend.
 
