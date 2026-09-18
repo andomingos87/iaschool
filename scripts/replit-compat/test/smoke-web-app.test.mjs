@@ -5,6 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSmokeTest } from '../smoke-web-app.mjs';
 
+// Três casos abaixo verificam a semântica POSIX de sinais: o filho recebe
+// SIGTERM, roda o handler e encerra sozinho; quem ignora SIGTERM é escalado
+// para SIGKILL. No Windows não existe entrega de sinal — `child.kill()` chama
+// TerminateProcess e o filho morre na hora, sem handler e sem escalada. Os
+// testes não se aplicam lá; o resto da suíte roda normalmente.
+const posixSignals = process.platform === 'win32'
+  ? { skip: 'sinais POSIX não existem no Windows: kill() encerra o processo direto' }
+  : {};
+
 async function waitForFile(path) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     try {
@@ -46,14 +55,14 @@ async function runTemporaryProcess(statusCode, { ignoreSigterm = false } = {}) {
   return { marker, result };
 }
 
-test('terminates the smoke child after a successful HTTP response', async () => {
+test('terminates the smoke child after a successful HTTP response', posixSignals, async () => {
   const { marker, result } = await runTemporaryProcess(200);
 
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(await readFile(marker, 'utf8'), 'terminated');
 });
 
-test('terminates the smoke child after a failed HTTP response', async () => {
+test('terminates the smoke child after a failed HTTP response', posixSignals, async () => {
   const { marker, result } = await runTemporaryProcess(500);
 
   assert.equal(result.ok, false);
@@ -114,7 +123,7 @@ test('accepts the bind banner when the child colors the port', async () => {
   assert.equal(result.ok, true, JSON.stringify(result));
 });
 
-test('waits for child close after escalating shutdown to SIGKILL', async () => {
+test('waits for child close after escalating shutdown to SIGKILL', posixSignals, async () => {
   const { result } = await runTemporaryProcess(200, { ignoreSigterm: true });
 
   assert.equal(result.ok, true, JSON.stringify(result));

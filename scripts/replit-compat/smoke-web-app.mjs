@@ -27,6 +27,9 @@ async function defaultRequest(url) {
   return fetch(url, { signal: AbortSignal.timeout(1_000), redirect: 'manual' });
 }
 
+// A escalada SIGTERM -> SIGKILL só tem efeito onde há entrega de sinal. No
+// Windows os dois viram TerminateProcess e o filho morre no primeiro kill, o
+// que encerra o servidor do mesmo jeito — só não passa pelo handler.
 async function terminate(child, exit, shutdownTimeoutMs) {
   if (child.exitCode === null && child.signalCode === null) {
     child.kill('SIGTERM');
