@@ -3,8 +3,8 @@
 **Fases cobertas:** 2 (Upload em massa) e 3 (Reconhecimento facial) do
 [`docs/pivotagem-iaschool.md`](pivotagem-iaschool.md), mais o subconjunto da
 Fase 1 sem o qual as duas não podem ser construídas.
-**Data:** 31/08/2026 · **§4 e §13 revisadas em 16/09/2026** · **§7.5, §10,
-§12.3 e §13 revisadas em 18/09/2026**
+**Data:** 31/08/2026 · **§4 e §13 revisadas em 16/09/2026** · **§7.5, §9.3,
+§10, §12.3, §13 e §16 revisadas em 18/09/2026**
 **Estado do documento:** aprovada — as decisões da §3 foram respondidas em
 31/08/2026 (§16), D1/D5 confirmadas pelo spike M0, e as decisões de modelo do
 M1 (#2, #3, #5 a #8 do backlog) fechadas em 16/09/2026, reescrevendo a §4.
@@ -751,7 +751,7 @@ candidatos mais prováveis, com atalhos de teclado. Ações:
 | --- | --- |
 | Confirmar | `state='confirmed'`, `reviewed_by/at`; embedding é persistido se ainda não estava |
 | Corrigir para outro aluno | idem, com o `student_id` escolhido |
-| Não é aluno da escola | `state='not_a_student'`, embedding e recorte apagados |
+| Não é aluno da escola | `state='not_a_student'`, embedding e recorte apagados; **`bbox` e `det_score` permanecem** (§9.3.1) |
 | Ignorar | `state='rejected'` |
 
 #### RPCs
@@ -871,14 +871,34 @@ finalidade, mas contido assim:
    da comparação (D5). Nunca vira linha.
 2. O que persiste é caixa delimitadora + recorte, para revisão humana, com
    expurgo ao fim da revisão.
-3. Rosto marcado como `not_a_student` tem recorte e vetor apagados na hora.
+3. Rosto marcado como `not_a_student` tem **recorte e vetor** apagados na hora.
+   A linha permanece, com `bbox` e `det_score` — ver §9.3.1.
 4. Aluno sem `biometric_sorting` ativo simplesmente não tem referência: seus
    rostos caem em `unassigned` e são tratados manualmente, sem base biométrica.
 
-**Decisão de produto ainda aberta** (§9.4 da pivotagem): o que fazer com foto
-em que aparece criança sem autorização, na hora da **entrega**. Fora do escopo
-desta spec — a entrega é a Fase 5 —, mas `authorizations` já tem o escopo para
-implementar a trava.
+#### 9.3.1 Foto com criança sem autorização, na entrega
+
+**Decidido em 18/09/2026: desfocar quem não autorizou, antes de entregar.**
+Era a decisão #1 do backlog. As alternativas descartadas: bloquear a foto
+inteira (em evento escolar quase toda imagem tem mais de uma criança — uma
+família que não autoriza derrubaria o acervo) e entregar só foto individual
+(numa festa junina quase nada sobraria).
+
+A implementação é Fase 5, mas **duas consequências valem para o M5 e o M6**:
+
+1. **`bbox` e `det_score` são preservados para todo rosto detectado**, inclusive
+   `not_a_student` e `rejected`. Só recorte e vetor são apagados. Sem saber onde
+   está o rosto do irmão que veio junto, não há o que desfocar — e redescobrir
+   isso depois significa rodar o `face-worker` de novo sobre um acervo fechado.
+2. A regra de nitidez, a confirmar quando a Fase 5 ganhar spec: **nítido só quem
+   é aluno identificado, com autorização ativa; todo o resto desfocado** — rosto
+   `unassigned`, `not_a_student`, e aluno sem autorização. O desfoque é
+   conservador por construção: na dúvida, borra.
+
+O desfoque tem de ser aplicado **no arquivo entregue**, não como sobreposição na
+tela — camada de front-end se remove com o inspetor do navegador. E é gerado na
+entrega, a partir do original, para refletir o estado da autorização naquele
+momento: se a família revoga hoje, o envio de amanhã já sai borrado.
 
 ### 9.4 Trilha e expurgo
 
@@ -1013,7 +1033,7 @@ Proibido usar foto real de criança (§9.5). Para medir acurácia:
 | Unit | limiares e regra de margem; hash e dedup; parser de EXIF; máquina de estados de `photo_faces` |
 | Integração (Supabase) | `claim_photo_jobs` sem corrida com 4 workers simultâneos; dedup por `unique(event_id, content_hash)`; RPCs de revisão; `confirm_faces_bulk` com **dois revisores no mesmo aluno ao mesmo tempo** (a transação não pode confirmar duas vezes nem perder face); `confirm_faces_bulk` com uma face de outra escola no array **não confirma nenhuma** |
 | RLS | membro de escola A não lê `photos`, `photo_faces` nem Storage da escola B; `authenticated` não lê a coluna `embedding`; `student_reference_faces` inacessível fora do `service_role` |
-| Conformidade | rosto `not_a_student` some do banco e do Storage; revogação zera embeddings; `purge_expired_biometrics()` respeita `retention_until`; **nenhuma linha `confirmed` sem `reviewed_by` e `reviewed_at`**, inclusive as vindas de lote (D6); um lote grava exatamente uma linha em `biometric_events` com os `face_ids` |
+| Conformidade | rosto `not_a_student` perde recorte e vetor, **mas mantém `bbox` e `det_score`** (§9.3.1); revogação zera embeddings; `purge_expired_biometrics()` respeita `retention_until`; **nenhuma linha `confirmed` sem `reviewed_by` e `reviewed_at`**, inclusive as vindas de lote (D6); um lote grava exatamente uma linha em `biometric_events` com os `face_ids` |
 | E2E | upload de 200 fotos → processamento → revisão → pasta do aluno |
 | Carga | 2.000 fotos, medindo as metas da §11.1 |
 
@@ -1121,6 +1141,7 @@ Decisão de 18/09/2026:
 | Decisão | Resposta | Onde |
 | --- | --- | --- |
 | Custo operacional da revisão | D6 mantida; confirmação **em lote por aluno**, com `reviewed_by`/`reviewed_at` por linha e uma entrada de trilha por lote | §7.5 |
+| #1 — foto com criança sem autorização, na entrega | **desfocar quem não autorizou**, no arquivo entregue, gerado na hora | §9.3.1 |
 
 A D6 foi reexaminada e confirmada nesta data. A trava é decisão de produto, não
 exigência legal (a LGPD art. 20 dá direito de **solicitar** revisão e teve
@@ -1128,6 +1149,9 @@ vetado o parágrafo do revisor humano; Lei 15.211/2025 e Decreto 12.880/2026 nã
 tratam de revisão de classificação). O que a sustenta é o buraco de medição:
 acurácia em criança de 4 a 10 anos nunca foi medida.
 
-Próxima decisão em aberto, e ela é de produto, não de engenharia: o que fazer
-com foto em que aparece criança sem autorização, **na hora da entrega** (§9.3).
-Não bloqueia M1–M6.
+A decisão #1 — foto com criança sem autorização na entrega — foi respondida
+nesta mesma data (§9.3.1) e deixou de ser a pendência de produto que era. O que
+ela abre são sub-decisões de Fase 5, listadas em [`BACKLOG.md`](../BACKLOG.md):
+se aluno autorizado aparece nítido em foto entregue a outra família (e o texto
+do termo precisa dizê-lo), se adulto entra na regra do desfoque, e se a versão
+desfocada é gerada a cada entrega ou fica em cache.

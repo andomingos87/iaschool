@@ -197,6 +197,7 @@ Pré-requisito de tudo: `photos` precisa de `event_id`, que precisa de `school_i
 - [ ] `face_recognition_settings` (linha única, editável pelo super admin) com `tau`, margem, `min_face_px`
 - [ ] Busca vetorial dos 5 vizinhos **filtrada por `school_id` dentro de função `security definer`** (D7)
 - [ ] Persistir embedding só quando corresponde a aluno com `biometric_sorting` ativo; rosto sem correspondência guarda só bbox + recorte (D5)
+- [ ] **`bbox` e `det_score` de todo rosto detectado sobrevivem ao expurgo do recorte e do vetor**, inclusive `not_a_student` — é o que torna o desfoque da entrega possível (spec §9.3.1). Sem isso, a única saída na Fase 5 vira bloquear a foto inteira
 - [ ] Bucket `face-crops` para os recortes da revisão
 - [ ] `revoke select on photo_faces from authenticated` + `grant select` de colunas sem `embedding` (privilégio de coluna)
 - [ ] Pasta do aluno como consulta N:N (R4, R6), aba "Fotos" em `/alunos/:id`
@@ -230,7 +231,8 @@ Sem spec. `authorizations` (M4) já deixa os ganchos.
 - [ ] Spec da fase
 - [ ] Revogação com efeito retroativo sobre material já entregue
 - [ ] Papel `guardian` e portal do responsável — os ganchos nascem no M1: `guardians.user_id` (nulo) e `profiles.role`, cujo `check` ganha `'guardian'` como quarto valor
-- [ ] Decisão de produto: foto com criança sem autorização **na hora da entrega** (bloquear, desfocar ou só envio individual) — pivotagem §9 item 3, spec §9.3
+- [x] Decisão de produto: foto com criança sem autorização na hora da entrega — **desfocar quem não autorizou** (18/09/2026; spec §9.3.1)
+- [ ] Implementar o desfoque na entrega: aplicado no arquivo, nunca como sobreposição de tela; gerado a partir do original para refletir a autorização do momento
 
 ---
 
@@ -250,8 +252,13 @@ Sem spec. Depende da pendência #7 fechada.
 
 | # | Decisão | Onde | Bloqueia |
 | --- | --- | --- | --- |
-| 1 | Foto com criança sem autorização na entrega | pivotagem §9.3, spec §9.3 | Fase 5 (não bloqueia M1–M6) |
 | 4 | Fallback Twilio Verify se o onboarding da Meta travar | pendências #7 | Transversal |
+
+Sub-decisões abertas dentro da #1 (já decidida), todas de Fase 5:
+
+- Aluno **com** autorização aparece nítido em foto entregue a **outra** família? A decisão de 18/09 diz que sim ("desfocar quem não autorizou"), mas o escopo `delivery_whatsapp` precisa declarar isso no texto do termo — hoje ele não diz.
+- Adulto (professora, pai na plateia) entra na regra do desfoque? Pelo critério atual, sim. Talvez mereça um estado "equipe" marcável na revisão.
+- Versão desfocada é gerada a cada entrega ou fica em cache invalidado por mudança em `authorizations`?
 
 ## Decisões tomadas
 
@@ -285,3 +292,10 @@ nem a Lei 15.211/2025 nem o Decreto 12.880/2026 tratam de revisão de
 classificação. O que sustenta a D6 é o buraco de medição: acurácia em criança de
 4 a 10 anos nunca foi medida. Não é bypass — `reviewed_by` e `reviewed_at`
 continuam por linha; um ato humano passa a cobrir N linhas olhadas numa grade.
+
+**18/09/2026** — decisão #1: foto em que aparece criança sem autorização, na
+hora da entrega, vai **com o rosto dela desfocado** (spec §9.3.1). Descartadas:
+bloquear a foto inteira (derrubaria o acervo, porque quase toda foto de evento
+tem mais de uma criança) e entregar só foto individual (sobraria quase nada de
+uma festa junina). A implementação é Fase 5, mas o M5 e o M6 passam a preservar
+`bbox` e `det_score` de todo rosto detectado — sem isso não há o que desfocar.
