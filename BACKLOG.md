@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 16/09/2026
+**Atualizado em:** 18/09/2026
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -25,12 +25,12 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 | Transversal — produção e conformidade | pendências #1–#7 | ❌ nenhum item andou | depende de compra de domínio/Resend/Meta |
 | 1 — Fundação escolar | M1 (mínima) + Fase 1 completa | ⏳ próxima, **escopo fechado em 16/09/2026** | 2–2,5 sem (M1) |
 | 2 — Upload em massa | M2, M3 | ❌ | 3,5 sem |
-| 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito, código zero | 5,5 sem |
+| 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito, código zero | 6 sem |
 | 4 — Autorização granular + portal | — | ❌ sem spec | 2–3 sem |
 | 5 — Lote e WhatsApp | — | ❌ sem spec | 4–6 sem |
 
 MVP para piloto em 1 escola = Fases 0 + 1 + 2 + 3 (com revisão manual
-obrigatória) ≈ 2,5 a 3 meses a partir do início do M1 — 11 a 12 semanas
+obrigatória) ≈ 2,5 a 3 meses a partir do início do M1 — 11,5 a 12,5 semanas
 somando M1 a M6 (spec §13).
 
 ---
@@ -202,11 +202,18 @@ Pré-requisito de tudo: `photos` precisa de `event_id`, que precisa de `school_i
 - [ ] Pasta do aluno como consulta N:N (R4, R6), aba "Fotos" em `/alunos/:id`
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` só nos workers; nunca logar embedding, recorte ou nome
 
-### M6 — Revisão, trilha, expurgo e aceite (spec §7.5, §9.4, §12) · 2 semanas · risco médio
+### M6 — Revisão, trilha, expurgo e aceite (spec §7.5, §9.4, §12) · 2,5 semanas · risco médio
 
-- [ ] Tela `/eventos/:id/revisao`: recorte, foto inteira, 3 candidatos, atalhos `←/→` e `1..3`
+> **Decisão de 18/09/2026:** D6 mantida, com o custo operacional atacado por
+> confirmação em lote por aluno. Prazo de 2 para 2,5 semanas — é uma tela a mais
+> que a fila original, com RPC de lote e testes de concorrência.
+
+- [ ] Tela `/eventos/:id/revisao`, **aba padrão por aluno**: um cartão por aluno com a grade dos `suggested` dele no evento, partida por faixa de confiança (alta marcada, "precisa de atenção" desmarcada), confirmação em lote; recorte grande o bastante para se enxergar o rosto
+- [ ] Mesma tela, **aba de exceção**: fila individual (recorte, foto inteira, 3 candidatos, atalhos `←/→` e `1..3`) para `unassigned` e para os desmarcados no cartão
 - [ ] RPCs `confirm_face` e `reject_face` (`security definer`, checam `is_member_of` e autorização do aluno); `not_a_student` apaga recorte e vetor na hora
-- [ ] Nenhum `confirmed` sem `reviewed_by` (D6, R7)
+- [ ] RPC `confirm_faces_bulk(p_face_ids uuid[], p_student_id uuid)`: `security definer`, **em transação**, as mesmas checagens de `confirm_face` aplicadas ao conjunto — uma face reprovada não confirma nenhuma
+- [ ] Nenhum `confirmed` sem `reviewed_by` (D6, R7), **inclusive vindo de lote**; uma linha em `biometric_events` por lote (`kind='face_confirmed'`, `detail={face_ids,count}`)
+- [ ] Teste de concorrência: dois revisores no mesmo aluno ao mesmo tempo não confirmam duas vezes nem perdem face
 - [ ] `biometric_events` append-only (mesmo padrão de `share_logs`)
 - [ ] `purge_expired_biometrics()` diária via `pg_cron`: retenção vencida, revogação, aluno expurgado, evento vencido
 - [ ] Testes unit: limiares e margem, hash/dedup, EXIF, máquina de estados de `photo_faces`
@@ -269,3 +276,12 @@ Duas consequências decididas junto, que não estavam em nenhuma das propostas:
 `guardians.user_id` nasce nulo no M1, para que o papel `guardian` da Fase 4 seja
 só mais um valor no `check` de `profiles.role`; e `authorizations` ganha
 `guardian_id`, porque o canal verificado passou a ter dono.
+
+**18/09/2026** — manter a D6 e atacar só o custo operacional da revisão, com
+confirmação em lote por aluno (spec §7.5). A D6 foi reexaminada: a trava é
+decisão de produto, não exigência legal — a LGPD art. 20 dá direito de
+**solicitar** revisão e teve vetado o parágrafo que exigiria revisor humano, e
+nem a Lei 15.211/2025 nem o Decreto 12.880/2026 tratam de revisão de
+classificação. O que sustenta a D6 é o buraco de medição: acurácia em criança de
+4 a 10 anos nunca foi medida. Não é bypass — `reviewed_by` e `reviewed_at`
+continuam por linha; um ato humano passa a cobrir N linhas olhadas numa grade.

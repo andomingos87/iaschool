@@ -3,7 +3,8 @@
 **Fases cobertas:** 2 (Upload em massa) e 3 (Reconhecimento facial) do
 [`docs/pivotagem-iaschool.md`](pivotagem-iaschool.md), mais o subconjunto da
 Fase 1 sem o qual as duas não podem ser construídas.
-**Data:** 31/08/2026 · **§4 e §13 revisadas em 16/09/2026**
+**Data:** 31/08/2026 · **§4 e §13 revisadas em 16/09/2026** · **§7.5, §10,
+§12.3 e §13 revisadas em 18/09/2026**
 **Estado do documento:** aprovada — as decisões da §3 foram respondidas em
 31/08/2026 (§16), D1/D5 confirmadas pelo spike M0, e as decisões de modelo do
 M1 (#2, #3, #5 a #8 do backlog) fechadas em 16/09/2026, reescrevendo a §4.
@@ -701,10 +702,50 @@ limiar e a margem não mudam).
 > 15 retratos perdidos a 1024. O embedding é indiferente ao `det_size` (mesmo
 > rosto a 640 e a 1024: similaridade 0,990), então misturar é seguro.
 
-### 7.5 Fila de revisão
+### 7.5 Revisão
 
-`photo_faces.state = 'unassigned'` ou `'suggested'`. A tela mostra o recorte,
-a foto inteira e os 3 candidatos mais prováveis. Ações:
+> **Decisão de 18/09/2026.** A D6 fica de pé; o que muda é o custo operacional
+> dela. A revisão deixa de ser uma fila de rostos e passa a ser **por aluno**,
+> com confirmação em lote. Não é bypass: cada linha de `photo_faces` continua
+> gravando `reviewed_by` e `reviewed_at`. Um ato humano passa a cobrir N linhas
+> que a pessoa olhou numa grade, em vez de exigir N cliques.
+>
+> Vale registrar o que foi verificado junto: a trava é decisão de produto, não
+> exigência legal. A LGPD art. 20 dá ao titular o direito de **solicitar**
+> revisão, e o parágrafo que exigiria revisor humano foi vetado; a Lei
+> 15.211/2025 e o Decreto 12.880/2026 não tratam de revisão de classificação
+> (o art. 30 da Lei é sobre remoção de conteúdo; o art. 11 do Decreto, sobre IA
+> generativa). A D6 se sustenta por outro motivo: **a acurácia em criança de 4 a
+> 10 anos não foi medida** — o spike rodou em LFW, adultos — e é esse buraco que
+> a revisão humana segura.
+
+#### Tela por aluno (padrão)
+
+`/eventos/:id/revisao` agrupa os `photo_faces` com `state = 'suggested'` por
+`student_id`. Cada aluno é um cartão com a grade de todos os recortes sugeridos
+dele **naquele evento**. O revisor desmarca o que estiver errado e confirma o
+resto; os desmarcados caem na fila individual.
+
+Dentro do cartão, a grade é partida por confiança:
+
+| Faixa | Critério | Estado inicial |
+| --- | --- | --- |
+| Alta confiança | `sim ≥ 0.64` **e** margem `≥ 0.15` | marcada; o lote alcança |
+| Precisa de atenção | resto da faixa sugerida (`0.52 ≤ sim < 0.64`, ou margem apertada) | **desmarcada**; exige ato explícito |
+
+Os dois cortes vivem em `face_recognition_settings`, ao lado de `tau` e da
+margem, para serem recalibrados no piloto sem deploy. Eles reduzem o resíduo de
+"pessoa parecida" (§4.2 do spike: 5 em 1.183), não o eliminam — o erro grave,
+"aluno errado", já é zero pelos limiares de §7.3, não por esta divisão.
+
+O recorte na grade precisa ser grande o suficiente para se enxergar que é outra
+criança. Miniatura pequena demais não é revisão, é carimbo.
+
+#### Fila individual (exceção)
+
+Deixa de ser a porta de entrada e atende só `state = 'unassigned'` e os
+recortes desmarcados no cartão. Mostra o recorte, a foto inteira e os 3
+candidatos mais prováveis, com atalhos de teclado. Ações:
 
 | Ação | Efeito |
 | --- | --- |
@@ -713,8 +754,28 @@ a foto inteira e os 3 candidatos mais prováveis. Ações:
 | Não é aluno da escola | `state='not_a_student'`, embedding e recorte apagados |
 | Ignorar | `state='rejected'` |
 
-RPCs `confirm_face(p_face_id, p_student_id)` e `reject_face(p_face_id, p_reason)`,
-`security definer`, checando `is_member_of` e autorização do aluno.
+#### RPCs
+
+`confirm_face(p_face_id, p_student_id)` e `reject_face(p_face_id, p_reason)`
+seguem como estão, para a fila individual.
+
+`confirm_faces_bulk(p_face_ids uuid[], p_student_id uuid)` é nova:
+`security definer`, **em transação**, aplicando ao conjunto as mesmas checagens
+de `confirm_face` — `is_member_of` de todas as faces e autorização
+`biometric_sorting` do aluno. Se qualquer face falhar a checagem, nada é
+confirmado.
+
+#### Trilha
+
+Uma linha em `biometric_events` **por lote**, `kind = 'face_confirmed'`,
+`detail = {face_ids: [...], count: N}`. A tabela segue append-only (§9.4).
+
+#### Volume que isso evita
+
+Com os números do spike, um evento de 2.000 fotos com ~3 rostos cada dá ~6.000
+rostos: ~5.720 `suggested` e ~280 `unassigned`. Numa escola de 200 alunos são
+~29 recortes por aluno — a revisão vira ~200 cartões em vez de 6.000 decisões.
+A 30 s por cartão (**premissa, não medida**), ~1h40 contra ~3h20.
 
 ### 7.6 Pasta do aluno (R6)
 
@@ -871,7 +932,7 @@ testes de acurácia. Ver §12.1.
 | Eventos | `/eventos` | lista por data, status, contagem de fotos e pendências de revisão |
 | Novo evento | `/eventos/novo` | nome, data, turma, retenção, declaração de direito de imagem (§9.2) |
 | Evento | `/eventos/:id` | dropzone de pasta, progresso em tempo real, galeria virtualizada de miniaturas |
-| Revisão | `/eventos/:id/revisao` | fila de rostos: recorte, foto inteira, 3 candidatos, atalhos de teclado |
+| Revisão | `/eventos/:id/revisao` | **aba padrão:** um cartão por aluno com a grade dos recortes sugeridos dele no evento, partida por faixa de confiança, com confirmação em lote. **Aba de exceção:** fila individual (recorte, foto inteira, 3 candidatos, atalhos) para `unassigned` e para os desmarcados no cartão (§7.5) |
 | Aluno → Fotos | `/alunos/:id` (aba) | pasta do aluno (§7.6) |
 | Aluno → Rosto de referência | `/alunos/:id` (aba) | cadastro das fotos (1 aceita, aviso de cobertura baixa até 2 — §7.4), estado do consentimento, botão de revogar |
 
@@ -885,9 +946,11 @@ Notas de implementação:
   URLs assinadas em lote (`createSignedUrls`, 100 por chamada, TTL 1 h).
 - Progresso: contador otimista no cliente + assinatura Realtime em `batch_jobs`
   para o que acontece no servidor.
-- A fila de revisão precisa ser rápida no teclado (`←/→` navegar, `1..3`
-  escolher candidato, `Enter` confirmar, `N` não é aluno) — é a tela onde a
-  escola vai passar horas.
+- A fila individual precisa ser rápida no teclado (`←/→` navegar, `1..3`
+  escolher candidato, `Enter` confirmar, `N` não é aluno).
+- No cartão do aluno, o recorte tem de ser grande o suficiente para se ver que
+  é outra criança, e a faixa "precisa de atenção" nasce desmarcada — o lote não
+  a alcança sem ato explícito (§7.5).
 - Componentes do design system `@workspace/iaschool-ui`; nada de CSS novo solto.
 
 ---
@@ -948,9 +1011,9 @@ Proibido usar foto real de criança (§9.5). Para medir acurácia:
 | Nível | Cobertura |
 | --- | --- |
 | Unit | limiares e regra de margem; hash e dedup; parser de EXIF; máquina de estados de `photo_faces` |
-| Integração (Supabase) | `claim_photo_jobs` sem corrida com 4 workers simultâneos; dedup por `unique(event_id, content_hash)`; RPCs de revisão |
+| Integração (Supabase) | `claim_photo_jobs` sem corrida com 4 workers simultâneos; dedup por `unique(event_id, content_hash)`; RPCs de revisão; `confirm_faces_bulk` com **dois revisores no mesmo aluno ao mesmo tempo** (a transação não pode confirmar duas vezes nem perder face); `confirm_faces_bulk` com uma face de outra escola no array **não confirma nenhuma** |
 | RLS | membro de escola A não lê `photos`, `photo_faces` nem Storage da escola B; `authenticated` não lê a coluna `embedding`; `student_reference_faces` inacessível fora do `service_role` |
-| Conformidade | rosto `not_a_student` some do banco e do Storage; revogação zera embeddings; `purge_expired_biometrics()` respeita `retention_until` |
+| Conformidade | rosto `not_a_student` some do banco e do Storage; revogação zera embeddings; `purge_expired_biometrics()` respeita `retention_until`; **nenhuma linha `confirmed` sem `reviewed_by` e `reviewed_at`**, inclusive as vindas de lote (D6); um lote grava exatamente uma linha em `biometric_events` com os `face_ids` |
 | E2E | upload de 200 fotos → processamento → revisão → pasta do aluno |
 | Carga | 2.000 fotos, medindo as metas da §11.1 |
 
@@ -972,8 +1035,8 @@ de RLS e de conformidade passando.
 | M3 | Fila + `ingest-worker` + miniaturas + galeria virtualizada + progresso Realtime | 1,5 semanas | baixo |
 | M4 | `authorizations`, termo de consentimento, cadastro de rosto de referência | 1 semana | médio (depende do texto jurídico) |
 | M5 | `face-worker`, `photo_faces`, atribuição, pasta do aluno | 2,5 semanas | **alto** |
-| M6 | Fila de revisão, RPCs, expurgo, `biometric_events`, testes de conformidade | 2 semanas | médio |
-| **Total** | | **11–12 semanas** | |
+| M6 | Revisão por aluno com lote + fila individual, RPCs (incl. `confirm_faces_bulk`), expurgo, `biometric_events`, testes de conformidade | 2,5 semanas | médio |
+| **Total** | | **11,5–12,5 semanas** | |
 
 Consistente com a estimativa da pivotagem (Fase 2: 3–4 semanas; Fase 3: 4–6),
 somando o pré-requisito da Fase 1 e o marco de conformidade que a pivotagem não
@@ -983,6 +1046,11 @@ O M1 subiu meia semana em 16/09/2026: o escopo revisado (§4) acrescentou
 `guardians`, a consolidação de `clubs`, o papel global e — o que ninguém
 orçava — refazer `guardian_verification_codes`, `confirm_guardian_code` e a
 edge function `send-guardian-code` sobre o novo modelo.
+
+O M6 subiu meia semana em 18/09/2026: a revisão por aluno (§7.5) é uma tela a
+mais que a fila original, com a RPC de lote e os testes de concorrência que ela
+exige. O retorno é operacional — sem isso, cada evento custa mais de três horas
+de revisão à escola.
 
 M0 pode rodar em paralelo com M1.
 
@@ -1047,6 +1115,18 @@ Duas consequências que não estavam em nenhuma das propostas e foram decididas
 junto: `guardians.user_id` nasce nulo no M1 para que o papel `guardian` da Fase
 4 seja só mais um valor no `check` de `profiles.role`; e `authorizations` ganha
 `guardian_id` (§5.4), já que o canal verificado passou a ter dono.
+
+Decisão de 18/09/2026:
+
+| Decisão | Resposta | Onde |
+| --- | --- | --- |
+| Custo operacional da revisão | D6 mantida; confirmação **em lote por aluno**, com `reviewed_by`/`reviewed_at` por linha e uma entrada de trilha por lote | §7.5 |
+
+A D6 foi reexaminada e confirmada nesta data. A trava é decisão de produto, não
+exigência legal (a LGPD art. 20 dá direito de **solicitar** revisão e teve
+vetado o parágrafo do revisor humano; Lei 15.211/2025 e Decreto 12.880/2026 não
+tratam de revisão de classificação). O que a sustenta é o buraco de medição:
+acurácia em criança de 4 a 10 anos nunca foi medida.
 
 Próxima decisão em aberto, e ela é de produto, não de engenharia: o que fazer
 com foto em que aparece criança sem autorização, **na hora da entrega** (§9.3).
