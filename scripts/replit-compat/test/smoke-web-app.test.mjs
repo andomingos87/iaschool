@@ -1,8 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSmokeTest } from '../smoke-web-app.mjs';
+
+// Três casos abaixo verificam a semântica POSIX de sinais: o filho recebe
+// SIGTERM, roda o handler e encerra sozinho; quem ignora SIGTERM é escalado
+// para SIGKILL. No Windows não existe entrega de sinal — `child.kill()` chama
+// TerminateProcess e o filho morre na hora, sem handler e sem escalada. Os
+// testes não se aplicam lá; o resto da suíte roda normalmente.
+const posixSignals = process.platform === 'win32'
+  ? { skip: 'sinais POSIX não existem no Windows: kill() encerra o processo direto' }
+  : {};
 
 async function waitForFile(path) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -16,7 +26,7 @@ async function waitForFile(path) {
 }
 
 async function runTemporaryProcess(statusCode, { ignoreSigterm = false } = {}) {
-  const directory = await mkdtemp('/tmp/r9-smoke-');
+  const directory = await mkdtemp(join(tmpdir(), 'iaschool-smoke-'));
   const marker = join(directory, 'terminated');
   const ready = join(directory, 'ready');
   const source = [
@@ -45,14 +55,14 @@ async function runTemporaryProcess(statusCode, { ignoreSigterm = false } = {}) {
   return { marker, result };
 }
 
-test('terminates the smoke child after a successful HTTP response', async () => {
+test('terminates the smoke child after a successful HTTP response', posixSignals, async () => {
   const { marker, result } = await runTemporaryProcess(200);
 
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(await readFile(marker, 'utf8'), 'terminated');
 });
 
-test('terminates the smoke child after a failed HTTP response', async () => {
+test('terminates the smoke child after a failed HTTP response', posixSignals, async () => {
   const { marker, result } = await runTemporaryProcess(500);
 
   assert.equal(result.ok, false);
@@ -61,7 +71,7 @@ test('terminates the smoke child after a failed HTTP response', async () => {
 });
 
 test('accepts HTTP success when the child prints no bind banner', async () => {
-  const directory = await mkdtemp('/tmp/r9-smoke-');
+  const directory = await mkdtemp(join(tmpdir(), 'iaschool-smoke-'));
   const ready = join(directory, 'ready');
   const source = [
     "const fs = require('node:fs');",
@@ -85,7 +95,35 @@ test('accepts HTTP success when the child prints no bind banner', async () => {
   assert.equal(result.ok, true, JSON.stringify(result));
 });
 
-test('waits for child close after escalating shutdown to SIGKILL', async () => {
+test('accepts the bind banner when the child colors the port', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'iaschool-smoke-'));
+  const ready = join(directory, 'ready');
+  // Exatamente o que o Vite 7 imprime: negrito em volta da porta, no meio da URL.
+  const banner = 'Local:   http://127.0.0.1:\u001B[1m5173\u001B[22m/';
+  const source = [
+    "const fs = require('node:fs');",
+    `console.log(${JSON.stringify(banner)});`,
+    `setTimeout(() => fs.writeFileSync(${JSON.stringify(ready)}, 'ready'), 50);`,
+    'setInterval(() => {}, 1_000);',
+  ].join(' ');
+
+  const result = await runSmokeTest({
+    command: process.execPath,
+    args: ['-e', source],
+    url: 'http://iaschool.test/',
+    request: async () => {
+      await waitForFile(ready);
+      return { status: 200 };
+    },
+    expectedBinding: 'http://127.0.0.1:5173/',
+    timeoutMs: 5_000,
+    shutdownTimeoutMs: 100,
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+test('waits for child close after escalating shutdown to SIGKILL', posixSignals, async () => {
   const { result } = await runTemporaryProcess(200, { ignoreSigterm: true });
 
   assert.equal(result.ok, true, JSON.stringify(result));
