@@ -60,3 +60,6 @@ Thumbs.db
 .vercel
 .env*
 !.env.example
+
+# Sessões do Playwright MCP (locais)
+.playwright-mcp/

@@ -6,6 +6,11 @@
 
 **A internet não tem nada a ver com o erro.** São três problemas empilhados.
 
+> **Estado em 15/09/2026:** o Problema 1 foi superado no próprio dia 30/08 pelo
+> provisionamento de um banco novo (ver `artifacts/iaschool-app/SUPABASE.md`).
+> Os Problemas 2 e 3 são de código e **ainda não foram verificados**; estão no
+> [`BACKLOG.md`](../BACKLOG.md), higiene da Fase 0.
+
 ---
 
 ## Problema 1 — O projeto Supabase não existe mais (causa raiz)

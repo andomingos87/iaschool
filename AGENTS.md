@@ -35,6 +35,9 @@ alvo e o roadmap por fases.
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
 | 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
 
+O detalhe por item, com o que está feito e o que falta em cada fase, está em
+[`BACKLOG.md`](BACKLOG.md). Esta tabela é o resumo; o backlog é a fonte.
+
 **O que existe hoje** é o núcleo herdado da Fase 0: cadastro com aprovação,
 autenticação, conformidade ECA, cota de geração e geração **unitária** de arte
 (1 aluno por vez). Upload em massa, reconhecimento facial, `events`, `classes`
@@ -98,8 +101,11 @@ consentimento ou compartilhamento, use a skill `eca-digital`
 
 | Documento | Para quê |
 | --- | --- |
+| [`BACKLOG.md`](BACKLOG.md) | **Backlog oficial**, por fase: feito, em andamento, a fazer, bloqueado. Único lugar de rastreio |
 | [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) | Plano da pivotagem, roadmap por fases, decisões em aberto |
 | [`docs/pendencias-producao.md`](docs/pendencias-producao.md) | O que falta para rodar com dado real (domínio, Resend, OTP) |
+| [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md) | Spec das Fases 2 e 3: upload em massa, biometria, fila de revisão, pasta do aluno |
+| [`docs/spike-reconhecimento-facial.md`](docs/spike-reconhecimento-facial.md) | Spike M0: números medidos do motor facial, limiares calibrados e o que ficou sem medir |
 | [`docs/diagnostico-geracao-imagens.md`](docs/diagnostico-geracao-imagens.md) | Diagnóstico da falha de geração de imagens |
 | [`artifacts/iaschool-app/SUPABASE.md`](artifacts/iaschool-app/SUPABASE.md) | Integração Supabase: variáveis, tabelas, RLS, buckets |
 | [`docs/development/cross-platform-web.md`](docs/development/cross-platform-web.md) | Compatibilidade macOS/Linux/Windows |

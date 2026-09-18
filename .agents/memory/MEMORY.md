@@ -1,4 +1,2 @@
 - [Attached-asset unicode paths](attached-asset-unicode-paths.md) — filenames with accents (e.g. "às") fail ReadFile due to NFC/NFD; copy via shell glob to an ASCII path first.
-- [IAschool brand decisions](iaschool-brand.md) — pivoted from IAsport (Aug 2026); app palette now #2563eb, design-system tokens still on the legacy #39ff14; Prometo (Trial) embedded base64 in theme-template.css.
-- [Supabase QA quirks](r9-supabase-qa.md) — app now runs on live Supabase; example.com emails rejected, signup rate limits, 404 = schema not applied, `#type=recovery` opens reset screen.
-- [App data-layer swap points](r9-data-layer.md) — all data/auth/storage behind Supabase-shaped interfaces in src/lib/data/contract.ts; AI image generation mocked (canvas); swap docs in artifacts/iaschool-app/SUPABASE.md.
+- [IAschool brand decisions](iaschool-brand.md) — pivoted from IAsport (Aug 2026); app and design-system on #2563eb since 30/08/2026 rebrand; Prometo (Trial) embedded base64 in theme-template.css — licensing open before production.

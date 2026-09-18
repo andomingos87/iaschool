@@ -1,0 +1,166 @@
+{
+  "resolution": "2560x1706",
+  "runs": [
+    {
+      "photos": 20,
+      "faces_found_mean": 1.05,
+      "ms_mean": 46.9,
+      "ms_p50": 45.6,
+      "ms_p95": 53.0,
+      "det_size": 640,
+      "faces_in_scene": 1,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 3,
+      "ms_mean": 81.3,
+      "ms_p50": 81.5,
+      "ms_p95": 82.8,
+      "det_size": 640,
+      "faces_in_scene": 3,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 8,
+      "ms_mean": 168.0,
+      "ms_p50": 168.0,
+      "ms_p95": 171.9,
+      "det_size": 640,
+      "faces_in_scene": 8,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 20.15,
+      "ms_mean": 379.3,
+      "ms_p50": 376.2,
+      "ms_p95": 391.6,
+      "det_size": 640,
+      "faces_in_scene": 20,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 1.1,
+      "ms_mean": 62.5,
+      "ms_p50": 61.1,
+      "ms_p95": 77.9,
+      "det_size": 800,
+      "faces_in_scene": 1,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 3,
+      "ms_mean": 97.2,
+      "ms_p50": 97.4,
+      "ms_p95": 99.6,
+      "det_size": 800,
+      "faces_in_scene": 3,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 8,
+      "ms_mean": 184.9,
+      "ms_p50": 184.5,
+      "ms_p95": 189.2,
+      "det_size": 800,
+      "faces_in_scene": 8,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 20.35,
+      "ms_mean": 399.7,
+      "ms_p50": 395.6,
+      "ms_p95": 415.1,
+      "det_size": 800,
+      "faces_in_scene": 20,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 1.1,
+      "ms_mean": 90.1,
+      "ms_p50": 88.5,
+      "ms_p95": 106.8,
+      "det_size": 1024,
+      "faces_in_scene": 1,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 3,
+      "ms_mean": 122.5,
+      "ms_p50": 122.1,
+      "ms_p95": 125.7,
+      "det_size": 1024,
+      "faces_in_scene": 3,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 8.15,
+      "ms_mean": 214.0,
+      "ms_p50": 210.6,
+      "ms_p95": 229.4,
+      "det_size": 1024,
+      "faces_in_scene": 8,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 20.35,
+      "ms_mean": 431.7,
+      "ms_p50": 431.9,
+      "ms_p95": 455.8,
+      "det_size": 1024,
+      "faces_in_scene": 20,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 1.05,
+      "ms_mean": 178.0,
+      "ms_p50": 177.5,
+      "ms_p95": 181.4,
+      "det_size": 1600,
+      "faces_in_scene": 1,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 3,
+      "ms_mean": 212.7,
+      "ms_p50": 211.9,
+      "ms_p95": 220.0,
+      "det_size": 1600,
+      "faces_in_scene": 3,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 8,
+      "ms_mean": 299.8,
+      "ms_p50": 299.8,
+      "ms_p95": 302.2,
+      "det_size": 1600,
+      "faces_in_scene": 8,
+      "modules": "det+rec"
+    },
+    {
+      "photos": 20,
+      "faces_found_mean": 20.1,
+      "ms_mean": 510.5,
+      "ms_p50": 508.1,
+      "ms_p95": 524.9,
+      "det_size": 1600,
+      "faces_in_scene": 20,
+      "modules": "det+rec"
+    }
+  ],
+  "all_modules_ms_mean_3_faces": 147.6
+}

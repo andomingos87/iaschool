@@ -1,0 +1,23 @@
+{
+  "det_size": 1600,
+  "rows": [
+    {
+      "processes": 1,
+      "photos": 15,
+      "slowest_span_s": 3.08,
+      "photos_per_min": 292
+    },
+    {
+      "processes": 4,
+      "photos": 60,
+      "slowest_span_s": 14.13,
+      "photos_per_min": 255
+    },
+    {
+      "processes": 8,
+      "photos": 120,
+      "slowest_span_s": 34.73,
+      "photos_per_min": 207
+    }
+  ]
+}

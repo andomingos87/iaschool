@@ -1,0 +1,8 @@
+# Spike M0 — reconhecimento facial (docs/spec-upload-massa-reconhecimento-facial.md §14)
+# Versões fixadas: o spike precisa ser reprodutível para os números valerem.
+numpy==2.2.6
+onnxruntime==1.29.0
+insightface==1.0.1
+opencv-python-headless==5.0.0.93
+pillow==12.3.0
+tqdm==4.70.0

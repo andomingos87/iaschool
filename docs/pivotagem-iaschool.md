@@ -409,14 +409,19 @@ do prompt, o envio do arquivo à OpenAI e os PNGs em `public/`.
 
 ---
 
-## Anexo B — Geração de imagens está quebrada (30/08/2026)
+## Anexo B — Geração de imagens estava quebrada (30/08/2026)
 
 Investigado após a Fase 0. **Não é regressão da pivotagem** — é anterior.
 
-O projeto Supabase que o app usa (`jtyyauivokutperouqyh`) **foi excluído**
-(NXDOMAIN; ausente da lista de 52 projetos da conta). O backend na Fly responde
-`503 supabase_unavailable` em toda requisição autenticada, e o erro chega ao
-usuário como *"Falha de conexão ao enviar as fotos"* porque a resposta é
-enviada antes de o corpo do upload ser lido.
+Na manhã de 30/08/2026 o projeto Supabase apontado pelo app não existia mais
+(NXDOMAIN) e o backend na Fly respondia `503 supabase_unavailable`. **Esse
+problema foi superado no mesmo dia**: o banco foi provisionado do zero em 7
+migrations via MCP (ver `artifacts/iaschool-app/SUPABASE.md`).
+
+Ficaram sem verificação dois problemas de código apontados no mesmo
+diagnóstico: o modo demonstração chamar o backend real sem token, e o erro
+real chegar ao usuário mascarado como falha de rede (a resposta é enviada antes
+de o corpo do upload ser lido). Estão como item de higiene da Fase 0 em
+[`BACKLOG.md`](../BACKLOG.md).
 
 Diagnóstico completo, com as evidências: [`diagnostico-geracao-imagens.md`](./diagnostico-geracao-imagens.md).
