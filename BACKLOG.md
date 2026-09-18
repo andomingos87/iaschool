@@ -55,9 +55,9 @@ Detalhe completo no Anexo A da pivotagem. Typecheck, build e 84 testes unitário
 
 ### Higiene pendente da Fase 0
 
-- [ ] Commitar o que está solto no working tree: spec, relatório do spike, `scripts/spike-face/`, deck regenerado (01/09), `scripts/deck/mobile.css`, `AGENTS.md`
+- [x] Commitar o que está solto no working tree: spec, relatório do spike, `scripts/spike-face/`, deck regenerado (01/09), `scripts/deck/mobile.css`, `AGENTS.md`, `CLAUDE.md`, `.gitignore`, memórias (18/09/2026)
 - [x] Adicionar `.playwright-mcp/` ao `.gitignore` (15/09/2026)
-- [ ] Abrir PR de `pivot/fase-0` → `main` (3 commits locais nunca enviados ao `origin`)
+- [x] Abrir PR de `pivot/fase-0` → `main`: [andomingos87/iaschool#1](https://github.com/andomingos87/iaschool/pull/1), 9 commits (18/09/2026)
 - [x] Apagar specs/planos divergentes (`docs/superpowers/`, memórias `.agents/memory/r9-*`) e corrigir Anexo B da pivotagem, cabeçalho da spec e memória de marca (15/09/2026)
 - [ ] Verificar se os Problemas 2 e 3 de `docs/diagnostico-geracao-imagens.md` (modo demo chamando backend sem token; erro real mascarado como falha de rede) foram corrigidos após o reprovisionamento do banco. O Problema 1 (projeto Supabase inexistente) foi superado pelo provisionamento de 30/08. Se corrigidos, marcar o diagnóstico como resolvido
 
