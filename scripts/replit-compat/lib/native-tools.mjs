@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 export const REQUIRED_NATIVE_TOOLS = ['rollup', 'esbuild', 'lightningcss', 'vite'];
-const r9Require = createRequire(new URL('../../../artifacts/r9-app/package.json', import.meta.url));
+const r9Require = createRequire(new URL('../../../artifacts/iaschool-app/package.json', import.meta.url));
 const viteRequire = createRequire(r9Require.resolve('vite'));
 
 export function assertNativeToolReport(report) {

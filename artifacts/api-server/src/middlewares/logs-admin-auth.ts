@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 
 // Autorização da tela de logs de geração: exige um usuário autenticado no
 // Supabase que seja super_admin aprovado E tenha exatamente o e-mail do
-// administrador da IAsport. Outros super_admins recebem 403.
+// administrador da IAschool. Outros super_admins recebem 403.
 
 export const LOGS_ADMIN_EMAIL = "iasport@andersondomingos.com.br";
 

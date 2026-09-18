@@ -1,0 +1,87 @@
+{
+  "canvas_long_edge": 2560,
+  "det_size": 1600,
+  "ref_det_size": 640,
+  "rows": [
+    {
+      "face_px": 240,
+      "identities": 40,
+      "detection_rate": 1.0,
+      "spurious_per_photo": 0.025,
+      "sim_mean": 0.721,
+      "sim_p10": 0.643
+    },
+    {
+      "face_px": 180,
+      "identities": 40,
+      "detection_rate": 1.0,
+      "spurious_per_photo": 0.0,
+      "sim_mean": 0.723,
+      "sim_p10": 0.652
+    },
+    {
+      "face_px": 140,
+      "identities": 40,
+      "detection_rate": 1.0,
+      "spurious_per_photo": 0.0,
+      "sim_mean": 0.722,
+      "sim_p10": 0.648
+    },
+    {
+      "face_px": 110,
+      "identities": 40,
+      "detection_rate": 1.0,
+      "spurious_per_photo": 0.0,
+      "sim_mean": 0.718,
+      "sim_p10": 0.613
+    },
+    {
+      "face_px": 90,
+      "identities": 40,
+      "detection_rate": 1.0,
+      "spurious_per_photo": 0.0,
+      "sim_mean": 0.716,
+      "sim_p10": 0.636
+    },
+    {
+      "face_px": 70,
+      "identities": 40,
+      "detection_rate": 1.0,
+      "spurious_per_photo": 0.0,
+      "sim_mean": 0.707,
+      "sim_p10": 0.61
+    },
+    {
+      "face_px": 60,
+      "identities": 40,
+      "detection_rate": 1.0,
+      "spurious_per_photo": 0.0,
+      "sim_mean": 0.695,
+      "sim_p10": 0.619
+    },
+    {
+      "face_px": 50,
+      "identities": 40,
+      "detection_rate": 0.975,
+      "spurious_per_photo": 0.0,
+      "sim_mean": 0.678,
+      "sim_p10": 0.579
+    },
+    {
+      "face_px": 40,
+      "identities": 40,
+      "detection_rate": 0.875,
+      "spurious_per_photo": 0.0,
+      "sim_mean": 0.626,
+      "sim_p10": 0.532
+    },
+    {
+      "face_px": 30,
+      "identities": 40,
+      "detection_rate": 0.525,
+      "spurious_per_photo": 0.0,
+      "sim_mean": 0.538,
+      "sim_p10": 0.436
+    }
+  ]
+}

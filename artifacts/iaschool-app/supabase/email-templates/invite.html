@@ -1,0 +1,54 @@
+<!-- Template "Invite user" — cole em Authentication → Email Templates → Invite user -->
+<!-- Assunto sugerido: Você foi convidado para o IAschool -->
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:#1f1f1f;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;">
+  <tr>
+    <td align="center">
+      <table width="480" cellpadding="0" cellspacing="0" role="presentation" style="background-color:#2e2e2e;border-radius:12px;overflow:hidden;">
+        <tr>
+          <td style="padding:28px 32px 20px 32px;border-bottom:2px solid #2563eb;">
+            <span style="font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">
+              <span style="color:#2563eb;">IA</span>school
+            </span>
+            <div style="font-size:12px;color:#7e8a97;margin-top:4px;">Fotos escolares</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px 32px;">
+            <h1 style="margin:0 0 12px 0;font-size:19px;color:#ffffff;">Bem-vindo ao IAschool!</h1>
+            <p style="margin:0 0 20px 0;font-size:14px;line-height:1.6;color:#c9cfd6;">
+              Você foi convidado a acessar o <strong style="color:#ffffff;">IAschool</strong>,
+              a plataforma que organiza as fotos dos alunos e entrega aos responsáveis.
+              Clique no botão abaixo para criar sua senha e começar:
+            </p>
+            <table cellpadding="0" cellspacing="0" role="presentation" style="margin:0 0 24px 0;">
+              <tr>
+                <td style="background-color:#2563eb;border-radius:8px;">
+                  <a href="{{ .ConfirmationURL }}" target="_blank"
+                     style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:bold;color:#ffffff;text-decoration:none;">
+                    Aceitar convite
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0 0 8px 0;font-size:12px;line-height:1.6;color:#7e8a97;">
+              Se o botão não funcionar, copie e cole este link no navegador:
+            </p>
+            <p style="margin:0 0 20px 0;font-size:12px;line-height:1.6;word-break:break-all;">
+              <a href="{{ .ConfirmationURL }}" style="color:#2563eb;">{{ .ConfirmationURL }}</a>
+            </p>
+            <p style="margin:0;font-size:12px;line-height:1.6;color:#7e8a97;">
+              Se você não esperava este convite, pode ignorar este e-mail.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 32px;background-color:#262626;">
+            <p style="margin:0;font-size:11px;color:#7e8a97;">
+              IAschool — e-mail automático, não responda.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

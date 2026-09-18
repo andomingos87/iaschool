@@ -1,4 +1,4 @@
-// Log de auditoria das gerações de imagem (tela /admin/logs do app R9).
+// Log de auditoria das gerações de imagem (tela /admin/logs do IAschool).
 //
 // Cada tentativa de geração grava uma linha em public.generation_logs no
 // Supabase (via service_role) com prompt, payload, anexos (com miniaturas no

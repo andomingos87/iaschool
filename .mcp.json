@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "supabase-iaschool": {
+      "type": "stdio",
+      "command": "sh",
+      "args": [
+        "-c",
+        "if [ ! -f ./.env.local ]; then echo 'ERRO: .env.local nao encontrado em '\"$PWD\"'. Rode o Claude Code a partir da raiz do repositorio.' >&2; exit 1; fi; set -a; . ./.env.local; set +a; if [ -z \"$SUPABASE_ACCESS_TOKEN\" ]; then echo 'ERRO: SUPABASE_ACCESS_TOKEN vazio em .env.local. Gere um Personal Access Token em https://supabase.com/dashboard/account/tokens' >&2; exit 1; fi; exec npx -y @supabase/mcp-server-supabase@latest --project-ref=jtyyauivokutperouqyh --features=docs,database,debugging,development,functions,branching,storage"
+      ]
+    }
+  }
+}
