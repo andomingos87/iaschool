@@ -1,143 +1,31 @@
-/* ===========================================================================
-   IASchool — camada MOBILE (palco 1080×1920, retrato 9:16)
-   ---------------------------------------------------------------------------
-   Este arquivo NÃO é uma versão alternativa do deck: é só uma camada de
-   sobrescrita. O conteúdo vem sempre de docs/apresentacao-iaschool.html.
-   O build (scripts/deck/build.mjs) injeta este CSS depois do <style> original,
-   troca as constantes do palco no JS e gera docs/apresentacao-iaschool-mobile.html.
+/* ============================================================
+   mobile.css — camada 9:16 do deck IAschool (deck v2, tema navy)
+   O build (scripts/deck/build.mjs) troca o palco para 1080×1920
+   e injeta este arquivo. Os slides continuam autorados em
+   1920×1080: aqui eles são escalados (0.5625) e centralizados
+   verticalmente — letterbox sobre o fundo navy do palco.
+   Nenhum conteúdo é reescrito nesta camada.
+   ============================================================ */
 
-   Regra ao editar: mexa no HTML de origem, nunca no arquivo gerado.
-   =========================================================================== */
+.deck-stage{background:#071426}
 
-/* --- Palco 9:16 ---------------------------------------------------------- */
-.deck-stage,.slide{width:1080px;height:1920px}
+.slide{
+  width:1920px;
+  height:1080px;
+  left:0;
+  top:0;
+  transform:translateY(656px) scale(0.5625);
+  transform-origin:top left;
+}
 
 @media print{
   @page{size:1080px 1920px;margin:0}
   html,body{width:1080px}
-  .slide{width:1080px;height:1920px}
-  /* Reafirma o palco fluido da impressão: esta camada vem DEPOIS do CSS base,
-     então sem isto o .deck-stage ficaria travado em 1920px de altura com
-     overflow:hidden e o PDF sairia com uma página só. */
-  .deck-stage{position:static;width:auto;height:auto;overflow:visible;transform:none!important}
+  .slide{
+    /* zoom afeta o layout (ao contrário de transform), então cada
+       página 1080×1920 recebe o slide 1080×607 centralizado */
+    transform:none;
+    zoom:0.5625;
+    margin:1166px 0 0;
+  }
 }
-
-/* --- Escala tipográfica e margens ---------------------------------------- */
-.wrap{padding:96px 72px 112px}
-.kicker{font-size:26px;letter-spacing:.2em}
-.kicker::before{width:56px}
-h2{font-size:92px;margin-top:28px}
-.lead{font-size:38px;margin-top:26px;max-width:none}
-.pagenum{right:72px;bottom:64px;font-size:24px}
-.slidefoot{left:72px;bottom:64px;font-size:24px;max-width:840px;line-height:1.35}
-.grid-overlay{background-size:56px 56px}
-
-/* --- Slide 1 · capa: texto em cima, pastas embaixo ----------------------- */
-.split{grid-template-columns:1fr;grid-template-rows:1230px 690px}
-.cover{left:72px;width:936px;height:1230px;gap:36px}
-.cover h1{font-size:146px}
-.cover h1 em{font-size:100px}
-.cover .sub{font-size:40px;max-width:none}
-.cover .badges{flex-wrap:wrap;gap:14px}
-.badge{font-size:27px;padding:15px 30px}
-.stack{right:auto;left:90px;top:1240px;width:900px;height:560px}
-.stack .ph{width:400px;height:280px;font-size:26px}
-.ph1{left:0;top:0}
-.ph2{right:0;top:56px}
-.ph3{left:250px;top:280px;bottom:auto}
-
-/* --- Slide 2 · problema: 2 colunas × 3 linhas ---------------------------- */
-.pgrid{grid-template-columns:1fr 1fr;gap:28px;padding-top:54px}
-.pcard{min-height:0;padding:30px 28px;gap:16px}
-.pcard .n{width:52px;height:52px;font-size:22px}
-.pcard p{font-size:30px}
-.pcard.quote p{font-size:36px}
-.pcard.quote span{font-size:22px}
-
-/* --- Slide 3 · custo: rótulo acima do valor ------------------------------ */
-.rows{gap:24px;padding-top:54px}
-.row{grid-template-columns:1fr;gap:10px;padding:30px 34px;align-items:start}
-.row .lbl{font-size:38px}
-.row .val{font-size:31px}
-
-/* --- Slide 4 · declaração + pilares empilhados --------------------------- */
-.statement{font-size:58px;max-width:none;line-height:1.16}
-.pillars{grid-template-columns:1fr;gap:24px}
-.pillar{padding:28px 32px}
-.pillar h3{font-size:44px}
-.pillar p{font-size:28px;margin-top:10px}
-
-/* --- Slide 5 · passos: 2×2, sem linha tracejada -------------------------- */
-.steps{grid-template-columns:1fr 1fr;gap:52px 36px;padding-top:60px}
-.steps::before{display:none}
-.step .dot{width:92px;height:92px;font-size:38px}
-.step h3{font-size:44px}
-.step p{font-size:28px}
-
-/* --- Slide 6 · separação: lista em cima, antes/depois embaixo ------------ */
-.f1{grid-template-columns:1fr;gap:46px;padding-top:44px}
-.bitem p{font-size:32px}
-.bitem .mk{width:36px;height:36px;font-size:20px}
-.statline{font-size:32px;padding:22px 30px}
-.statline b{font-size:36px}
-.vis{grid-template-columns:1fr 60px 1fr}
-.vpanel{height:520px;padding:20px}
-.vpanel .cap{font-size:18px}
-.folder{padding:12px 14px;gap:10px}
-.folder .nm{font-size:22px}
-.folder .ct{font-size:18px}
-.folder .th i{width:32px;height:32px}
-
-/* --- Slide 7 · saídas empilhadas ----------------------------------------- */
-.outs{grid-template-columns:1fr;gap:30px}
-.out{padding:32px 32px 30px;gap:18px}
-.out .htag{font-size:22px}
-.out h3{font-size:46px}
-.out p{font-size:28px}
-.mock{height:224px}
-.bub{font-size:22px}
-.mock.art .frame{font-size:30px}
-.batchbar{flex-direction:column;gap:10px;text-align:center;padding:28px 34px;margin-top:30px}
-.batchbar span{font-size:27px}
-.batchbar b{font-size:37px}
-
-/* --- Slide 8 · proteção: uma coluna -------------------------------------- */
-.prot{grid-template-columns:1fr;gap:20px;padding-top:46px}
-.pitem{padding:22px 24px;gap:18px}
-.pitem .ck{width:36px;height:36px;font-size:20px}
-.pitem b{font-size:31px}
-.pitem span{font-size:24px}
-.legalbar{gap:12px;margin-top:26px}
-.legalbar .lb{font-size:22px;padding:11px 20px}
-
-/* --- Slide 9 · comparação: 2 colunas, linhas alinhadas ------------------- */
-.cmp{gap:24px;padding-top:48px}
-.cmp .colhead{font-size:23px;margin-bottom:20px}
-.cline{font-size:25px;padding:18px 20px;margin-bottom:14px;min-height:118px}
-.closer{font-size:36px;margin-top:34px;line-height:1.28}
-
-/* --- Slide 10 · piloto empilhado ----------------------------------------- */
-.weeks{grid-template-columns:1fr;gap:24px}
-.week{padding:28px 32px}
-.week .w{font-size:21px;margin-bottom:18px}
-.week p{font-size:31px}
-.cta{flex-direction:column;align-items:flex-start;gap:22px;padding:40px 44px;margin-top:36px}
-.cta .t{font-size:23px}
-.cta .q{font-size:48px}
-.cta .mk{font-size:76px;align-self:flex-end}
-
-/* --- Ritmo vertical do retrato -------------------------------------------
-   No palco 16:9 o miolo é centralizado com margin auto e o cabeçalho fica
-   colado no topo. Em 1920px de altura isso abre um vão enorme entre título e
-   conteúdo. Aqui o bloco inteiro (cabeçalho + miolo) é centralizado junto.  */
-.wrap{justify-content:center}
-.pgrid{margin:0}
-.rows{margin:0}
-.steps{margin:0}
-.f1{margin:0}
-.cmp{margin:0}
-.statement{margin-top:70px;margin-bottom:70px}
-.pillars{margin-top:0}
-.outs{margin-top:44px}
-.prot{margin:0}
-.weeks{margin-top:56px}
