@@ -3,8 +3,8 @@
 **Fases cobertas:** 2 (Upload em massa) e 3 (Reconhecimento facial) do
 [`docs/pivotagem-iaschool.md`](pivotagem-iaschool.md), mais o subconjunto da
 Fase 1 sem o qual as duas não podem ser construídas.
-**Data:** 31/08/2026 · **§4 e §13 revisadas em 16/09/2026** · **§7.5, §9.3,
-§10, §12.3, §13 e §16 revisadas em 18/09/2026**
+**Data:** 31/08/2026 · **§4 e §13 revisadas em 16/09/2026** · **§3 (D6), §5.3,
+§7.5, §9.1, §9.3, §9.4, §10, §12.3, §13 e §16 revisadas em 18/09/2026**
 **Estado do documento:** aprovada — as decisões da §3 foram respondidas em
 31/08/2026 (§16), D1/D5 confirmadas pelo spike M0, e as decisões de modelo do
 M1 (#2, #3, #5 a #8 do backlog) fechadas em 16/09/2026, reescrevendo a §4.
@@ -120,9 +120,21 @@ base biométrica.
 ### D6 — Revisão humana obrigatória no MVP
 
 Nenhum estado `confirmed` sem `reviewed_by`. Atribuição automática produz
-`suggested`, nunca `confirmed`. Além de reduzir o risco de entregar a foto da
-criança errada, sustenta o direito de revisão de decisão automatizada
-(LGPD art. 20).
+`suggested`, nunca `confirmed`.
+
+O que sustenta a D6 é **o buraco de medição**: a acurácia em criança de 4 a 10
+anos nunca foi medida — o spike rodou em LFW, adultos — e atribuir a foto à
+criança errada é o pior defeito possível deste produto.
+
+> **Não é exigência legal**, e o texto anterior desta seção errava ao dizer que
+> era (corrigido em 18/09/2026). A LGPD art. 20 dá ao titular o direito de
+> **solicitar** revisão, e o parágrafo que exigiria revisor humano foi vetado.
+> A Lei 15.211/2025 e o Decreto 12.880/2026 não tratam de revisão de
+> classificação: o art. 30 da Lei é sobre remoção de conteúdo, e o art. 11 do
+> Decreto, sobre IA generativa. A D6 é decisão de produto, e fica de pé pelo
+> motivo acima — não por obrigação.
+
+O custo operacional dela é atacado pela confirmação em lote por aluno (§7.5).
 
 ### D7 — Isolamento por escola em todas as buscas vetoriais
 
@@ -275,7 +287,8 @@ create table public.events (
   status                text not null default 'draft'
                         check (status in ('draft','uploading','processing','review','ready','archived')),
   keep_originals        boolean not null default false,
-  photo_retention_until date,
+  -- Padrão de 2 anos, sugerido na tela e editável por evento (§9.4).
+  photo_retention_until date not null default (current_date + interval '2 years'),
   -- Declaração da escola de que possui autorização de uso de imagem dos
   -- alunos presentes. Sem isso o upload não abre (ver §9.2).
   image_rights_declared_at timestamptz,
@@ -485,6 +498,8 @@ create table public.student_reference_faces (
   source_photo_path text,                  -- recorte guardado p/ re-embedding
   quality           real,
   authorization_id  uuid not null references public.authorizations (id),
+  -- Fim do ano letivo corrente: o rosto da criança muda e o spike recomenda
+  -- recadastro anual. Não renova sozinha (§9.4).
   retention_until   date not null,
   created_by        uuid not null references auth.users (id),
   created_at        timestamptz not null default now()
@@ -509,7 +524,9 @@ create table public.photo_faces (
   runner_up_student_id uuid references public.students (id) on delete set null,
   runner_up_score      real,
   state                text not null default 'unassigned'
-                       check (state in ('unassigned','suggested','confirmed','rejected','not_a_student')),
+                       check (state in ('unassigned','suggested','confirmed','rejected',
+                                       'not_a_student',     -- criança de fora: BORRA na entrega
+                                       'adult_or_staff')),  -- adulto: vai nítido (§9.3.1)
   reviewed_by          uuid references auth.users (id) on delete set null,
   reviewed_at          timestamptz,
   created_at           timestamptz not null default now()
@@ -751,8 +768,14 @@ candidatos mais prováveis, com atalhos de teclado. Ações:
 | --- | --- |
 | Confirmar | `state='confirmed'`, `reviewed_by/at`; embedding é persistido se ainda não estava |
 | Corrigir para outro aluno | idem, com o `student_id` escolhido |
-| Não é aluno da escola | `state='not_a_student'`, embedding e recorte apagados; **`bbox` e `det_score` permanecem** (§9.3.1) |
+| Criança de fora | `state='not_a_student'`, embedding e recorte apagados; **`bbox` e `det_score` permanecem**. Sai borrada na entrega |
+| Adulto / equipe | `state='adult_or_staff'`, embedding e recorte apagados, `bbox` mantido. Vai nítido na entrega (§9.3.1) |
 | Ignorar | `state='rejected'` |
+
+A ação "não é aluno" é **dupla** porque o sistema não sabe — e, por decisão de
+projeto, não pode descobrir — quem é adulto: o `genderage` do `buffalo_l` foi
+apagado da imagem do worker para não inferir idade de rosto de criança (§9.1).
+Quem separa o irmão de 5 anos da professora é a pessoa que revisa.
 
 #### RPCs
 
@@ -849,8 +872,8 @@ legal**, por finalidade.
 | Não sai do perímetro | motor self-hosted (D1); nenhuma chamada a API de face de terceiro |
 | Sem perfilamento nem publicidade | embedding não alimenta prompt, métrica, ranking ou recomendação |
 | Sem inferência acessória | `genderage` e os modelos de landmark do `buffalo_l` são **apagados da imagem** do worker: inferir idade e gênero do rosto de uma criança é tratamento sem finalidade (Lei, art. 13). Custariam ainda 82% de tempo |
-| Prazo de guarda | `retention_until` obrigatório; expurgo diário por `pg_cron` |
-| Revisão humana | D6 — nenhuma decisão automatizada final sobre a criança |
+| Prazo de guarda | `retention_until` obrigatório; **2 anos** para a foto do evento, **ano letivo** para a referência biométrica; expurgo diário por `pg_cron` (§9.4) |
+| Revisão humana | D6 — nenhuma atribuição final sem confirmação humana. Decisão de produto, não exigência legal (ver D6) |
 | Trilha | `biometric_events` append-only (§9.4) |
 
 ### 9.2 Autorização de uso de imagem no evento
@@ -890,10 +913,26 @@ A implementação é Fase 5, mas **duas consequências valem para o M5 e o M6**:
    `not_a_student` e `rejected`. Só recorte e vetor são apagados. Sem saber onde
    está o rosto do irmão que veio junto, não há o que desfocar — e redescobrir
    isso depois significa rodar o `face-worker` de novo sobre um acervo fechado.
-2. A regra de nitidez, a confirmar quando a Fase 5 ganhar spec: **nítido só quem
-   é aluno identificado, com autorização ativa; todo o resto desfocado** — rosto
-   `unassigned`, `not_a_student`, e aluno sem autorização. O desfoque é
-   conservador por construção: na dúvida, borra.
+2. A regra de nitidez, fechada em 18/09/2026:
+
+| Rosto | Na entrega |
+| --- | --- |
+| Aluno identificado com autorização ativa | **nítido** — inclusive em foto entregue a outra família |
+| `adult_or_staff` (professora, pai, fotógrafo) | **nítido** |
+| Aluno sem autorização ativa | borrado |
+| `not_a_student` (criança de fora) | borrado |
+| `unassigned` (ninguém triou) | **borrado** — o default protege |
+
+O default é borrar de propósito: se fosse o contrário, bastaria a revisão ficar
+pela metade para uma criança não autorizada sair nítida.
+
+A primeira linha tem uma consequência que o termo precisa declarar: a imagem do
+aluno autorizado **circula entre as famílias da turma**. O escopo
+`delivery_whatsapp`, como está redigido hoje, cobre "enviar as fotos do meu
+filho para mim" — não "a imagem do meu filho pode ir no celular de outra
+família". Sem essa frase no termo, a entrega nítida se apoia numa autorização
+que não foi dada para isso. Item da seção Transversal do
+[`BACKLOG.md`](../BACKLOG.md).
 
 O desfoque tem de ser aplicado **no arquivo entregue**, não como sobreposição na
 tela — camada de front-end se remove com o inspetor do navegador. E é gerado na
@@ -907,6 +946,9 @@ create table public.biometric_events (
   id         uuid primary key default gen_random_uuid(),
   school_id  uuid not null references public.schools (id) on delete cascade,
   student_id uuid references public.students (id) on delete set null,
+  -- Identificador que SOBREVIVE ao expurgo do aluno: gravado no momento do
+  -- fato, é o que mantém a trilha legível depois que a FK acima vira nula.
+  student_ref text,
   kind       text not null check (kind in (
                'consent_granted','consent_revoked','reference_created',
                'reference_purged','face_confirmed','face_purged')),
@@ -919,14 +961,62 @@ create table public.biometric_events (
 Append-only por RLS (policy de `insert` e `select`, nenhuma de `update`/`delete`),
 no mesmo padrão de `share_logs`.
 
-Expurgo diário via `pg_cron`, função `purge_expired_biometrics()`:
+> **Por que `student_ref`.** A FK é `on delete set null`: expurgar o aluno
+> zeraria o vínculo e deixaria linhas dizendo "alguém consentiu em tal data".
+> Prova ilegível não prova nada — e a trilha vive mais que o dado que ela
+> documenta. `student_ref` guarda a matrícula (ou, na falta dela, um
+> identificador estável da escola) no momento do fato. Nome de aluno, recorte e
+> embedding **nunca** entram aqui, nem em `detail` (§11).
+
+#### Prazos (decididos em 18/09/2026)
+
+| O quê | Prazo | Observação |
+| --- | --- | --- |
+| Foto do evento | **2 anos** | `events.photo_retention_until`, padrão sugerido na tela, editável por evento |
+| Rosto de referência (biometria) | **fim do ano letivo** | não renova sozinho; recadastro anual é o que o spike recomenda |
+| Trilha (`biometric_events`, `share_logs`) | **5 anos** | provisório — ver ressalva abaixo |
+
+> **Ressalva jurídica sobre os 5 anos.** Contra menor de 16 anos a prescrição
+> não corre: uma criança fotografada aos 5 só passa a contar prazo aos 16. Pelo
+> rigor, a trilha de um aluno da educação infantil deveria viver mais de uma
+> década, com prazo contado por aluno e não por evento. Os 5 anos ficam como
+> padrão de trabalho e entram na revisão jurídica que já é pendência da seção
+> Transversal do [`BACKLOG.md`](../BACKLOG.md), junto com o texto do termo.
+
+#### Expurgo
+
+Diário via `pg_cron`, função `purge_expired_biometrics()`. Nada é apagado direto:
+tudo passa pela **lixeira de 30 dias** que o produto já usa, e só depois some de
+vez.
 
 | Gatilho | Efeito |
 | --- | --- |
-| `retention_until < current_date` | apaga referência e embeddings do aluno |
+| `retention_until < current_date` | apaga referência e embeddings do aluno; as fotos já confirmadas **mantêm** o `student_id` (mesma regra da revogação) |
 | `authorizations.revoked_at` preenchido | apaga referências, zera `photo_faces.embedding`, mantém `student_id` das fotos já confirmadas (a foto continua sendo do aluno; a biometria some) |
-| `students.deleted_at` expurgado | apaga tudo do aluno |
+| `students.deleted_at` expurgado | apaga tudo do aluno; a trilha permanece, legível pelo `student_ref` |
 | `events.photo_retention_until` vencido | apaga fotos, miniaturas, recortes e faces do evento |
+
+#### Eliminação a pedido do responsável (LGPD art. 18, VI)
+
+O tratamento biométrico é por consentimento, então o direito à eliminação
+existe e não é negociável. Mas ele **não apaga a foto**: a imagem tem outras
+crianças cujos responsáveis autorizaram. Atender o pedido é tirar o aluno de
+cena — revogar o consentimento, apagar a biometria e as linhas de `photo_faces`
+dele; o arquivo permanece e ele passa a sair borrado em qualquer entrega futura
+(§9.3.1).
+
+Isso só é possível porque a pasta do aluno é consulta, não cópia (§7.6).
+
+Prazo de resposta: **15 dias**, provisório, na mesma revisão jurídica dos 5 anos.
+
+#### Quem pode apagar antes do prazo
+
+| Ator | Pode | Como |
+| --- | --- | --- |
+| `school_admin` | evento inteiro e foto avulsa | soft delete, lixeira de 30 dias, linha na trilha |
+| `teacher` / `school_staff` | foto avulsa do evento que criou | idem; não derruba o evento |
+| Responsável (Fase 4) | eliminação dos dados do filho | fluxo acima |
+| `dev` / `super_admin` | expurgo manual fora do fluxo | só com trilha obrigatória |
 
 ### 9.5 Dado de teste
 
@@ -953,7 +1043,7 @@ testes de acurácia. Ver §12.1.
 | Novo evento | `/eventos/novo` | nome, data, turma, retenção, declaração de direito de imagem (§9.2) |
 | Evento | `/eventos/:id` | dropzone de pasta, progresso em tempo real, galeria virtualizada de miniaturas |
 | Revisão | `/eventos/:id/revisao` | **aba padrão:** um cartão por aluno com a grade dos recortes sugeridos dele no evento, partida por faixa de confiança, com confirmação em lote. **Aba de exceção:** fila individual (recorte, foto inteira, 3 candidatos, atalhos) para `unassigned` e para os desmarcados no cartão (§7.5) |
-| Aluno → Fotos | `/alunos/:id` (aba) | pasta do aluno (§7.6) |
+| Aluno → Fotos | `/alunos/:id` (aba) | pasta do aluno (§7.6), **só `confirmed`** — o que ainda é sugestão vive na tela de revisão, para ninguém baixar ou enviar um palpite do sistema. Inclui baixar tudo em ZIP, gerado sob demanda |
 | Aluno → Rosto de referência | `/alunos/:id` (aba) | cadastro das fotos (1 aceita, aviso de cobertura baixa até 2 — §7.4), estado do consentimento, botão de revogar |
 
 As telas do M1 — cadastro de escola, séries e salas, ficha do aluno com
@@ -971,6 +1061,11 @@ Notas de implementação:
 - No cartão do aluno, o recorte tem de ser grande o suficiente para se ver que
   é outra criança, e a faixa "precisa de atenção" nasce desmarcada — o lote não
   a alcança sem ato explícito (§7.5).
+- A lista de alunos mostra a prontidão da escola para o reconhecimento — "182
+  de 240 com referência · 58 sem consentimento" —, clicável para a lista filtrada
+  de quem falta. Ao criar um evento, o mesmo número vira aviso: "58 alunos desta
+  turma estão sem referência; as fotos deles vão para a fila manual". Avisa, não
+  bloqueia.
 - Componentes do design system `@workspace/iaschool-ui`; nada de CSS novo solto.
 
 ---
@@ -1033,7 +1128,7 @@ Proibido usar foto real de criança (§9.5). Para medir acurácia:
 | Unit | limiares e regra de margem; hash e dedup; parser de EXIF; máquina de estados de `photo_faces` |
 | Integração (Supabase) | `claim_photo_jobs` sem corrida com 4 workers simultâneos; dedup por `unique(event_id, content_hash)`; RPCs de revisão; `confirm_faces_bulk` com **dois revisores no mesmo aluno ao mesmo tempo** (a transação não pode confirmar duas vezes nem perder face); `confirm_faces_bulk` com uma face de outra escola no array **não confirma nenhuma** |
 | RLS | membro de escola A não lê `photos`, `photo_faces` nem Storage da escola B; `authenticated` não lê a coluna `embedding`; `student_reference_faces` inacessível fora do `service_role` |
-| Conformidade | rosto `not_a_student` perde recorte e vetor, **mas mantém `bbox` e `det_score`** (§9.3.1); revogação zera embeddings; `purge_expired_biometrics()` respeita `retention_until`; **nenhuma linha `confirmed` sem `reviewed_by` e `reviewed_at`**, inclusive as vindas de lote (D6); um lote grava exatamente uma linha em `biometric_events` com os `face_ids` |
+| Conformidade | rosto `not_a_student` perde recorte e vetor, **mas mantém `bbox` e `det_score`** (§9.3.1); rosto `unassigned` sai **borrado** na entrega e `adult_or_staff` sai nítido; trilha sobrevive ao expurgo do aluno com `student_ref` legível; revogação zera embeddings; `purge_expired_biometrics()` respeita `retention_until`; **nenhuma linha `confirmed` sem `reviewed_by` e `reviewed_at`**, inclusive as vindas de lote (D6); um lote grava exatamente uma linha em `biometric_events` com os `face_ids` |
 | E2E | upload de 200 fotos → processamento → revisão → pasta do aluno |
 | Carga | 2.000 fotos, medindo as metas da §11.1 |
 
@@ -1142,6 +1237,15 @@ Decisão de 18/09/2026:
 | --- | --- | --- |
 | Custo operacional da revisão | D6 mantida; confirmação **em lote por aluno**, com `reviewed_by`/`reviewed_at` por linha e uma entrada de trilha por lote | §7.5 |
 | #1 — foto com criança sem autorização, na entrega | **desfocar quem não autorizou**, no arquivo entregue, gerado na hora | §9.3.1 |
+| Aluno autorizado em foto de outra família | vai **nítido**; o termo precisa declarar isso | §9.3.1 |
+| Adulto na foto (professora, pai, fotógrafo) | vai **nítido**; estado `adult_or_staff`, marcado na revisão | §7.5, §9.3.1 |
+| Rosto não triado (`unassigned`) | vai **borrado** — o default protege | §9.3.1 |
+| Retenção da foto do evento | **2 anos**, editável por evento | §9.4 |
+| Retenção do rosto de referência | **fim do ano letivo**, sem renovação automática | §9.4 |
+| Expiração da referência por prazo | mesma regra da revogação: fotos confirmadas mantêm o `student_id` | §9.4 |
+| Como se apaga | sempre pela lixeira de 30 dias que o produto já tem | §9.4 |
+| Retenção da trilha | **5 anos** — provisório, sujeito a revisão jurídica | §9.4 |
+| Eliminação a pedido do responsável | tira o aluno de cena, não apaga o arquivo; resposta em **15 dias**, provisório | §9.4 |
 
 A D6 foi reexaminada e confirmada nesta data. A trava é decisão de produto, não
 exigência legal (a LGPD art. 20 dá direito de **solicitar** revisão e teve
