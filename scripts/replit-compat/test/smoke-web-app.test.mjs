@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSmokeTest } from '../smoke-web-app.mjs';
 
@@ -16,7 +17,7 @@ async function waitForFile(path) {
 }
 
 async function runTemporaryProcess(statusCode, { ignoreSigterm = false } = {}) {
-  const directory = await mkdtemp('/tmp/r9-smoke-');
+  const directory = await mkdtemp(join(tmpdir(), 'iaschool-smoke-'));
   const marker = join(directory, 'terminated');
   const ready = join(directory, 'ready');
   const source = [
@@ -61,7 +62,7 @@ test('terminates the smoke child after a failed HTTP response', async () => {
 });
 
 test('accepts HTTP success when the child prints no bind banner', async () => {
-  const directory = await mkdtemp('/tmp/r9-smoke-');
+  const directory = await mkdtemp(join(tmpdir(), 'iaschool-smoke-'));
   const ready = join(directory, 'ready');
   const source = [
     "const fs = require('node:fs');",
@@ -73,6 +74,34 @@ test('accepts HTTP success when the child prints no bind banner', async () => {
     command: process.execPath,
     args: ['-e', source],
     url: 'http://r9.test/',
+    request: async () => {
+      await waitForFile(ready);
+      return { status: 200 };
+    },
+    expectedBinding: 'http://127.0.0.1:5173/',
+    timeoutMs: 5_000,
+    shutdownTimeoutMs: 100,
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+test('accepts the bind banner when the child colors the port', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'iaschool-smoke-'));
+  const ready = join(directory, 'ready');
+  // Exatamente o que o Vite 7 imprime: negrito em volta da porta, no meio da URL.
+  const banner = 'Local:   http://127.0.0.1:\u001B[1m5173\u001B[22m/';
+  const source = [
+    "const fs = require('node:fs');",
+    `console.log(${JSON.stringify(banner)});`,
+    `setTimeout(() => fs.writeFileSync(${JSON.stringify(ready)}, 'ready'), 50);`,
+    'setInterval(() => {}, 1_000);',
+  ].join(' ');
+
+  const result = await runSmokeTest({
+    command: process.execPath,
+    args: ['-e', source],
+    url: 'http://iaschool.test/',
     request: async () => {
       await waitForFile(ready);
       return { status: 200 };

@@ -18,4 +18,5 @@ test('CI tests macOS, Ubuntu and Windows', async () => {
   assert.match(workflow, /windows-latest/);
   assert.match(workflow, /verify:native/);
   assert.match(workflow, /smoke:web/);
+  assert.match(workflow, /test:compat/);
 });

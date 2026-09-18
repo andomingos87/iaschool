@@ -2,8 +2,18 @@
 
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { COREPACK, spawnOptionsFor } from './lib/corepack.mjs';
 
 const DEFAULT_ARGS = ['pnpm', '--filter', '@workspace/iaschool-app', 'exec', 'vite', '--config', 'vite.config.ts', '--host', '127.0.0.1', '--port', '5173'];
+
+// O Vite 7 colore a saída mesmo sem TTY e imprime o banner como
+// `http://127.0.0.1:\u001B[1m5173\u001B[22m/` — com o negrito no meio da
+// porta. Sem remover o escape, a conferência do binding não casa e o smoke
+// reprova um servidor que subiu e respondeu.
+function stripAnsi(output) {
+  // eslint-disable-next-line no-control-regex
+  return output.replace(/\u001B\[[0-9;]*[A-Za-z]/g, '');
+}
 
 function sanitize(output) {
   return output.replace(/\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)\s*=\s*[^\s]+/g, '[redacted]');
@@ -31,7 +41,7 @@ async function terminate(child, exit, shutdownTimeoutMs) {
 }
 
 export async function runSmokeTest({
-  command = 'corepack',
+  command = COREPACK,
   args = DEFAULT_ARGS,
   url = 'http://127.0.0.1:5173/',
   request = defaultRequest,
@@ -49,6 +59,7 @@ export async function runSmokeTest({
     child = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PORT: '5173', BASE_PATH: '/' },
+      ...spawnOptionsFor(command),
     });
     exit = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
     child.stdout.on('data', (chunk) => { output += chunk; });
@@ -69,7 +80,7 @@ export async function runSmokeTest({
         const response = await request(url);
         if (response.status >= 200 && response.status < 400) {
           const serverOutput = lastLines(output);
-          result = expectedBinding && serverOutput && !serverOutput.includes(expectedBinding)
+          result = expectedBinding && serverOutput && !stripAnsi(serverOutput).includes(expectedBinding)
             ? { ok: false, error: `server did not confirm binding ${expectedBinding}`, output: serverOutput }
             : { ok: true, status: response.status, output: serverOutput };
           break;
