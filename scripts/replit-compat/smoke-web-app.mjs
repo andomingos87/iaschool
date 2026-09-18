@@ -27,12 +27,25 @@ async function defaultRequest(url) {
   return fetch(url, { signal: AbortSignal.timeout(1_000), redirect: 'manual' });
 }
 
-// A escalada SIGTERM -> SIGKILL só tem efeito onde há entrega de sinal. No
-// Windows os dois viram TerminateProcess e o filho morre no primeiro kill, o
-// que encerra o servidor do mesmo jeito — só não passa pelo handler.
+// O comando do smoke é uma árvore: corepack -> pnpm -> vite (no Windows, com um
+// cmd.exe na frente). `child.kill()` atinge só a raiz, e os netos herdam os
+// pipes de stdout/stderr — por isso a promessa abaixo escuta 'exit' e não
+// 'close': 'close' espera os pipes fecharem, e um neto vivo os segura para
+// sempre. No Windows não há propagação de sinal nenhuma, então a árvore é
+// encerrada com `taskkill /T`, ou o Vite sobrevive ao fim do teste.
+function killTree(child) {
+  if (process.platform !== 'win32') return false;
+  try {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function terminate(child, exit, shutdownTimeoutMs) {
   if (child.exitCode === null && child.signalCode === null) {
-    child.kill('SIGTERM');
+    if (!killTree(child)) child.kill('SIGTERM');
     const stopped = await Promise.race([
       exit,
       new Promise((resolve) => setTimeout(() => resolve(null), shutdownTimeoutMs)),
@@ -64,7 +77,7 @@ export async function runSmokeTest({
       env: { ...process.env, PORT: '5173', BASE_PATH: '/' },
       ...spawnOptionsFor(command),
     });
-    exit = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+    exit = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });
     child.once('error', (error) => { startupError = error; });
