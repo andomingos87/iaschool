@@ -141,6 +141,10 @@ create index if not exists generated_posts_school_idx on public.generated_posts 
 -- 2. Papéis globais em profiles
 -- ============================================================
 
+-- A constraint antiga só aceita super_admin/school_user/student: cai antes
+-- da conversão e volta com os valores novos depois.
+alter table public.profiles drop constraint if exists profiles_role_check;
+
 -- Contas de aluno deixam de existir (decisão #2). As que houver viram
 -- contas `user` recusadas: sem vínculo em school_members não leem nada.
 update public.profiles
@@ -149,7 +153,6 @@ update public.profiles
 
 update public.profiles set role = 'user' where role = 'school_user';
 
-alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check
   check (role in ('dev', 'super_admin', 'user'));
 
@@ -228,10 +231,10 @@ drop function if exists public.link_student_account(uuid, uuid);
 drop function if exists public.list_linked_student_accounts();
 drop function if exists public.unlink_student_account(uuid);
 drop function if exists public.list_approved_schools();
-drop function if exists public.my_student_record_id();
-drop function if exists public.my_school_id();
--- is_school_user() é substituída por is_member_of(); removida depois das
--- policies, na seção 5.
+-- my_student_record_id(), my_school_id() e is_school_user() ainda são
+-- referenciadas pelas policies antigas de students, generated_posts e do
+-- Storage: só podem cair depois que as policies forem reescritas (fim da
+-- seção 6).
 
 -- ============================================================
 -- 4. Migração de dados: owner_id → school_id
@@ -567,8 +570,8 @@ create policy "share_logs_insert" on public.share_logs
     )
   );
 
--- Agora sim, sem uso em policy nenhuma.
-drop function if exists public.is_school_user();
+-- is_school_user(), my_student_record_id() e my_school_id() ainda são usadas
+-- pelas policies antigas do Storage — caem no fim da seção 6.
 
 -- ============================================================
 -- 6. Storage: o primeiro segmento do caminho é o id da escola
@@ -608,6 +611,11 @@ create policy "iaschool_storage_delete" on storage.objects
     bucket_id in ('students','clubs','references','generated')
     and (public.is_member_of(public.storage_school_id(name)) or public.is_super_admin())
   );
+
+-- Policies antigas do Storage já substituídas: agora sem dependentes.
+drop function if exists public.is_school_user();
+drop function if exists public.my_student_record_id();
+drop function if exists public.my_school_id();
 
 -- ============================================================
 -- 7. Autocadastro de aluno aposentado
