@@ -29,7 +29,7 @@ alvo e o roadmap por fases.
 | Fase | Escopo | Estado |
 | --- | --- | --- |
 | 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
-| 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | 🔨 M1 em andamento: migration ensaiada e app adaptado (20/09/2026); falta aplicar no banco |
+| 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | 🔨 M1 no ar: migration aplicada, edge function republicada e 55 testes de integração verdes (20/09/2026); faltam dados da escola e séries/salas |
 | 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ❌ |
 | 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | ❌ |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
@@ -179,16 +179,18 @@ Confirme a porta real no ambiente antes de compartilhar uma URL.
 
 O banco é um **projeto Supabase** (PostgreSQL gerenciado, com Auth, RLS e
 Storage). Foi provisionado do zero em 30/08/2026 por 7 migrations aplicadas via
-MCP.
+MCP; a oitava e a nona são do M1 (20/09/2026).
 
 Tabelas atuais em `public`: `profiles`, `students`, `clubs`, `reference_posts`,
 `generated_posts`, `prompt_settings`, `prompt_template_versions`,
 `generation_usage`, `generation_logs`, `guardian_verification_codes`,
-`share_logs` — todas com RLS habilitada. A migration do M1
-(`supabase/fase1-min-schools-events.sql`: `schools`, `school_members`,
-`classes`, `guardians`, `events`, RLS por escola) está escrita e ensaiada, mas
-**ainda não aplicada**; o app em `main` já espera o modelo novo, então a
-migration precisa subir antes do próximo deploy. Estado em `BACKLOG.md`, M1.
+`share_logs`, e desde o M1 `schools`, `school_members`, `classes`, `guardians`
+e `events` — todas com RLS habilitada. A migration do M1
+(`iaschool_fase1_schools_members_classes`, referência em
+`supabase/fase1-min-schools-events.sql`) foi **aplicada em 20/09/2026**: a
+escola é o tenant, `profiles.role` é papel global (`dev`/`super_admin`/`user`)
+e o vínculo vive em `school_members`. `main` ainda está no modelo antigo, então
+o merge da branch do M1 vem antes de qualquer deploy. Estado em `BACKLOG.md`, M1.
 
 **Como alterar o schema:** exclusivamente por `apply_migration` do servidor MCP
 `supabase-iaschool` (seção abaixo). Não use o SQL Editor do painel para mudança

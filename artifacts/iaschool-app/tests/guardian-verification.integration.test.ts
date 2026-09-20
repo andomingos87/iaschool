@@ -156,7 +156,13 @@ beforeAll(async () => {
 afterAll(async () => {
   await adminRest(`students?school_id=eq.${schoolId}`, { method: "DELETE" });
   await adminRest(`guardians?school_id=eq.${schoolId}`, { method: "DELETE" });
+  // Apagar o usuário cascateia school_members, mas não a escola: `schools.id`
+  // é igual ao uid sem FK para auth.users. Como toda escola criada aqui nasce
+  // da aprovação de um dos usuários de teste, apagamos por id.
   for (const id of createdUsers) await deleteTestUser(id);
+  for (const id of createdUsers) {
+    await adminRest(`schools?id=eq.${id}`, { method: "DELETE" });
+  }
 }, 120_000);
 
 describe("send-guardian-code", () => {

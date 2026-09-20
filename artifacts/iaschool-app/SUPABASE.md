@@ -23,7 +23,7 @@ intencional para evitar abuso da chave sem autenticação.
 ## Schema do banco
 
 O banco atual foi provisionado do zero em **30/08/2026** por 7 migrations
-aplicadas via MCP:
+aplicadas via MCP; as duas do M1 subiram em **20/09/2026**:
 
 | Versão | Migration |
 | --- | --- |
@@ -34,6 +34,8 @@ aplicadas via MCP:
 | `20260830154315` | `iaschool_generation_quota_and_logs` |
 | `20260830154340` | `iaschool_eca_digital` |
 | `20260830154404` | `iaschool_revoke_trigger_functions_from_api` |
+| `20260920160511` | `iaschool_fase1_schools_members_classes` |
+| `20260920160829` | `iaschool_fase1_fix_function_search_path` |
 
 ### Como alterar o schema
 
@@ -62,7 +64,7 @@ o mecanismo de aplicação. Mantenha-os fiéis ao banco.
 | Arquivo | O que descreve |
 | --- | --- |
 | [`setup.sql`](./supabase/setup.sql) | `profiles`, `students`, `clubs`, `reference_posts`, `generated_posts`, `prompt_settings`, `prompt_template_versions`, funções auxiliares de RLS, buckets e políticas de Storage |
-| [`fase1-min-schools-events.sql`](./supabase/fase1-min-schools-events.sql) | **M1 (Fase 1 mínima)**: `schools`, `school_members`, `classes`, `guardians`, `events`; papéis globais; RLS por escola; Storage por escola; OTP por responsável; aprovação criando a escola. Ensaio com rollback em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) |
+| [`fase1-min-schools-events.sql`](./supabase/fase1-min-schools-events.sql) | **M1 (Fase 1 mínima)**: `schools`, `school_members`, `classes`, `guardians`, `events`; papéis globais; RLS por escola; Storage por escola; OTP por responsável; aprovação criando a escola. Aplicada em 20/09/2026; ensaio com rollback em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) |
 | [`eca-digital.sql`](./supabase/eca-digital.sql) | `share_logs` e o modelo antigo do OTP (por aluno, superado pelo M1) |
 | [`generation-quota.sql`](./supabase/generation-quota.sql) | `generation_usage` + `consume_generation_quota()` |
 | [`generation-logs.sql`](./supabase/generation-logs.sql) | `generation_logs` + bucket privado `generation-logs` |

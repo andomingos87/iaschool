@@ -580,7 +580,7 @@ create policy "share_logs_insert" on public.share_logs
 -- Converte o primeiro segmento em uuid sem estourar em nomes fora do padrão.
 create or replace function public.storage_school_id(p_name text)
 returns uuid
-language sql immutable as $$
+language sql immutable set search_path = '' as $$
   select case
     when (storage.foldername(p_name))[1] ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
       then (storage.foldername(p_name))[1]::uuid
@@ -778,7 +778,7 @@ revoke all on function public.handle_new_user() from public, anon, authenticated
 
 -- updated_at automático nas tabelas novas.
 create or replace function public.touch_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   new.updated_at := now();
   return new;
