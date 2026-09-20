@@ -1,11 +1,5 @@
 import { useState } from "react";
-import {
-  Plus,
-  School,
-  MoreVertical,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+import { School, MoreVertical, Pencil } from "lucide-react";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
 import {
   Card,
@@ -17,54 +11,31 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/iaschool-ui/components/ui/dropdown-menu";
-import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { PageHeader } from "@/components/app-shell";
 import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { SchoolBrandFormDialog } from "@/components/school-brand-form-dialog";
-import { ConfirmDelete } from "@/components/confirm-delete";
-import {
-  useSchoolBrands,
-  useDeleteSchoolBrand,
-} from "@/hooks/use-school-brands";
+import { useSchoolBrands } from "@/hooks/use-school-brands";
 import type { SchoolBrand } from "@/lib/data";
 
+/**
+ * Identidade visual das escolas de que a pessoa é membro. A escola em si
+ * nasce na aprovação do cadastro (M1) — aqui só se edita nome, logo e cores.
+ */
 export default function SchoolBrandsPage() {
   const brands = useSchoolBrands();
-  const del = useDeleteSchoolBrand();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<SchoolBrand | null>(null);
-  const [toDelete, setToDelete] = useState<SchoolBrand | null>(null);
 
-  function openNew() {
-    setEditing(null);
-    setDialogOpen(true);
-  }
   function openEdit(b: SchoolBrand) {
     setEditing(b);
     setDialogOpen(true);
-  }
-
-  async function confirmDelete() {
-    if (!toDelete) return;
-    try {
-      await del.mutateAsync(toDelete.id);
-      toast({ title: "Escola excluída", description: toDelete.name });
-      setToDelete(null);
-    } catch {
-      toast({ variant: "destructive", title: "Não foi possível excluir" });
-    }
   }
 
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
         title="Identidade da escola"
-        description="Logo e cores aplicados nas artes de cada escola."
-        action={
-          <Button onClick={openNew} data-testid="button-new-school-brand">
-            <Plus className="size-4" /> Nova escola
-          </Button>
-        }
+        description="Logo e cores aplicados nas artes da sua escola."
       />
 
       {brands.isError ? (
@@ -74,13 +45,8 @@ export default function SchoolBrandsPage() {
       ) : (brands.data?.length ?? 0) === 0 ? (
         <EmptyState
           icon={<School className="size-6" />}
-          title="Nenhuma escola cadastrada"
-          description="Cadastre uma escola para aplicar logo e cores nas artes geradas."
-          action={
-            <Button onClick={openNew} data-testid="button-empty-new-school-brand">
-              <Plus className="size-4" /> Cadastrar escola
-            </Button>
-          }
+          title="Você ainda não é membro de nenhuma escola"
+          description="A escola é criada quando o administrador aprova o cadastro. Se você já foi aprovado, peça ao administrador da sua escola para vincular sua conta."
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -128,13 +94,6 @@ export default function SchoolBrandsPage() {
                       >
                         <Pencil className="size-4" /> Editar
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => setToDelete(b)}
-                        data-testid={`button-delete-school-brand-${b.id}`}
-                      >
-                        <Trash2 className="size-4" /> Excluir
-                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -165,14 +124,6 @@ export default function SchoolBrandsPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         brand={editing}
-      />
-      <ConfirmDelete
-        open={!!toDelete}
-        onOpenChange={(o) => !o && setToDelete(null)}
-        title="Excluir escola?"
-        description={`Isso removerá "${toDelete?.name}" permanentemente.`}
-        onConfirm={confirmDelete}
-        loading={del.isPending}
       />
     </div>
   );

@@ -99,6 +99,12 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- ---------- 2. Verificação do WhatsApp do responsável ----------
+--
+-- ⚠️ SUPERADO pelo M1 (fase1-min-schools-events.sql, seção 8): a partir
+-- dele a verificação é por responsável (`guardians.whatsapp_verified_at`,
+-- códigos chaveados por `guardian_id`, RPC confirm_guardian_code(p_guardian_id,
+-- p_code)). O bloco abaixo descreve o modelo anterior, por aluno, e só vale
+-- para bases que ainda não receberam o M1.
 
 -- Códigos de confirmação. Nunca são lidos pelo cliente: só a RPC
 -- confirm_guardian_code (security definer) os enxerga.

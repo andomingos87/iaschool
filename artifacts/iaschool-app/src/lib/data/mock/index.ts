@@ -29,8 +29,8 @@ import type {
   StoredImage,
   Student,
 } from "../types";
-import { TRASH_RETENTION_DAYS } from "../types";
-import { MOCK_USERS } from "./seed";
+import { TRASH_RETENTION_DAYS, isPlatformAdmin } from "../types";
+import { MOCK_SCHOOLS, MOCK_USERS } from "./seed";
 import {
   delay,
   newId,
@@ -41,7 +41,6 @@ import {
   writeValue,
 } from "./store";
 import { createOpenAIGenerationService } from "../openai-generation";
-import { ageBracket, requiresGuardianAccount } from "../../eca";
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -53,15 +52,10 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 // Cadastros feitos pelo fluxo público (modo demo): ficam em localStorage
-// com o mesmo ciclo pendente → aprovado/recusado do Supabase real.
+// com o mesmo ciclo pendente → aprovado/recusado do Supabase real. Desde o
+// M1 só existe cadastro de escola.
 interface MockRegistration {
   user: AppUser;
-  schoolLabel?: string;
-  /** Faixa etária derivada no cadastro — a data de nascimento não é guardada
-   *  no registro pendente (Decreto 12.880/2026, art. 24, § 3º). */
-  ageBracket?: "crianca" | "adolescente" | "adulto";
-  guardianName?: string;
-  guardianConsent?: boolean;
   createdAt: string;
 }
 
@@ -78,17 +72,63 @@ function writeRegistrations(items: MockRegistration[]): void {
   window.dispatchEvent(new Event(PENDING_CHANGED_EVENT));
 }
 
-// Vínculos conta de aluno → registro students (profiles.student_record_id).
-// Guardados à parte para também cobrir os usuários seed (MOCK_USERS).
-function readStudentLinks(): Record<string, string> {
-  return readValue<Record<string, string>>("student-links") ?? {};
+function allUsers(): AppUser[] {
+  return [...MOCK_USERS, ...readRegistrations().map((r) => r.user)];
 }
 
-function allUsers(): AppUser[] {
-  const links = readStudentLinks();
-  return [...MOCK_USERS, ...readRegistrations().map((r) => r.user)].map((u) =>
-    links[u.id] ? { ...u, studentRecordId: links[u.id] } : u,
-  );
+/** Tabela `schools` do mock, semeada com a escola de demonstração. */
+function readSchools(): SchoolBrand[] {
+  const stored = readCollection<SchoolBrand>("schools", []);
+  const missing = MOCK_SCHOOLS.filter((m) => !stored.some((s) => s.id === m.id));
+  if (missing.length > 0) {
+    const merged = [...stored, ...missing];
+    writeCollection("schools", merged);
+    return merged;
+  }
+  return stored;
+}
+
+/** Escola ativa: a última escolhida, se ainda for da pessoa; senão a primeira. */
+function resolveActiveSchool(user: AppUser): string | undefined {
+  // Sessão gravada antes do M1 pode não ter `schools`.
+  const schools = user.schools ?? [];
+  if (schools.length === 0) return undefined;
+  const stored = readValue<string>(`active-school:${user.id}`);
+  const found = stored && schools.find((m) => m.schoolId === stored);
+  return (found || schools[0])!.schoolId;
+}
+
+function buildSession(user: AppUser, expiresAt?: string): Session {
+  return {
+    user,
+    expiresAt:
+      expiresAt ?? new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+    activeSchoolId: resolveActiveSchool(user),
+  };
+}
+
+/** Sessão atual com usuário e escola ativa frescos. */
+function currentSession(): Session | null {
+  const session = readValue<Session>("session");
+  if (!session) return null;
+  const fresh = allUsers().find((u) => u.id === session.user.id) ?? session.user;
+  return buildSession(fresh, session.expiresAt);
+}
+
+/** Escolas que a sessão enxerga: todas para admin de plataforma. */
+function visibleSchoolIds(session: Session | null): string[] | "all" {
+  if (!session) return [];
+  if (isPlatformAdmin(session.user.role)) return "all";
+  return (session.user.schools ?? []).map((m) => m.schoolId);
+}
+
+function canSee(session: Session | null, schoolId: string | undefined): boolean {
+  const ids = visibleSchoolIds(session);
+  if (ids === "all") return true;
+  // Registros antigos sem escola ficam visíveis para quem os criou ver a
+  // migração acontecer; no Supabase eles ganham school_id na migration.
+  if (!schoolId) return true;
+  return ids.includes(schoolId);
 }
 
 const auth: AuthService = {
@@ -99,15 +139,9 @@ const auth: AuthService = {
   },
   async getSession() {
     await delay(200);
-    const session = readValue<Session>("session");
-    if (!session) return null;
     // Reflete aprovação/recusa feita após o login (dados sempre frescos).
-    const fresh = allUsers().find((u) => u.id === session.user.id);
-    if (fresh) {
-      const updated: Session = { ...session, user: fresh };
-      writeValue("session", updated);
-      return updated;
-    }
+    const session = currentSession();
+    if (session) writeValue("session", session);
     return session;
   },
   async signIn(email, password) {
@@ -118,10 +152,7 @@ const auth: AuthService = {
     if (!user || password.length < 4) {
       throw new Error("E-mail ou senha inválidos");
     }
-    const session: Session = {
-      user,
-      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-    };
+    const session = buildSession(user);
     writeValue("session", session);
     listeners.forEach((cb) => cb(session));
     return session;
@@ -136,63 +167,30 @@ const auth: AuthService = {
       throw new Error("A senha deve ter ao menos 4 caracteres");
     }
     const regs = readRegistrations();
-    if (input.kind === "school") {
-      regs.unshift({
-        user: {
-          id: newId(),
-          email,
-          name: input.schoolName.trim(),
-          role: "school_user",
-          schoolName: input.schoolName.trim(),
-          approvalStatus: "pending",
-        },
-        createdAt: nowIso(),
-      });
-    } else {
-      const school = (await auth.listApprovedSchools()).find(
-        (s) => s.id === input.schoolId,
-      );
-      if (!school) throw new Error("Escola não encontrada.");
-      // Trava de idade: a data de nascimento define se a conta pode existir
-      // sozinha (Lei 15.211/2025, arts. 10 e 24). A aprovação da escola não
-      // substitui a autorização do responsável legal.
-      const bracket = ageBracket(input.birthDate);
-      if (!bracket) throw new Error("Informe uma data de nascimento válida.");
-      if (requiresGuardianAccount(input.birthDate)) {
-        if (!input.guardian?.name || !input.guardian?.whatsapp) {
-          throw new Error(
-            "Menores de 16 anos precisam de um responsável legal no cadastro.",
-          );
-        }
-        if (!input.guardian.consent) {
-          throw new Error(
-            "É necessária a autorização do responsável legal para criar a conta.",
-          );
-        }
-      }
-      regs.unshift({
-        user: {
-          id: newId(),
-          email,
-          name: input.name.trim(),
-          role: "student",
-          approvalStatus: "pending",
-          schoolId: input.schoolId,
-        },
-        schoolLabel: school.name,
-        ageBracket: bracket,
-        guardianName: input.guardian?.name.trim(),
-        guardianConsent: input.guardian?.consent,
-        createdAt: nowIso(),
-      });
-    }
+    regs.unshift({
+      user: {
+        id: newId(),
+        email,
+        name: input.schoolName.trim(),
+        role: "user",
+        schoolName: input.schoolName.trim(),
+        approvalStatus: "pending",
+        schools: [],
+      },
+      createdAt: nowIso(),
+    });
     writeRegistrations(regs);
   },
-  async listApprovedSchools() {
-    await delay(300);
-    return allUsers()
-      .filter((u) => u.role === "school_user" && u.approvalStatus === "approved")
-      .map((u) => ({ id: u.id, name: u.schoolName ?? u.name }));
+  async setActiveSchool(schoolId) {
+    const session = currentSession();
+    if (!session) throw new Error("Você precisa estar logado.");
+    if (!session.user.schools.some((m) => m.schoolId === schoolId)) {
+      throw new Error("Você não é membro desta escola.");
+    }
+    writeValue(`active-school:${session.user.id}`, schoolId);
+    const updated = { ...session, activeSchoolId: schoolId };
+    writeValue("session", updated);
+    listeners.forEach((cb) => cb(updated));
   },
   async resetPassword(email) {
     await delay(600);
@@ -301,36 +299,60 @@ function purgeExpiredStudents(): void {
     "students",
     items.filter((s) => !expired.some((e) => e.id === s.id)),
   );
-  unlinkStudentRecords(expired.map((s) => s.id));
 }
 
-/** Espelha a FK on delete set null do Supabase: desfaz vínculos de conta. */
-function unlinkStudentRecords(ids: string[]): void {
-  const links = readStudentLinks();
-  const orphaned = Object.keys(links).filter((pid) =>
-    ids.includes(links[pid]!),
-  );
-  if (orphaned.length > 0) {
-    for (const pid of orphaned) delete links[pid];
-    writeValue("student-links", links);
-  }
+/** Espelha `guardians` (uma linha por escola + número) com um id estável. */
+function guardianIdFor(schoolId: string, whatsapp: string): string {
+  return `guardian:${schoolId}:${whatsapp.replace(/\D/g, "")}`;
 }
 
 const students: StudentRepository = {
   async list() {
     purgeExpiredStudents();
-    return (await studentsCrud.list()).filter((s) => !s.deletedAt);
+    const session = currentSession();
+    return (await studentsCrud.list()).filter(
+      (s) => !s.deletedAt && canSee(session, s.schoolId),
+    );
   },
-  get: (id) => studentsCrud.get(id),
+  async get(id) {
+    const s = await studentsCrud.get(id);
+    return s && canSee(currentSession(), s.schoolId) ? s : null;
+  },
   create: (input) => {
-    const session = readValue<Session>("session");
-    return studentsCrud.create({ ...input, ownerId: session?.user.id });
+    const session = currentSession();
+    const schoolId = input.schoolId ?? session?.activeSchoolId;
+    if (!schoolId) {
+      throw new Error(
+        isPlatformAdmin(session?.user.role)
+          ? "Selecione a escola em que este registro deve ser criado."
+          : "Sua conta ainda não está vinculada a uma escola.",
+      );
+    }
+    return studentsCrud.create({
+      ...input,
+      schoolId,
+      primaryGuardianId: input.guardian?.whatsapp
+        ? guardianIdFor(schoolId, input.guardian.whatsapp)
+        : undefined,
+      ownerId: session?.user.id,
+    });
   },
-  update: (id, patch) => studentsCrud.update(id, patch),
+  async update(id, patch) {
+    const current = await studentsCrud.get(id);
+    if (!current) throw new Error("Registro não encontrado");
+    const next: Record<string, unknown> = { ...patch };
+    if ("guardian" in patch) {
+      next["primaryGuardianId"] = patch.guardian?.whatsapp
+        ? guardianIdFor(current.schoolId, patch.guardian.whatsapp)
+        : undefined;
+    }
+    return studentsCrud.update(id, next);
+  },
   async listTrash() {
     purgeExpiredStudents();
+    const session = currentSession();
     return (await studentsCrud.list())
-      .filter((s) => Boolean(s.deletedAt))
+      .filter((s) => Boolean(s.deletedAt) && canSee(session, s.schoolId))
       .sort(
         (a, b) =>
           new Date(b.deletedAt!).getTime() - new Date(a.deletedAt!).getTime(),
@@ -360,7 +382,7 @@ const students: StudentRepository = {
     // Espelha a política RLS students_delete (super_admin only):
     // school_user deve usar moveToTrash (UPDATE) para garantir a retenção.
     const session = readValue<Session>("session");
-    if (session?.user.role !== "super_admin") {
+    if (!isPlatformAdmin(session?.user.role)) {
       throw new Error("Apenas administradores podem excluir alunos definitivamente.");
     }
     // No mock as fotos são data URLs (sem arquivo no Storage a remover).
@@ -369,11 +391,39 @@ const students: StudentRepository = {
       "students",
       items.filter((s) => !ids.includes(s.id)),
     );
-    unlinkStudentRecords(ids);
   },
 };
-// Tabela `clubs` mantida por herança do schema; o domínio é identidade da escola.
-const schoolBrands = makeCrud<SchoolBrand>("clubs") as SchoolBrandRepository;
+
+// Identidade visual = a própria escola (tabela `schools`, M1).
+const schoolBrands: SchoolBrandRepository = {
+  async list() {
+    await delay();
+    const session = currentSession();
+    return readSchools().filter((sc) => canSee(session, sc.id));
+  },
+  async get(id) {
+    await delay(200);
+    const sc = readSchools().find((x) => x.id === id) ?? null;
+    return sc && canSee(currentSession(), sc.id) ? sc : null;
+  },
+  async update(id, patch) {
+    await delay(400);
+    const items = readSchools();
+    const idx = items.findIndex((x) => x.id === id);
+    if (idx < 0) throw new Error("Escola não encontrada");
+    items[idx] = { ...items[idx]!, ...patch, updatedAt: nowIso() };
+    writeCollection("schools", items);
+    // O nome da escola também aparece nos vínculos dos usuários.
+    if (patch.name) {
+      const regs = readRegistrations();
+      for (const r of regs) {
+        for (const m of r.user.schools) if (m.schoolId === id) m.schoolName = patch.name;
+      }
+      writeRegistrations(regs);
+    }
+    return items[idx]!;
+  },
+};
 
 const referencesCrud = makeCrud<ReferencePost>("references");
 const references: ReferenceRepository = {
@@ -451,10 +501,6 @@ const approvals: ApprovalRepository = {
         name: r.user.name,
         role: r.user.role,
         schoolName: r.user.schoolName,
-        schoolLabel: r.schoolLabel,
-        ageBracket: r.ageBracket,
-        guardianName: r.guardianName,
-        guardianConsent: r.guardianConsent,
         createdAt: r.createdAt,
       }));
   },
@@ -481,8 +527,25 @@ const approvals: ApprovalRepository = {
     const reg = regs.find((r) => r.user.id === profileId);
     if (!reg) throw new Error("Cadastro não encontrado");
     reg.user.approvalStatus = "approved";
-    // student_record_id é deixado null: a escola vincula manualmente após a
-    // aprovação (tarefa #20), evitando colisões de nome e exposição de PII.
+    // Espelha o trigger do M1: a aprovação cria a escola (id = uid) e o
+    // vínculo school_admin, se a pessoa ainda não é membro de nenhuma.
+    if (reg.user.role === "user" && reg.user.schools.length === 0) {
+      const schoolName = reg.user.schoolName ?? reg.user.name;
+      const schools = readSchools();
+      if (!schools.some((sc) => sc.id === reg.user.id)) {
+        schools.push({
+          id: reg.user.id,
+          name: schoolName,
+          colors: [],
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        });
+        writeCollection("schools", schools);
+      }
+      reg.user.schools = [
+        { schoolId: reg.user.id, schoolName, role: "school_admin" },
+      ];
+    }
     writeRegistrations(regs);
   },
   async reject(profileId: string): Promise<void> {
@@ -493,153 +556,12 @@ const approvals: ApprovalRepository = {
     reg.user.approvalStatus = "rejected";
     writeRegistrations(regs);
   },
-  async listLinkableStudentAccounts() {
-    await delay(300);
-    const session = readValue<Session>("session");
-    const me = session?.user;
-    if (!me || (me.role !== "school_user" && me.role !== "super_admin")) {
-      throw new Error("Apenas escolas podem vincular contas de aluno.");
-    }
-    return allUsers()
-      .filter(
-        (u) =>
-          u.role === "student" &&
-          u.approvalStatus === "approved" &&
-          !u.studentRecordId &&
-          (me.role === "super_admin" || u.schoolId === me.id),
-      )
-      .map((u) => ({ id: u.id, name: u.name, email: u.email }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  },
-  async listLinkedStudentRecordIds() {
-    await delay(300);
-    const session = readValue<Session>("session");
-    const me = session?.user;
-    if (!me || (me.role !== "school_user" && me.role !== "super_admin")) {
-      throw new Error("Apenas escolas podem consultar vínculos de alunos.");
-    }
-    return allUsers()
-      .filter(
-        (u) =>
-          u.role === "student" &&
-          u.approvalStatus === "approved" &&
-          !!u.studentRecordId &&
-          (me.role === "super_admin" || u.schoolId === me.id),
-      )
-      .map((u) => u.studentRecordId!) as string[];
-  },
-  async linkStudentAccount(profileId, studentRecordId) {
-    await delay(400);
-    const session = readValue<Session>("session");
-    const me = session?.user;
-    if (!me || (me.role !== "school_user" && me.role !== "super_admin")) {
-      throw new Error("Apenas escolas podem vincular contas de aluno.");
-    }
-    const target = allUsers().find((u) => u.id === profileId);
-    if (
-      !target ||
-      target.role !== "student" ||
-      target.approvalStatus !== "approved" ||
-      (me.role !== "super_admin" && target.schoolId !== me.id)
-    ) {
-      throw new Error("Conta de aluno não encontrada ou não pertence à sua escola.");
-    }
-    const student = readCollection<OwnedStudent>("students", []).find(
-      (s) => s.id === studentRecordId,
-    );
-    if (!student) throw new Error("Registro de aluno não encontrado.");
-    // Posse do registro (mesma regra da RPC do Supabase): a escola só vincula
-    // registros criados por ela. Registros antigos sem ownerId são permitidos.
-    if (me.role !== "super_admin" && student.ownerId && student.ownerId !== me.id) {
-      throw new Error("Registro de aluno não encontrado.");
-    }
-    const links = readStudentLinks();
-    if (Object.values(links).includes(studentRecordId)) {
-      throw new Error("Este registro de aluno já tem uma conta vinculada.");
-    }
-    links[profileId] = studentRecordId;
-    writeValue("student-links", links);
-  },
-  async listLinkedStudentAccounts() {
-    await delay(300);
-    const session = readValue<Session>("session");
-    const me = session?.user;
-    if (!me || (me.role !== "school_user" && me.role !== "super_admin")) {
-      throw new Error("Apenas escolas podem ver contas vinculadas.");
-    }
-    return allUsers()
-      .filter(
-        (u) =>
-          u.role === "student" &&
-          u.approvalStatus === "approved" &&
-          Boolean(u.studentRecordId) &&
-          (me.role === "super_admin" || u.schoolId === me.id),
-      )
-      .map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        studentRecordId: u.studentRecordId!,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  },
-  async unlinkStudentAccount(studentRecordId) {
-    await delay(400);
-    const session = readValue<Session>("session");
-    const me = session?.user;
-    if (!me || (me.role !== "school_user" && me.role !== "super_admin")) {
-      throw new Error("Apenas escolas podem desvincular contas de aluno.");
-    }
-    const student = readCollection<OwnedStudent>("students", []).find(
-      (s) => s.id === studentRecordId,
-    );
-    if (!student) throw new Error("Registro de aluno não encontrado.");
-    // Mesma regra de posse da RPC do Supabase.
-    if (me.role !== "super_admin" && student.ownerId && student.ownerId !== me.id) {
-      throw new Error("Registro de aluno não encontrado.");
-    }
-    const links = readStudentLinks();
-    const profileId = Object.keys(links).find(
-      (pid) => links[pid] === studentRecordId,
-    );
-    if (!profileId) {
-      throw new Error("Este registro de aluno não tem conta vinculada.");
-    }
-    delete links[profileId];
-    writeValue("student-links", links);
-  },
-  async listStudentAccounts() {
-    await delay(300);
-    const session = readValue<Session>("session");
-    if (session?.user.role !== "super_admin") {
-      throw new Error("Apenas administradores podem ver as contas de aluno.");
-    }
-    const users = allUsers();
-    const schoolName = (id?: string) => {
-      const school = id ? users.find((u) => u.id === id) : undefined;
-      return school ? (school.schoolName ?? school.name) : undefined;
-    };
-    const records = readCollection<OwnedStudent>("students", []);
-    return users
-      .filter((u) => u.role === "student" && u.approvalStatus === "approved")
-      .map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        schoolLabel: schoolName(u.schoolId),
-        studentRecordId: u.studentRecordId,
-        studentRecordLabel: u.studentRecordId
-          ? records.find((s) => s.id === u.studentRecordId)?.name
-          : undefined,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  },
 };
 
 // Escrita restrita a super_admin, espelhando as políticas RLS do Supabase.
 function assertSuperAdmin(): void {
   const session = readValue<Session>("session");
-  if (session?.user.role !== "super_admin") {
+  if (!isPlatformAdmin(session?.user.role)) {
     throw new Error("Apenas administradores podem alterar o template do prompt.");
   }
 }

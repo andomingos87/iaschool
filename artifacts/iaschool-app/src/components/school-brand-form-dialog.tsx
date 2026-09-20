@@ -25,10 +25,7 @@ import { Label } from "@workspace/iaschool-ui/components/ui/label";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { MultiUpload } from "@/components/multi-upload";
 import { ColorPicker } from "@/components/color-picker";
-import {
-  useCreateSchoolBrand,
-  useUpdateSchoolBrand,
-} from "@/hooks/use-school-brands";
+import { useUpdateSchoolBrand } from "@/hooks/use-school-brands";
 import type { SchoolBrand, StoredImage } from "@/lib/data";
 import { BUCKETS } from "@/lib/constants";
 
@@ -40,8 +37,9 @@ type FormValues = z.infer<typeof schema>;
 interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  /** Escola a editar. A escola nasce na aprovação do cadastro (M1); aqui não se cria. */
   brand: SchoolBrand | null;
-  /** Chamado com a escola criada/atualizada após salvar com sucesso. */
+  /** Chamado com a escola atualizada após salvar com sucesso. */
   onSaved?: (brand: SchoolBrand) => void;
 }
 
@@ -51,7 +49,6 @@ export function SchoolBrandFormDialog({
   brand,
   onSaved,
 }: Props) {
-  const create = useCreateSchoolBrand();
   const update = useUpdateSchoolBrand();
   const [logo, setLogo] = useState<StoredImage[]>([]);
   const [colors, setColors] = useState<string[]>([]);
@@ -75,23 +72,18 @@ export function SchoolBrandFormDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, brand]);
 
-  const saving = create.isPending || update.isPending;
+  const saving = update.isPending;
 
   async function onSubmit(values: FormValues) {
+    if (!brand) return;
     const payload: Omit<SchoolBrand, "id" | "createdAt" | "updatedAt"> = {
       name: values.name.trim(),
       logo: logo[0],
       colors: colors.slice(0, 3),
     };
     try {
-      let saved: SchoolBrand;
-      if (brand) {
-        saved = await update.mutateAsync({ id: brand.id, patch: payload });
-        toast({ title: "Escola atualizada", description: values.name });
-      } else {
-        saved = await create.mutateAsync(payload);
-        toast({ title: "Escola cadastrada", description: values.name });
-      }
+      const saved = await update.mutateAsync({ id: brand.id, patch: payload });
+      toast({ title: "Escola atualizada", description: values.name });
       onOpenChange(false);
       onSaved?.(saved);
     } catch (err) {
@@ -107,7 +99,7 @@ export function SchoolBrandFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{brand ? "Editar escola" : "Nova escola"}</DialogTitle>
+          <DialogTitle>Editar escola</DialogTitle>
           <DialogDescription>
             Defina o nome, o logo e até 3 cores usadas nas artes da escola.
           </DialogDescription>

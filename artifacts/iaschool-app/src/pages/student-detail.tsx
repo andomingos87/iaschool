@@ -6,7 +6,6 @@ import {
   Calendar,
   GalleryVerticalEnd,
   Images,
-  Link2,
   Maximize2,
   Pencil,
   Phone,
@@ -17,7 +16,6 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
 import { Badge } from "@workspace/iaschool-ui/components/ui/badge";
 import {
@@ -61,9 +59,7 @@ import {
 import { useSchoolBrands } from "@/hooks/use-school-brands";
 import { useGeneratedPosts } from "@/hooks/use-generated-posts";
 import { useAuth } from "@/hooks/use-auth";
-import { getDataLayer } from "@/lib/data";
-import { TRASH_RETENTION_DAYS, type LinkedStudentAccount } from "@/lib/data";
-import { qk } from "@/lib/query-keys";
+import { TRASH_RETENTION_DAYS, isPlatformAdmin } from "@/lib/data";
 import { requiresGuardianConsent } from "@/lib/eca";
 import {
   ageFromIso,
@@ -80,7 +76,7 @@ export default function StudentDetailPage() {
   const id = params.id ?? null;
   const [, navigate] = useLocation();
   const { session } = useAuth();
-  const isAdmin = session?.user.role === "super_admin";
+  const isAdmin = isPlatformAdmin(session?.user.role);
 
   const student = useStudent(id);
   const schoolBrands = useSchoolBrands();
@@ -96,24 +92,11 @@ export default function StudentDetailPage() {
   const [restoreConfirm, setRestoreConfirm] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);
 
-  const linkedAccounts = useQuery({
-    queryKey: qk.linkedStudentAccounts,
-    queryFn: () => getDataLayer().approvals.listLinkedStudentAccounts(),
-  });
-  const linked: LinkedStudentAccount | undefined = useMemo(
-    () =>
-      (linkedAccounts.data ?? []).find((a) => a.studentRecordId === id) ??
-      undefined,
-    [linkedAccounts.data, id],
-  );
-
   const s = student.data;
+  // A escola do aluno é o tenant dele (M1); a identidade visual é a mesma linha.
   const schoolBrand = useMemo(
-    () =>
-      s?.schoolBrandId
-        ? schoolBrands.data?.find((b) => b.id === s.schoolBrandId)
-        : undefined,
-    [schoolBrands.data, s?.schoolBrandId],
+    () => schoolBrands.data?.find((b) => b.id === s?.schoolId),
+    [schoolBrands.data, s?.schoolId],
   );
   const studentPosts = useMemo(
     () => (posts.data ?? []).filter((p) => p.studentId === id),
@@ -403,21 +386,12 @@ export default function StudentDetailPage() {
                 )}
               </div>
             )}
-            <div className="border-t border-border pt-3">
-              <p className="mb-1 flex items-center gap-2 text-muted-foreground">
-                <Link2 className="size-4" /> Conta vinculada
-              </p>
-              {linked ? (
-                <p data-testid="text-student-linked-account">
-                  {linked.name}{" "}
-                  <span className="text-muted-foreground">
-                    ({linked.email})
-                  </span>
-                </p>
-              ) : (
-                <p className="text-muted-foreground">Nenhuma conta vinculada</p>
-              )}
-            </div>
+            {s.enrollmentNumber && (
+              <div className="border-t border-border pt-3">
+                <p className="mb-1 text-muted-foreground">Matrícula</p>
+                <p data-testid="text-student-enrollment">{s.enrollmentNumber}</p>
+              </div>
+            )}
             {s.notes && (
               <div className="border-t border-border pt-3">
                 <p className="mb-1 text-muted-foreground">Observações</p>
@@ -529,7 +503,6 @@ export default function StudentDetailPage() {
         open={editOpen}
         onOpenChange={setEditOpen}
         student={s}
-        schoolBrands={schoolBrands.data ?? []}
       />
 
       <GuardianVerifyDialog

@@ -42,8 +42,7 @@ type ForgotValues = z.infer<typeof forgotSchema>;
 
 const DEMO_USERS = [
   { email: "admin@iaschool.demo", role: "Administrador IAschool" },
-  { email: "professor@iaschool.demo", role: "Professor da Escola Horizonte" },
-  { email: "aluno@iaschool.demo", role: "Aluno Demo" },
+  { email: "professor@iaschool.demo", role: "Administrador da Escola Horizonte" },
 ];
 
 export default function LoginPage() {

@@ -14,6 +14,8 @@ interface AuthContextValue {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Troca a escola ativa (quem é membro de mais de uma). */
+  setActiveSchool: (schoolId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -50,6 +52,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signOut: async () => {
         await data.auth.signOut();
+      },
+      setActiveSchool: async (schoolId) => {
+        await data.auth.setActiveSchool(schoolId);
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

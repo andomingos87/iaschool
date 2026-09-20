@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDataLayer } from "@/lib/data";
-import type { Student } from "@/lib/data";
+import type { Student, StudentInput } from "@/lib/data";
 import { qk } from "@/lib/query-keys";
 
 export function useStudents() {
@@ -28,15 +28,6 @@ export function useTrashedStudents(enabled = true) {
   });
 }
 
-/** IDs dos registros de students que já têm conta de aluno vinculada. */
-export function useLinkedStudentRecordIds() {
-  const data = getDataLayer();
-  return useQuery({
-    queryKey: qk.linkedStudentRecordIds,
-    queryFn: () => data.approvals.listLinkedStudentRecordIds(),
-  });
-}
-
 function useInvalidateStudents() {
   const qc = useQueryClient();
   return () => {
@@ -49,8 +40,7 @@ export function useCreateStudent() {
   const data = getDataLayer();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: Omit<Student, "id" | "createdAt" | "updatedAt">) =>
-      data.students.create(input),
+    mutationFn: (input: StudentInput) => data.students.create(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.students }),
   });
 }

@@ -50,8 +50,17 @@ import { iaschool } from "@/config/iaschool";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import { initials } from "@/lib/format";
-import { getDataLayer } from "@/lib/data";
+import { getDataLayer, isPlatformAdmin } from "@/lib/data";
+import type { AppUser } from "@/lib/data";
 import { LOGS_ADMIN_EMAIL } from "@/lib/constants";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/iaschool-ui/components/ui/select";
+import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 
 /**
  * Contador de cadastros pendentes para o badge do menu "Aprovações".
@@ -106,15 +115,47 @@ const LOGS_NAV: NavItem = {
   icon: ScrollText,
 };
 
-const STUDENT_NAV: NavItem[] = [
-  { href: "/", label: "Meu perfil", icon: Home },
-];
+/**
+ * Rótulo exibido sob o nome: para quem é da escola, o papel NA escola
+ * (professor, equipe, admin da escola); para a plataforma, o papel global.
+ */
+function roleLabel(user: AppUser, activeSchoolId?: string) {
+  if (isPlatformAdmin(user.role)) return iaschool.roles[user.role];
+  const membership =
+    user.schools.find((m) => m.schoolId === activeSchoolId) ?? user.schools[0];
+  return membership ? iaschool.memberRoles[membership.role] : iaschool.roles.user;
+}
 
-function roleLabel(role: string) {
-  if (role in iaschool.roles) {
-    return iaschool.roles[role as keyof typeof iaschool.roles];
-  }
-  return "Usuário";
+/** Seletor de escola ativa — só aparece para quem é membro de mais de uma. */
+function SchoolSwitcher() {
+  const { session, setActiveSchool } = useAuth();
+  const schools = session?.user.schools ?? [];
+  if (schools.length < 2) return null;
+  return (
+    <Select
+      value={session?.activeSchoolId ?? schools[0]!.schoolId}
+      onValueChange={(id) =>
+        setActiveSchool(id).catch((err: unknown) =>
+          toast({
+            variant: "destructive",
+            title: "Não foi possível trocar de escola",
+            description: err instanceof Error ? err.message : "Tente novamente.",
+          }),
+        )
+      }
+    >
+      <SelectTrigger className="h-8 w-[200px]" data-testid="select-active-school">
+        <SelectValue placeholder="Escola" />
+      </SelectTrigger>
+      <SelectContent>
+        {schools.map((m) => (
+          <SelectItem key={m.schoolId} value={m.schoolId}>
+            {m.schoolName}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -122,16 +163,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { session, signOut } = useAuth();
   const { theme, toggle } = useTheme();
   const user = session?.user;
+  const isAdmin = isPlatformAdmin(user?.role);
   const isLogsAdmin =
-    user?.role === "super_admin" &&
-    user.email.toLowerCase() === LOGS_ADMIN_EMAIL;
-  const nav =
-    user?.role === "student"
-      ? STUDENT_NAV
-      : user?.role === "super_admin"
-        ? [...NAV, ...ADMIN_NAV, ...(isLogsAdmin ? [LOGS_NAV] : [])]
-        : NAV;
-  const pendingCount = usePendingCount(user?.role === "super_admin");
+    isAdmin && user?.email.toLowerCase() === LOGS_ADMIN_EMAIL;
+  const nav = isAdmin
+    ? [...NAV, ...ADMIN_NAV, ...(isLogsAdmin ? [LOGS_NAV] : [])]
+    : NAV;
+  const pendingCount = usePendingCount(isAdmin);
 
   return (
     <SidebarProvider>
@@ -200,7 +238,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {user?.name}
               </p>
               <p className="truncate text-xs text-muted-foreground">
-                {user ? roleLabel(user.role) : ""}
+                {user ? roleLabel(user, session?.activeSchoolId) : ""}
               </p>
             </div>
           </div>
@@ -211,6 +249,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-background/95 px-4 backdrop-blur">
           <SidebarTrigger data-testid="button-sidebar-toggle" />
           <div className="ml-auto flex items-center gap-2">
+            <SchoolSwitcher />
             <DemoIndicator />
             <Button
               variant="ghost"

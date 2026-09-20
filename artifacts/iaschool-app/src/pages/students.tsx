@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArchiveRestore,
   CheckSquare,
@@ -13,9 +12,6 @@ import {
   Pencil,
   Trash2,
   Phone,
-  School,
-  Link2,
-  Link2Off,
   X,
 } from "lucide-react";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
@@ -71,7 +67,6 @@ import { PageHeader } from "@/components/app-shell";
 import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { StudentFormDialog } from "@/components/student-form-dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
-import { LinkStudentAccountDialog } from "@/components/link-student-account-dialog";
 import {
   useStudents,
   useTrashedStudents,
@@ -79,12 +74,9 @@ import {
   useRestoreStudents,
   useDeleteStudentsPermanently,
 } from "@/hooks/use-students";
-import { useSchoolBrands } from "@/hooks/use-school-brands";
 import { useAuth } from "@/hooks/use-auth";
-import { getDataLayer } from "@/lib/data";
-import type { LinkedStudentAccount, Student } from "@/lib/data";
-import { TRASH_RETENTION_DAYS } from "@/lib/data";
-import { qk } from "@/lib/query-keys";
+import type { Student } from "@/lib/data";
+import { TRASH_RETENTION_DAYS, isPlatformAdmin } from "@/lib/data";
 import { ageFromIso, initials, storedToMasked } from "@/lib/format";
 
 type ViewMode = "cards" | "list";
@@ -107,11 +99,10 @@ function daysLeft(deletedAt: string): number {
 
 export default function StudentsPage() {
   const { session } = useAuth();
-  const isAdmin = session?.user.role === "super_admin";
+  const isAdmin = isPlatformAdmin(session?.user.role);
   const [, navigate] = useLocation();
 
   const students = useStudents();
-  const schoolBrands = useSchoolBrands();
   const [tab, setTab] = useState<"active" | "trash">("active");
   const trashed = useTrashedStudents(tab === "trash");
   const moveToTrash = useMoveStudentsToTrash();
@@ -122,9 +113,6 @@ export default function StudentsPage() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
-  const [toLink, setToLink] = useState<Student | null>(null);
-  const [toUnlink, setToUnlink] = useState<Student | null>(null);
-  const queryClient = useQueryClient();
 
   // Seleção em massa (lista ativa e lixeira).
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -143,49 +131,6 @@ export default function StudentsPage() {
     }
   }
 
-  // Contas de aluno já vinculadas — para mostrar o vínculo e
-  // oferecer "Desvincular conta" quando houver.
-  const linkedAccounts = useQuery({
-    queryKey: qk.linkedStudentAccounts,
-    queryFn: () => getDataLayer().approvals.listLinkedStudentAccounts(),
-  });
-
-  const linkedByStudentId = useMemo(() => {
-    const map = new Map<string, LinkedStudentAccount>();
-    for (const acc of linkedAccounts.data ?? []) {
-      map.set(acc.studentRecordId, acc);
-    }
-    return map;
-  }, [linkedAccounts.data]);
-
-  const unlink = useMutation({
-    mutationFn: (studentRecordId: string) =>
-      getDataLayer().approvals.unlinkStudentAccount(studentRecordId),
-    onSuccess: () => {
-      toast({
-        title: "Conta desvinculada",
-        description: `${toUnlink?.name} não tem mais conta de aluno vinculada.`,
-      });
-      void queryClient.invalidateQueries({ queryKey: qk.linkedStudentAccounts });
-      void queryClient.invalidateQueries({
-        queryKey: qk.linkableStudentAccounts,
-      });
-      setToUnlink(null);
-    },
-    onError: (err) => {
-      toast({
-        variant: "destructive",
-        title: "Não foi possível desvincular",
-        description: err instanceof Error ? err.message : "Tente novamente.",
-      });
-    },
-  });
-
-  const schoolBrandName = useMemo(() => {
-    const map = new Map((schoolBrands.data ?? []).map((b) => [b.id, b.name]));
-    return (id?: string) => (id ? map.get(id) : undefined);
-  }, [schoolBrands.data]);
-
   const activeList = students.data ?? [];
   const trashList = trashed.data ?? [];
   const items = tab === "active" ? activeList : trashList;
@@ -196,9 +141,9 @@ export default function StudentsPage() {
     return items.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
-        (schoolBrandName(s.schoolBrandId) ?? "").toLowerCase().includes(q),
+        (s.enrollmentNumber ?? "").toLowerCase().includes(q),
     );
-  }, [items, search, schoolBrandName]);
+  }, [items, search]);
 
   const allSelected =
     filtered.length > 0 && filtered.every((s) => selected.has(s.id));
@@ -306,7 +251,6 @@ export default function StudentsPage() {
         {list.map((s) => {
           const age = ageFromIso(s.birthDate);
           const photo = s.photos?.[0]?.url;
-          const linked = linkedByStudentId.get(s.id);
           const isSelected = selected.has(s.id);
           return (
             <Card
@@ -365,27 +309,14 @@ export default function StudentsPage() {
                         >
                           {daysLeft(s.deletedAt)}d restantes
                         </Badge>
-                      ) : (
-                        linked && (
-                          <Badge
-                            variant="outline"
-                            className="gap-1 border-primary/40 text-[10px] text-primary"
-                            data-testid={`badge-linked-${s.id}`}
-                          >
-                            <Link2 className="size-3" /> Conta vinculada
-                          </Badge>
-                        )
-                      )}
+                      ) : null}
                     </div>
                   </div>
                   {!isTrash && (
                     <span onClick={(e) => e.stopPropagation()}>
                       <StudentMenu
                         student={s}
-                        linked={!!linked}
                         onEdit={() => openEdit(s)}
-                        onLink={() => setToLink(s)}
-                        onUnlink={() => setToUnlink(s)}
                         onDelete={() => openDeleteDialog([s.id])}
                         onSelect={() => toggle(s.id)}
                       />
@@ -397,22 +328,8 @@ export default function StudentsPage() {
                   <p className="flex items-center gap-2">
                     <Phone className="size-3.5" /> {storedToMasked(s.whatsapp)}
                   </p>
-                  {schoolBrandName(s.schoolBrandId) && (
-                    <p className="flex items-center gap-2">
-                      <School className="size-3.5" />{" "}
-                      {schoolBrandName(s.schoolBrandId)}
-                    </p>
-                  )}
-                  {linked && !isTrash && (
-                    <p
-                      className="flex items-center gap-2"
-                      data-testid={`text-linked-account-${s.id}`}
-                    >
-                      <Link2 className="size-3.5 text-primary" />
-                      <span className="truncate">
-                        Conta vinculada: {linked.email}
-                      </span>
-                    </p>
+                  {s.enrollmentNumber && (
+                    <p className="text-xs">Matrícula {s.enrollmentNumber}</p>
                   )}
                 </div>
               </CardContent>
@@ -438,17 +355,16 @@ export default function StudentsPage() {
                 />
               </TableHead>
               <TableHead>Aluno</TableHead>
-              <TableHead className="hidden md:table-cell">Escola</TableHead>
+              <TableHead className="hidden md:table-cell">Matrícula</TableHead>
               <TableHead className="hidden lg:table-cell">WhatsApp</TableHead>
               <TableHead className="hidden lg:table-cell">
-                {isTrash ? "Expurgo" : "Conta"}
+                {isTrash ? "Expurgo" : "Situação"}
               </TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {list.map((s) => {
-              const linked = linkedByStudentId.get(s.id);
               const age = ageFromIso(s.birthDate);
               const isSelected = selected.has(s.id);
               return (
@@ -496,7 +412,7 @@ export default function StudentsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
-                    {schoolBrandName(s.schoolBrandId) ?? (
+                    {s.enrollmentNumber ?? (
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
@@ -511,14 +427,6 @@ export default function StudentsPage() {
                       >
                         {daysLeft(s.deletedAt)}d restantes
                       </Badge>
-                    ) : linked ? (
-                      <Badge
-                        variant="outline"
-                        className="gap-1 border-primary/40 text-primary"
-                        data-testid={`badge-linked-${s.id}`}
-                      >
-                        <Link2 className="size-3" /> Vinculada
-                      </Badge>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
@@ -527,10 +435,7 @@ export default function StudentsPage() {
                     {!isTrash && (
                       <StudentMenu
                         student={s}
-                        linked={!!linked}
                         onEdit={() => openEdit(s)}
-                        onLink={() => setToLink(s)}
-                        onUnlink={() => setToUnlink(s)}
                         onDelete={() => openDeleteDialog([s.id])}
                         onSelect={() => toggle(s.id)}
                       />
@@ -603,7 +508,7 @@ export default function StudentsPage() {
         <div className="relative max-w-sm flex-1 basis-64">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nome ou escola"
+            placeholder="Buscar por nome ou matrícula"
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -704,21 +609,6 @@ export default function StudentsPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         student={editing}
-        schoolBrands={schoolBrands.data ?? []}
-      />
-      <LinkStudentAccountDialog
-        student={toLink}
-        onOpenChange={(o) => !o && setToLink(null)}
-      />
-      <ConfirmDelete
-        open={!!toUnlink}
-        onOpenChange={(o) => !o && setToUnlink(null)}
-        title="Desvincular conta?"
-        description={`A conta ${
-          toUnlink ? linkedByStudentId.get(toUnlink.id)?.email ?? "" : ""
-        } deixará de ver os dados de "${toUnlink?.name}". Você pode vincular outra conta depois.`}
-        onConfirm={() => toUnlink && unlink.mutate(toUnlink.id)}
-        loading={unlink.isPending}
       />
 
       {/* Confirmação de exclusão (lixeira ou definitiva) */}
@@ -829,18 +719,12 @@ export default function StudentsPage() {
 
 function StudentMenu({
   student,
-  linked,
   onEdit,
-  onLink,
-  onUnlink,
   onDelete,
   onSelect,
 }: {
   student: Student;
-  linked: boolean;
   onEdit: () => void;
-  onLink: () => void;
-  onUnlink: () => void;
   onDelete: () => void;
   onSelect: () => void;
 }) {
@@ -869,21 +753,6 @@ function StudentMenu({
         >
           <CheckSquare className="size-4" /> Selecionar
         </DropdownMenuItem>
-        {linked ? (
-          <DropdownMenuItem
-            onClick={onUnlink}
-            data-testid={`button-unlink-student-${student.id}`}
-          >
-            <Link2Off className="size-4" /> Desvincular conta
-          </DropdownMenuItem>
-        ) : (
-          <DropdownMenuItem
-            onClick={onLink}
-            data-testid={`button-link-student-${student.id}`}
-          >
-            <Link2 className="size-4" /> Vincular conta de aluno
-          </DropdownMenuItem>
-        )}
         <DropdownMenuItem
           className="text-destructive"
           onClick={onDelete}

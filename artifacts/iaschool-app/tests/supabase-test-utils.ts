@@ -37,9 +37,12 @@ export interface TestUser {
  */
 export async function createTestUser(opts: {
   label: string;
-  signupRole: "school_user" | "student";
+  /**
+   * "school" é o único cadastro público desde o M1 (autocadastro de aluno
+   * aposentado). "school_user" é o valor legado, ainda aceito pelo trigger.
+   */
+  signupRole: "school" | "school_user";
   schoolName?: string;
-  schoolId?: string;
 }): Promise<TestUser> {
   const email = `rls-test-${opts.label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
   const createResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
@@ -53,7 +56,6 @@ export async function createTestUser(opts: {
         signup_role: opts.signupRole,
         signup_name: `RLS Test ${opts.label}`,
         signup_school_name: opts.schoolName ?? null,
-        signup_school_id: opts.schoolId ?? "",
       },
     }),
   });
@@ -190,4 +192,46 @@ export async function userInsert(
     body: JSON.stringify(row),
   });
   return resp.status;
+}
+
+/**
+ * Aprova um cadastro de escola. O trigger `profiles_ensure_school_on_approval`
+ * (M1) cria a `schools` com id = uid e o vínculo como school_admin, então o
+ * id do usuário É o id da escola dele.
+ */
+export async function adminApproveSchool(userId: string): Promise<string> {
+  await adminUpdateProfile(userId, { approval_status: "approved" });
+  const resp = await adminRest(`school_members?user_id=eq.${userId}&select=school_id`);
+  const rows = (await resp.json()) as Array<{ school_id: string }>;
+  const schoolId = rows[0]?.school_id;
+  if (!schoolId) {
+    throw new Error(`Aprovação não criou a escola de ${userId} — migration M1 aplicada?`);
+  }
+  return schoolId;
+}
+
+/** Vincula um usuário a uma escola com o papel dado (service role). */
+export async function adminAddMember(
+  schoolId: string,
+  userId: string,
+  role: "school_admin" | "school_staff" | "teacher",
+): Promise<void> {
+  const resp = await adminRest("school_members", {
+    method: "POST",
+    body: JSON.stringify({ school_id: schoolId, user_id: userId, role }),
+  });
+  if (!resp.ok) {
+    throw new Error(`Falha ao vincular membro: ${resp.status} ${await resp.text()}`);
+  }
+}
+
+/** Insere uma linha com service role e devolve o id criado. */
+export async function adminInsert(
+  table: string,
+  row: Record<string, unknown>,
+): Promise<string> {
+  const resp = await adminRest(table, { method: "POST", body: JSON.stringify(row) });
+  if (!resp.ok) throw new Error(`insert ${table}: ${resp.status} ${await resp.text()}`);
+  const [created] = (await resp.json()) as Array<{ id: string }>;
+  return created!.id;
 }

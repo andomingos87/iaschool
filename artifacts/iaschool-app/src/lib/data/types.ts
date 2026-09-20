@@ -2,7 +2,28 @@
 // Estes tipos espelham as futuras tabelas do Supabase (snake_case nas colunas
 // será mapeado nos repositórios reais; aqui usamos camelCase no domínio).
 
-export type UserRole = "super_admin" | "school_user" | "student";
+/**
+ * Papel GLOBAL da plataforma (M1). O vínculo com escola não é papel: mora em
+ * `AppUser.schools`, um por escola de que a pessoa é membro.
+ * - `dev`: manutenção da plataforma (tudo do super_admin + telas técnicas).
+ * - `super_admin`: operação do produto (todas as escolas, aprovações).
+ * - `user`: qualquer pessoa da escola; só vê as escolas em que é membro.
+ */
+export type UserRole = "dev" | "super_admin" | "user";
+
+/** Papel da pessoa DENTRO de uma escola (tabela `school_members`). */
+export type SchoolMemberRole = "school_admin" | "school_staff" | "teacher";
+
+export interface SchoolMembership {
+  schoolId: string;
+  schoolName: string;
+  role: SchoolMemberRole;
+}
+
+/** true para quem tem privilégio de plataforma (super_admin ou dev). */
+export function isPlatformAdmin(role: UserRole | undefined): boolean {
+  return role === "super_admin" || role === "dev";
+}
 
 /** Status de aprovação do cadastro (novos cadastros nascem "pending"). */
 export type ApprovalStatus = "pending" | "approved" | "rejected";
@@ -14,21 +35,20 @@ export interface AppUser {
   schoolName?: string;
   /** Contas antigas (criadas pelo admin) são tratadas como aprovadas. */
   approvalStatus: ApprovalStatus;
-  /** Para alunos: id do usuário da escola à qual pertence. */
-  schoolId?: string;
-  /** Para alunos: id do registro na tabela students vinculado (se houver). */
-  studentRecordId?: string;
+  /** Escolas de que a pessoa é membro (vazio para super_admin sem escola). */
+  schools: SchoolMembership[];
 }
 
-/** Escola aprovada, exibida no seletor do cadastro de aluno. */
-export interface SchoolOption {
-  id: string;
-  name: string;
-}
 export interface Session {
   user: AppUser;
   /** ISO timestamp de expiração (mock: sem expiração real) */
   expiresAt: string;
+  /**
+   * Escola "atual" para quem é membro de mais de uma. Escolha de interface,
+   * nunca de RLS: o banco filtra sempre por `is_member_of(school_id)`.
+   * Ausente quando a pessoa não é membro de escola nenhuma.
+   */
+  activeSchoolId?: string;
 }
 
 /** Foto armazenada. No Supabase real, `url` virá do Storage; no mock é data URL. */
@@ -86,8 +106,14 @@ export interface Student {
   photos: StoredImage[];
   /** Responsável legal — exigido para alunos menores de 18 anos. */
   guardian?: Guardian;
-  /** Identidade visual da escola aplicada nas artes deste aluno. */
-  schoolBrandId?: string;
+  /** Escola (tenant) a que o aluno pertence. Preenchida pela camada de dados. */
+  schoolId: string;
+  /** Sala (`classes`), quando cadastrada. */
+  classId?: string;
+  /** Matrícula na escola; chave da importação CSV (Fase 1 completa). */
+  enrollmentNumber?: string;
+  /** Linha em `guardians` de onde vêm nome, WhatsApp e verificação do responsável. */
+  primaryGuardianId?: string;
   createdAt: string;
   updatedAt: string;
   /** Data em que foi movido para a lixeira (null/ausente = ativo). */
@@ -96,8 +122,8 @@ export interface Student {
 
 /**
  * Identidade visual de uma escola (logo + cores), aplicada nas artes geradas.
- * Persistida na tabela `clubs` por herança do produto anterior; a consolidação
- * numa entidade `schools` real está prevista para a fase seguinte.
+ * Desde o M1 é a própria linha de `schools`: `id` é o id do tenant, e só
+ * aparecem as escolas de que a pessoa é membro.
  */
 export interface SchoolBrand {
   id: string;
@@ -213,79 +239,17 @@ export interface PendingRegistration {
   name: string;
   role: UserRole;
   schoolName?: string;
-  /** Nome da escola escolhida (para alunos). */
-  schoolLabel?: string;
-  /** Para alunos: id do registro students já vinculado (se houver). */
-  studentRecordId?: string;
-  /** Para alunos: nome do registro students vinculado (se houver). */
-  studentRecordLabel?: string;
-  /**
-   * Faixa etária declarada no cadastro (nunca a data de nascimento) — o admin
-   * precisa dela para decidir a aprovação (Decreto 12.880/2026, art. 24, § 3º).
-   */
-  ageBracket?: "crianca" | "adolescente" | "adulto";
-  /** Nome do responsável legal informado, quando exigido. */
-  guardianName?: string;
-  /** true = o responsável registrou a autorização no cadastro. */
-  guardianConsent?: boolean;
   createdAt: string;
 }
 
-/** Conta de aluno aprovada e ainda sem vínculo com um registro de students. */
-export interface LinkableStudentAccount {
-  id: string;
-  name: string;
+/**
+ * Dados do cadastro público. Desde o M1 só existe cadastro de escola: menor
+ * de 16 não tem conta própria (Lei 15.211/2025, art. 24), e o aluno é apenas
+ * um registro em `students`.
+ */
+export interface SignUpInput {
+  kind: "school";
+  schoolName: string;
   email: string;
-}
-
-/** Conta de aluno já vinculada a um registro de students (visão da escola). */
-export interface LinkedStudentAccount {
-  id: string;
-  name: string;
-  email: string;
-  studentRecordId: string;
-}
-
-/** Conta de aluno aprovada com o estado do vínculo (visão do super_admin). */
-export interface StudentAccountOverview {
-  id: string;
-  name: string;
-  email: string;
-  /** Nome da escola do aluno (se houver). */
-  schoolLabel?: string;
-  studentRecordId?: string;
-  /** Nome do registro students vinculado (se houver). */
-  studentRecordLabel?: string;
-}
-
-/** Dados do cadastro público (escola ou aluno). */
-export type SignUpInput =
-  | { kind: "school"; schoolName: string; email: string; password: string }
-  | {
-      kind: "student";
-      name: string;
-      email: string;
-      password: string;
-      schoolId: string;
-      /**
-       * Data de nascimento (ISO). Obrigatória: define se a conta precisa ser
-       * vinculada a um responsável legal (Lei 15.211/2025, arts. 10 e 24).
-       */
-      birthDate: string;
-      /**
-       * Responsável legal — obrigatório para menores de 16 anos.
-       * A aprovação da escola não substitui esta autorização.
-       */
-      guardian?: SignUpGuardian;
-    };
-
-/** Dados do responsável informados no cadastro público. */
-export interface SignUpGuardian {
-  name: string;
-  /** WhatsApp em dígitos (DDI+DDD+número). */
-  whatsapp: string;
-  email: string;
-  relationship?: string;
-  /** true = o responsável autorizou o uso da imagem e dos dados do menor. */
-  consent: boolean;
+  password: string;
 }
