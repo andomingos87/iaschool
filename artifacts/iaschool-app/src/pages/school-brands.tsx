@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { School, MoreVertical, Pencil } from "lucide-react";
+import { School, MoreVertical, Pencil, AlertTriangle } from "lucide-react";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
 import {
   Card,
@@ -16,10 +16,20 @@ import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { SchoolBrandFormDialog } from "@/components/school-brand-form-dialog";
 import { useSchoolBrands } from "@/hooks/use-school-brands";
 import type { SchoolBrand } from "@/lib/data";
+import { maskCnpj, storedToMasked } from "@/lib/format";
+
+/** Linha "Cidade/UF" do endereço, quando houver o que mostrar. */
+function cityLine(b: SchoolBrand): string | null {
+  const city = b.address?.city?.trim();
+  const state = b.address?.state?.trim();
+  if (city && state) return `${city}/${state}`;
+  return city || state || null;
+}
 
 /**
- * Identidade visual das escolas de que a pessoa é membro. A escola em si
- * nasce na aprovação do cadastro (M1) — aqui só se edita nome, logo e cores.
+ * Cadastro das escolas de que a pessoa é membro: dados administrativos (CNPJ,
+ * endereço, contato) e identidade visual. A escola em si nasce na aprovação do
+ * cadastro (M1) — aqui ela é editada, nunca criada.
  */
 export default function SchoolBrandsPage() {
   const brands = useSchoolBrands();
@@ -34,8 +44,8 @@ export default function SchoolBrandsPage() {
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
-        title="Identidade da escola"
-        description="Logo e cores aplicados nas artes da sua escola."
+        title="Escola"
+        description="Dados de cadastro, logo e cores aplicados nas artes da sua escola."
       />
 
       {brands.isError ? (
@@ -97,6 +107,41 @@ export default function SchoolBrandsPage() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+
+                <dl className="mt-3 space-y-1 border-t border-border pt-3 text-xs">
+                  <div className="flex gap-2">
+                    <dt className="shrink-0 text-muted-foreground">CNPJ</dt>
+                    <dd
+                      className="truncate"
+                      data-testid={`text-school-brand-cnpj-${b.id}`}
+                    >
+                      {b.cnpj ? maskCnpj(b.cnpj) : "—"}
+                    </dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="shrink-0 text-muted-foreground">Cidade</dt>
+                    <dd className="truncate">{cityLine(b) ?? "—"}</dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="shrink-0 text-muted-foreground">Contato</dt>
+                    <dd className="truncate">
+                      {b.contact?.phone
+                        ? storedToMasked(b.contact.phone)
+                        : (b.contact?.email ?? "—")}
+                    </dd>
+                  </div>
+                </dl>
+
+                {!b.cnpj && (
+                  <p
+                    className="mt-3 flex items-start gap-2 border-t border-border pt-3 text-xs text-muted-foreground"
+                    data-testid={`text-school-brand-incomplete-${b.id}`}
+                  >
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                    Cadastro incompleto: informe CNPJ, endereço e contato antes do
+                    piloto.
+                  </p>
+                )}
 
                 {b.colors.length > 0 && (
                   <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">

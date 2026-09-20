@@ -23,16 +23,65 @@ import { Input } from "@workspace/iaschool-ui/components/ui/input";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
 import { Label } from "@workspace/iaschool-ui/components/ui/label";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
+import { Separator } from "@workspace/iaschool-ui/components/ui/separator";
 import { MultiUpload } from "@/components/multi-upload";
 import { ColorPicker } from "@/components/color-picker";
 import { useUpdateSchoolBrand } from "@/hooks/use-school-brands";
 import type { SchoolBrand, StoredImage } from "@/lib/data";
 import { BUCKETS } from "@/lib/constants";
+import {
+  isValidCnpj,
+  isValidWhatsapp,
+  maskCnpj,
+  maskWhatsapp,
+  maskZip,
+  onlyDigits,
+  storedToMasked,
+  whatsappToStored,
+} from "@/lib/format";
 
 const schema = z.object({
   name: z.string().min(2, "Informe o nome da escola"),
+  // CNPJ e contato são opcionais: a escola nasce na aprovação do cadastro, com
+  // nome apenas. Quando preenchidos, precisam ser válidos.
+  cnpj: z.string().refine(isValidCnpj, "CNPJ inválido"),
+  zip: z.string().optional(),
+  street: z.string().optional(),
+  number: z.string().optional(),
+  complement: z.string().optional(),
+  district: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  phone: z
+    .string()
+    .refine(
+      (v) => v.trim() === "" || isValidWhatsapp(v),
+      "Telefone inválido — use (11) 99999-9999",
+    ),
+  email: z
+    .string()
+    .refine(
+      (v) => v.trim() === "" || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v),
+      "E-mail inválido",
+    ),
+  responsible: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
+
+const EMPTY_VALUES: FormValues = {
+  name: "",
+  cnpj: "",
+  zip: "",
+  street: "",
+  number: "",
+  complement: "",
+  district: "",
+  city: "",
+  state: "",
+  phone: "",
+  email: "",
+  responsible: "",
+};
 
 interface Props {
   open: boolean;
@@ -55,17 +104,30 @@ export function SchoolBrandFormDialog({
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "" },
+    defaultValues: EMPTY_VALUES,
   });
 
   useEffect(() => {
     if (!open) return;
     if (brand) {
-      form.reset({ name: brand.name });
+      form.reset({
+        name: brand.name,
+        cnpj: brand.cnpj ? maskCnpj(brand.cnpj) : "",
+        zip: brand.address?.zip ? maskZip(brand.address.zip) : "",
+        street: brand.address?.street ?? "",
+        number: brand.address?.number ?? "",
+        complement: brand.address?.complement ?? "",
+        district: brand.address?.district ?? "",
+        city: brand.address?.city ?? "",
+        state: brand.address?.state ?? "",
+        phone: brand.contact?.phone ? storedToMasked(brand.contact.phone) : "",
+        email: brand.contact?.email ?? "",
+        responsible: brand.contact?.responsible ?? "",
+      });
       setLogo(brand.logo ? [brand.logo] : []);
       setColors(brand.colors ?? []);
     } else {
-      form.reset({ name: "" });
+      form.reset(EMPTY_VALUES);
       setLogo([]);
       setColors([]);
     }
@@ -76,10 +138,26 @@ export function SchoolBrandFormDialog({
 
   async function onSubmit(values: FormValues) {
     if (!brand) return;
+    const trimmed = (v?: string) => v?.trim() || undefined;
     const payload: Omit<SchoolBrand, "id" | "createdAt" | "updatedAt"> = {
       name: values.name.trim(),
       logo: logo[0],
       colors: colors.slice(0, 3),
+      cnpj: onlyDigits(values.cnpj) || undefined,
+      address: {
+        zip: onlyDigits(values.zip ?? "") || undefined,
+        street: trimmed(values.street),
+        number: trimmed(values.number),
+        complement: trimmed(values.complement),
+        district: trimmed(values.district),
+        city: trimmed(values.city),
+        state: trimmed(values.state)?.toUpperCase(),
+      },
+      contact: {
+        phone: values.phone.trim() ? whatsappToStored(values.phone) : undefined,
+        email: trimmed(values.email),
+        responsible: trimmed(values.responsible),
+      },
     };
     try {
       const saved = await update.mutateAsync({ id: brand.id, patch: payload });
@@ -101,7 +179,7 @@ export function SchoolBrandFormDialog({
         <DialogHeader>
           <DialogTitle>Editar escola</DialogTitle>
           <DialogDescription>
-            Defina o nome, o logo e até 3 cores usadas nas artes da escola.
+            Dados de cadastro da escola e a identidade visual usada nas artes.
           </DialogDescription>
         </DialogHeader>
 
@@ -125,6 +203,206 @@ export function SchoolBrandFormDialog({
               )}
             />
 
+            <FormField
+              control={form.control}
+              name="cnpj"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>CNPJ</FormLabel>
+                  <FormControl>
+                    <Input
+                      inputMode="numeric"
+                      placeholder="00.000.000/0000-00"
+                      data-testid="input-school-cnpj"
+                      value={field.value}
+                      onChange={(e) => field.onChange(maskCnpj(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <Separator />
+            <p className="text-sm font-medium">Endereço</p>
+            <div className="grid gap-4 sm:grid-cols-6">
+              <FormField
+                control={form.control}
+                name="zip"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>CEP</FormLabel>
+                    <FormControl>
+                      <Input
+                        inputMode="numeric"
+                        placeholder="00000-000"
+                        data-testid="input-school-zip"
+                        value={field.value ?? ""}
+                        onChange={(e) => field.onChange(maskZip(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="street"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-3">
+                    <FormLabel>Logradouro</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Rua, avenida…"
+                        data-testid="input-school-street"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="number"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Número</FormLabel>
+                    <FormControl>
+                      <Input data-testid="input-school-number" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="complement"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-3">
+                    <FormLabel>Complemento</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Bloco, sala…"
+                        data-testid="input-school-complement"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="district"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-3">
+                    <FormLabel>Bairro</FormLabel>
+                    <FormControl>
+                      <Input data-testid="input-school-district" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="city"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-4">
+                    <FormLabel>Cidade</FormLabel>
+                    <FormControl>
+                      <Input data-testid="input-school-city" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="state"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>UF</FormLabel>
+                    <FormControl>
+                      <Input
+                        maxLength={2}
+                        placeholder="SP"
+                        data-testid="input-school-state"
+                        value={field.value ?? ""}
+                        onChange={(e) =>
+                          field.onChange(
+                            e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase(),
+                          )
+                        }
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <Separator />
+            <p className="text-sm font-medium">Contato</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Telefone</FormLabel>
+                    <FormControl>
+                      <Input
+                        inputMode="numeric"
+                        placeholder="(11) 99999-9999"
+                        data-testid="input-school-phone"
+                        value={field.value}
+                        onChange={(e) => field.onChange(maskWhatsapp(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>E-mail</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="email"
+                        placeholder="secretaria@escola.com.br"
+                        data-testid="input-school-email"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="responsible"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>Responsável pela conta</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Direção, coordenação, secretaria…"
+                        data-testid="input-school-responsible"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <Separator />
             <div className="space-y-2">
               <Label>Logo da escola (uma imagem)</Label>
               <MultiUpload

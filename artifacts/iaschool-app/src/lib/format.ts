@@ -107,3 +107,45 @@ export function initials(name: string): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
+
+/** Aplica a máscara "00.000.000/0000-00" a partir de dígitos crus. */
+export function maskCnpj(value: string): string {
+  const d = onlyDigits(value).slice(0, 14);
+  let out = d.slice(0, 2);
+  if (d.length > 2) out += `.${d.slice(2, 5)}`;
+  if (d.length > 5) out += `.${d.slice(5, 8)}`;
+  if (d.length > 8) out += `/${d.slice(8, 12)}`;
+  if (d.length > 12) out += `-${d.slice(12, 14)}`;
+  return out;
+}
+
+/**
+ * Valida o CNPJ pelos dois dígitos verificadores. Vazio é válido: o CNPJ é
+ * opcional no cadastro da escola, mas quando informado tem que ser real.
+ */
+export function isValidCnpj(masked: string): boolean {
+  const d = onlyDigits(masked);
+  if (d.length === 0) return true;
+  if (d.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(d)) return false;
+  const digit = (slice: string): number => {
+    let weight = slice.length - 7;
+    let sum = 0;
+    for (let i = 0; i < slice.length; i++) {
+      sum += Number(slice[i]) * weight--;
+      if (weight < 2) weight = 9;
+    }
+    const mod = sum % 11;
+    return mod < 2 ? 0 : 11 - mod;
+  };
+  return (
+    digit(d.slice(0, 12)) === Number(d[12]) &&
+    digit(d.slice(0, 13)) === Number(d[13])
+  );
+}
+
+/** Aplica a máscara "00000-000" ao CEP. */
+export function maskZip(value: string): string {
+  const d = onlyDigits(value).slice(0, 8);
+  return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+}

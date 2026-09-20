@@ -300,6 +300,39 @@ describe("admin de rede (membro de A e de B) lê as duas", () => {
   });
 });
 
+describe("cadastro da escola: CNPJ, endereço e contato", () => {
+  it("school_admin grava os dados administrativos da própria escola", async () => {
+    const { status, rows } = await userUpdate(
+      schoolA, "schools", `id=eq.${schoolAId}`, {
+        cnpj: "11222333000181",
+        address: { zip: "01310100", street: "Av. Paulista", number: "1000", city: "São Paulo", state: "SP" },
+        contact: { phone: "5511988887777", email: "secretaria@escola-a.test", responsible: "Direção" },
+      },
+    );
+    expect(status).toBeLessThan(300);
+    expect(rows).toHaveLength(1);
+    const row = rows[0] as { cnpj: string; address: { city: string }; contact: { email: string } };
+    expect(row.cnpj).toBe("11222333000181");
+    expect(row.address.city).toBe("São Paulo");
+    expect(row.contact.email).toBe("secretaria@escola-a.test");
+  });
+
+  it("CNPJ é único: a escola B não repete o CNPJ da escola A", async () => {
+    const { status } = await userUpdate(
+      schoolB, "schools", `id=eq.${schoolBId}`, { cnpj: "11222333000181" },
+    );
+    // 409 (unique_violation) — é o erro que a camada de dados traduz em pt-BR.
+    expect(status).toBe(409);
+  });
+
+  it("escola B não edita o cadastro da escola A", async () => {
+    const { status, rows } = await userUpdate(
+      schoolB, "schools", `id=eq.${schoolAId}`, { cnpj: "99888777000166" },
+    );
+    if (status < 400) expect(rows).toHaveLength(0);
+  });
+});
+
 // Estado real do post no banco, lido com service role (bypassa RLS).
 async function adminGetPost(id: string): Promise<{ id: string; deleted_at: string | null } | undefined> {
   const resp = await adminRest(`generated_posts?id=eq.${id}&select=id,deleted_at`);

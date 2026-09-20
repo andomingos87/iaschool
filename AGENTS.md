@@ -29,7 +29,7 @@ alvo e o roadmap por fases.
 | Fase | Escopo | Estado |
 | --- | --- | --- |
 | 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
-| 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | 🔨 M1 no ar: migration aplicada, edge function republicada e 55 testes de integração verdes (20/09/2026); faltam dados da escola e séries/salas |
+| 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ✅ M1 concluído (20/09/2026): migration aplicada, OTP por responsável, telas de cadastro da escola e de turmas. Fase 1 completa (CSV, papel `dev`) segue aberta |
 | 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ❌ |
 | 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | ❌ |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
@@ -38,10 +38,12 @@ alvo e o roadmap por fases.
 O detalhe por item, com o que está feito e o que falta em cada fase, está em
 [`BACKLOG.md`](BACKLOG.md). Esta tabela é o resumo; o backlog é a fonte.
 
-**O que existe hoje** é o núcleo herdado da Fase 0: cadastro com aprovação,
-autenticação, conformidade ECA, cota de geração e geração **unitária** de arte
-(1 aluno por vez). Upload em massa, reconhecimento facial, `events`, `classes`
-e envio em lote **não existem, nem parcialmente**.
+**O que existe hoje**: o núcleo herdado da Fase 0 (cadastro com aprovação,
+autenticação, conformidade ECA, cota de geração e geração **unitária** de arte,
+1 aluno por vez) mais o M1 — escola como tenant, RLS por escola, responsáveis
+com OTP, cadastro da escola e turmas (`classes`) ligadas ao aluno. Upload em
+massa, reconhecimento facial, `events` e envio em lote **não existem, nem
+parcialmente**.
 
 Ao trabalhar aqui, diferencie sempre protótipo, código local, integração
 configurada e evidência de produção.

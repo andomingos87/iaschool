@@ -64,6 +64,7 @@ import {
 import { Label } from "@workspace/iaschool-ui/components/ui/label";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { PageHeader } from "@/components/app-shell";
+import { useClassLabels } from "@/hooks/use-classes";
 import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { StudentFormDialog } from "@/components/student-form-dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
@@ -103,6 +104,7 @@ export default function StudentsPage() {
   const [, navigate] = useLocation();
 
   const students = useStudents();
+  const classLabels = useClassLabels();
   const [tab, setTab] = useState<"active" | "trash">("active");
   const trashed = useTrashedStudents(tab === "trash");
   const moveToTrash = useMoveStudentsToTrash();
@@ -328,6 +330,9 @@ export default function StudentsPage() {
                   <p className="flex items-center gap-2">
                     <Phone className="size-3.5" /> {storedToMasked(s.whatsapp)}
                   </p>
+                  {s.classId && classLabels.get(s.classId) && (
+                    <p className="text-xs">{classLabels.get(s.classId)}</p>
+                  )}
                   {s.enrollmentNumber && (
                     <p className="text-xs">Matrícula {s.enrollmentNumber}</p>
                   )}
@@ -355,6 +360,7 @@ export default function StudentsPage() {
                 />
               </TableHead>
               <TableHead>Aluno</TableHead>
+              <TableHead className="hidden md:table-cell">Turma</TableHead>
               <TableHead className="hidden md:table-cell">Matrícula</TableHead>
               <TableHead className="hidden lg:table-cell">WhatsApp</TableHead>
               <TableHead className="hidden lg:table-cell">
@@ -410,6 +416,11 @@ export default function StudentsPage() {
                         )}
                       </div>
                     </div>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    {(s.classId && classLabels.get(s.classId)) ?? (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     {s.enrollmentNumber ?? (

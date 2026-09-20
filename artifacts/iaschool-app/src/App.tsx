@@ -20,6 +20,7 @@ import DashboardPage from '@/pages/dashboard';
 import StudentsPage from '@/pages/students';
 import StudentDetailPage from '@/pages/student-detail';
 import SchoolBrandsPage from '@/pages/school-brands';
+import ClassesPage from '@/pages/classes';
 import ReferencesPage from '@/pages/references';
 import GalleryPage from '@/pages/gallery';
 import GeneratePage from '@/pages/generate';
@@ -55,6 +56,7 @@ function Pages() {
       <Route path="/alunos" component={StudentsPage} />
       <Route path="/alunos/:id" component={StudentDetailPage} />
       <Route path="/escolas" component={SchoolBrandsPage} />
+      <Route path="/turmas" component={ClassesPage} />
       <Route path="/referencias" component={ReferencesPage} />
       <Route path="/galeria" component={GalleryPage} />
       {/* Rotas de super_admin */}

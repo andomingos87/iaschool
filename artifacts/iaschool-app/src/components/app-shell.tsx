@@ -7,6 +7,7 @@ import {
   School,
   Images,
   GalleryVerticalEnd,
+  GraduationCap,
   Sparkles,
   Settings2,
   LogOut,
@@ -98,7 +99,8 @@ const NAV: NavItem[] = [
   { href: "/gerar", label: "Criar arte", icon: Sparkles, highlight: true },
   { href: "/galeria", label: "Galeria", icon: GalleryVerticalEnd },
   { href: "/alunos", label: "Alunos", icon: Users },
-  { href: "/escolas", label: "Identidade da escola", icon: School },
+  { href: "/turmas", label: "Turmas", icon: GraduationCap },
+  { href: "/escolas", label: "Escola", icon: School },
   { href: "/referencias", label: "Modelos de arte", icon: Images },
 ];
 

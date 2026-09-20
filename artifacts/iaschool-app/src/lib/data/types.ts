@@ -120,10 +120,33 @@ export interface Student {
   deletedAt?: string;
 }
 
+/** Endereço da escola (`schools.address`, jsonb). Todos os campos opcionais. */
+export interface SchoolAddress {
+  /** CEP em dígitos, ex.: "01310100" */
+  zip?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  district?: string;
+  city?: string;
+  /** UF em duas letras, ex.: "SP" */
+  state?: string;
+}
+
+/** Contato institucional da escola (`schools.contact`, jsonb). */
+export interface SchoolContact {
+  /** Telefone em dígitos (DDI+DDD+número), mesmo formato do WhatsApp do aluno. */
+  phone?: string;
+  email?: string;
+  /** Pessoa responsável pela conta na escola (diretoria, coordenação). */
+  responsible?: string;
+}
+
 /**
- * Identidade visual de uma escola (logo + cores), aplicada nas artes geradas.
- * Desde o M1 é a própria linha de `schools`: `id` é o id do tenant, e só
- * aparecem as escolas de que a pessoa é membro.
+ * Cadastro da escola: identidade visual (logo + cores, aplicadas nas artes) e
+ * dados administrativos (CNPJ, endereço, contato). Desde o M1 é a própria
+ * linha de `schools`: `id` é o id do tenant, e só aparecem as escolas de que
+ * a pessoa é membro.
  */
 export interface SchoolBrand {
   id: string;
@@ -131,8 +154,78 @@ export interface SchoolBrand {
   logo?: StoredImage;
   /** exatamente até 3 cores hex, ex: ["#2563eb", "#2e2e2e", "#7e8a97"] */
   colors: string[];
+  /** CNPJ em dígitos (14). Único por escola no banco. */
+  cnpj?: string;
+  address?: SchoolAddress;
+  contact?: SchoolContact;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Séries atendidas. Lista fixa no app (decisão #6 do M1): no banco, `grade` é
+ * só uma coluna de texto em `classes`, sem enum nem tabela de domínio.
+ */
+export const GRADES = [
+  "EI",
+  "1EF",
+  "2EF",
+  "3EF",
+  "4EF",
+  "5EF",
+  "6EF",
+  "7EF",
+  "8EF",
+  "9EF",
+  "1EM",
+  "2EM",
+  "3EM",
+] as const;
+
+export type Grade = (typeof GRADES)[number];
+
+/** Rótulo em pt-BR de cada série, para telas e listas. */
+export const GRADE_LABEL: Record<Grade, string> = {
+  EI: "Educação Infantil",
+  "1EF": "1º ano — Fundamental",
+  "2EF": "2º ano — Fundamental",
+  "3EF": "3º ano — Fundamental",
+  "4EF": "4º ano — Fundamental",
+  "5EF": "5º ano — Fundamental",
+  "6EF": "6º ano — Fundamental",
+  "7EF": "7º ano — Fundamental",
+  "8EF": "8º ano — Fundamental",
+  "9EF": "9º ano — Fundamental",
+  "1EM": "1º ano — Médio",
+  "2EM": "2º ano — Médio",
+  "3EM": "3º ano — Médio",
+};
+
+export function isGrade(value: string): value is Grade {
+  return (GRADES as readonly string[]).includes(value);
+}
+
+/**
+ * Sala de aula (`classes`). A sala é a linha; a série é coluna (`grade`), e o
+ * ano letivo entra na chave: `unique (school_id, school_year, grade, name)`.
+ */
+export interface SchoolClass {
+  id: string;
+  schoolId: string;
+  /** Ano letivo, ex.: 2026. */
+  schoolYear: number;
+  grade: Grade;
+  /** Identificação da sala dentro da série: "A", "B", "Manhã". */
+  name: string;
+  /** Professor responsável (`auth.users`), quando definido. */
+  teacherId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Rótulo curto da sala, como aparece em listas: "3º ano — Fundamental · A". */
+export function classLabel(c: SchoolClass): string {
+  return `${GRADE_LABEL[c.grade] ?? c.grade} · ${c.name}`;
 }
 
 /** Post estático de Instagram usado como referência de estilo. */
