@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 18/09/2026
+**Atualizado em:** 20/09/2026
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -59,7 +59,10 @@ Detalhe completo no Anexo A da pivotagem. Typecheck, build e 84 testes unitário
 - [x] Adicionar `.playwright-mcp/` ao `.gitignore` (15/09/2026)
 - [x] Abrir PR de `pivot/fase-0` → `main`: [andomingos87/iaschool#1](https://github.com/andomingos87/iaschool/pull/1), 9 commits (18/09/2026)
 - [x] Apagar specs/planos divergentes (`docs/superpowers/`, memórias `.agents/memory/r9-*`) e corrigir Anexo B da pivotagem, cabeçalho da spec e memória de marca (15/09/2026)
-- [ ] Verificar se os Problemas 2 e 3 de `docs/diagnostico-geracao-imagens.md` (modo demo chamando backend sem token; erro real mascarado como falha de rede) foram corrigidos após o reprovisionamento do banco. O Problema 1 (projeto Supabase inexistente) foi superado pelo provisionamento de 30/08. Se corrigidos, marcar o diagnóstico como resolvido
+- [x] Verificar os Problemas 2 e 3 de `docs/diagnostico-geracao-imagens.md`: **persistem**, conferido no código em 20/09/2026 (`mock/index.ts:689`, `api-server/routes/generation.ts:79`, `openai-generation.ts:81`). O Problema 1 foi superado pelo provisionamento de 30/08. O diagnóstico fica como spec das correções abaixo (20/09/2026)
+- [ ] Geração em modo demo: decidir entre gerador mock (canvas) ou botão desabilitado com aviso; hoje chama o backend real sem token e falha sempre (`src/lib/data/mock/index.ts:689`)
+- [ ] `api-server`: drenar o corpo da requisição antes de responder em `requireSupabaseUser`, ou mover o multer para antes da auth (`routes/generation.ts:79`)
+- [ ] Cliente: tratar `onerror` do XHR sem afirmar que é a internet do usuário (`src/lib/data/openai-generation.ts:81`)
 
 ---
 
