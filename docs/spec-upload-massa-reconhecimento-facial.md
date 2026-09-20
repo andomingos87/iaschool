@@ -378,8 +378,12 @@ lê as duas; `user` sem vínculo não lê nada), antes do merge.
 A migration é `iaschool_fase1_schools_members_classes`, aplicada via
 `apply_migration` do MCP — o schema deste projeto muda por migration, nunca pelo
 SQL Editor. O SQL de referência correspondente
-(`artifacts/iaschool-app/supabase/fase1-min-schools-events.sql`) **ainda não
-existe**: nasce no mesmo commit da migration.
+(`artifacts/iaschool-app/supabase/fase1-min-schools-events.sql`) foi escrito em
+20/09/2026 e ainda **não foi aplicado**; o estado por item está no
+[`BACKLOG.md`](../BACKLOG.md), M1. Duas decisões de implementação que esta
+seção não previa: a escola migrada recebe `schools.id = uid` do perfil (mantém
+válido o prefixo `{uid}/` dos objetos já no Storage) e a aprovação de cadastro
+cria a escola e o vínculo por trigger, sem mudar a tela de aprovações.
 
 ---
 

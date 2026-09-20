@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 20/09/2026
+**Atualizado em:** 20/09/2026 (M1: camada de banco escrita, não aplicada)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -72,6 +72,8 @@ Nada aqui andou desde 30/08/2026. Enquanto #1–#7 não fecharem, vale a regra b
 
 ### Infra e cadastro (`docs/pendencias-producao.md`)
 
+- [!] **Projeto Supabase `jtyyauivokutperouqyh` fora do ar** (20/09/2026): o host não resolve em DNS (NXDOMAIN), o `SUPABASE_ACCESS_TOKEN` do `.env.local` devolve Unauthorized na CLI e no MCP, e o pooler não conhece o tenant. Provável projeto pausado/excluído de novo (mesmo sintoma de 30/08). Antes de qualquer passo do M1 no banco: restaurar ou recriar o projeto, gerar PAT novo em supabase.com/dashboard/account/tokens, atualizar `.env.local` (URL, chaves, `SUPABASE_ACCESS_TOKEN`, `DATABASE_URL`) e, se for projeto novo, reaplicar as 7 migrations de 30/08 antes da do M1. Branching devolve 403 (plano sem o recurso): o ensaio da migration precisa ser em projeto descartável ou no `supabase start` local (Docker instalado, daemon parado)
+
 - [ ] #1 Comprar domínio — bloqueia #2 e #3
 - [ ] #2 Assinar o Resend — bloqueia #3
 - [ ] #3 Confirmar domínio no Resend (SPF + DKIM, DMARC recomendado); configurar SMTP no Supabase; subir rate limits; cadastrar Redirect URLs — bloqueia #5
@@ -119,7 +121,7 @@ Pré-requisito de tudo: `photos` precisa de `event_id`, que precisa de `school_i
 > O prazo subiu de ~2 para 2–2,5 semanas: entraram `guardians`, a consolidação de
 > `clubs` e a migração do OTP do responsável, que não estavam orçados.
 
-- [ ] Migration `iaschool_fase1_schools_members_classes`, aplicada via `apply_migration` (nunca SQL Editor); SQL de referência `artifacts/iaschool-app/supabase/fase1-min-schools-events.sql` nasce no mesmo commit (ainda não existe)
+- [~] Migration `iaschool_fase1_schools_members_classes`: SQL de referência **escrito** em `artifacts/iaschool-app/supabase/fase1-min-schools-events.sql` (20/09/2026), **não aplicado** — banco fora do ar (ver Transversal). Decisão de implementação: escola migrada nasce com `schools.id = uid` do perfil, para o prefixo `{uid}/` dos objetos já no Storage continuar válido sem mover arquivo; a aprovação de cadastro cria escola + vínculo por trigger (`ensure_school_on_approval`), então a tela de aprovações não muda
   - [ ] `schools` (tenant real, **absorve `clubs`**: `name`, `cnpj`, `address`, `contact`, `logo`, `colors`, `plan`) e `school_members` (`school_admin`, `school_staff`, `teacher`)
   - [ ] `profiles.role` passa a papel **global**: `dev`, `super_admin`, `user`; vínculo com escola só por `school_members`. `is_super_admin()` passa a valer para `dev` e `super_admin`; `is_dev()` novo
   - [ ] `classes` = sala, com série como coluna: `school_year`, `grade` (lista fixa no app: EI, 1EF…9EF, 1EM…3EM), `name`, `teacher_id`; `unique (school_id, school_year, grade, name)`
@@ -127,11 +129,21 @@ Pré-requisito de tudo: `photos` precisa de `event_id`, que precisa de `school_i
   - [ ] `students.school_id`, `students.class_id`, `students.enrollment_number` (único por escola quando preenchido, chave da importação CSV), `students.primary_guardian_id` + índices
   - [ ] `events` com `status`, `keep_originals`, `photo_retention_until`, `image_rights_declared_at/by`
   - [ ] Helper `is_member_of(uuid)` **puro** (sem `is_super_admin()` embutido; as policies escrevem `is_member_of(school_id) or is_super_admin()`) e `is_dev()`. **Não** reaproveitar `my_school_id()` (colisão com o modelo antigo) e **não criar `active_school_id()`**: com `limit 1` ela quebra para admin de várias escolas; a escola "atual" é escolha de UI
-- [ ] Migração de dados `owner_id` → `school_id` (spec §4.7): uma `schools` por perfil `school_user` (dados de `clubs` copiados para a mesma linha); membro como `school_admin`; `students.school_id` preenchido; `students.guardian` (jsonb) → linha em `guardians`, deduplicada por `(school_id, whatsapp)`; `owner_id` vira coluna de auditoria
-- [ ] **Refazer o OTP do responsável no novo modelo** (spec §4.7, item 8) — hoje `guardian_verification_codes` é chaveada por `student_id`, `confirm_guardian_code` autoriza por `owner_id = auth.uid()` e escreve em `students.guardian`, e a edge function `send-guardian-code` segue a mesma chave. Os três passam a operar por `guardian_id`, com autorização por `is_member_of(guardians.school_id) or is_super_admin()`, gravando `guardians.whatsapp_verified_at`. Republicar a edge function e estender `tests/guardian-verification.integration.test.ts` (7 testes). **Sem isto a migração quebra o único fluxo de conformidade que já está no ar**
-- [ ] Trocar policies de `students`, `reference_posts`, `generated_posts` e dos buckets para `is_member_of(school_id) or is_super_admin()`; `dev`/`super_admin` continuam vendo tudo
-- [ ] Ensaiar a migração numa branch do Supabase e rodar `tests/rls.integration.test.ts` estendido (membro de A não lê B; admin de A e B lê as duas; `user` sem vínculo não lê nada) antes do merge
-- [ ] Ajustar hooks/repositórios do app (`src/lib/data/supabase/`) para o modelo por escola, com seletor de escola atual para quem é membro de mais de uma
+- [~] Migração de dados `owner_id` → `school_id` (spec §4.7) — escrita na seção 4 do mesmo SQL; não executada: uma `schools` por perfil `school_user` (dados de `clubs` copiados para a mesma linha); membro como `school_admin`; `students.school_id` preenchido; `students.guardian` (jsonb) → linha em `guardians`, deduplicada por `(school_id, whatsapp)`; `owner_id` vira coluna de auditoria
+- [~] **Refazer o OTP do responsável no novo modelo** (spec §4.7, item 8) — SQL (seção 8: `guardian_verification_codes.guardian_id`, `confirm_guardian_code(p_guardian_id, p_code)`, trigger que impede carimbar `whatsapp_verified_at` fora da RPC e zera ao trocar o número), edge function reescrita (aceita `guardianId` ou `studentId`, autoriza por `school_members`) e `tests/guardian-verification.integration.test.ts` reescrito com 12 casos. Nada rodou nem foi republicado — hoje `guardian_verification_codes` é chaveada por `student_id`, `confirm_guardian_code` autoriza por `owner_id = auth.uid()` e escreve em `students.guardian`, e a edge function `send-guardian-code` segue a mesma chave. Os três passam a operar por `guardian_id`, com autorização por `is_member_of(guardians.school_id) or is_super_admin()`, gravando `guardians.whatsapp_verified_at`. Republicar a edge function e estender `tests/guardian-verification.integration.test.ts` (7 testes). **Sem isto a migração quebra o único fluxo de conformidade que já está no ar**
+- [~] Trocar policies de `students`, `reference_posts`, `generated_posts` e dos buckets — escritas (seções 5 e 6); `reference_posts` e `generated_posts` ganharam `school_id`; Storage valida o 1º segmento como uuid de escola via `storage_school_id()` para `is_member_of(school_id) or is_super_admin()`; `dev`/`super_admin` continuam vendo tudo
+- [~] Ensaiar a migração e rodar `tests/rls.integration.test.ts` **reescrito** para o modelo por escola (pendente, recusado, órfão sem escola, isolamento A/B em 11 tabelas, admin de rede em A e B, lixeira, prefixo de Storage) — teste escrito e tipado, não executado; branch indisponível (403), ver Transversal (membro de A não lê B; admin de A e B lê as duas; `user` sem vínculo não lê nada) antes do merge
+- [ ] Ajustar hooks/repositórios do app (`src/lib/data/supabase/`) para o modelo por escola, com seletor de escola atual para quem é membro de mais de uma. **A migration não pode ser aplicada antes disto**, senão o app quebra. Pontos mapeados em 20/09/2026:
+  - [ ] `types.ts`: `UserRole` = `dev | super_admin | user`; `AppUser` perde `schoolId`/`studentRecordId` e ganha `schools: {id, name, role}[]` (RPC `my_schools`) + escola ativa
+  - [ ] `supabase/index.ts` `loadProfile`: parar de selecionar `school_id, student_record_id`; chamar `my_schools()`
+  - [ ] `signUp`: só `kind: "school"`, metadado `signup_role: "school"`; remover `listApprovedSchools` do contrato e do mock
+  - [ ] `storage.upload`: prefixo passa de `uid` para `school_id` ativo
+  - [ ] `students`: `create` grava `school_id`; `toStudent`/`fromStudent` compõem `guardian` a partir de `guardians!primary_guardian_id` e fazem upsert em `guardians` quando nome/WhatsApp mudam; `guardian.whatsappVerifiedAt` passa a vir de `guardians.whatsapp_verified_at`
+  - [ ] `guardianVerification.confirmCode(studentId, code)`: resolver `primaryGuardianId` e chamar `confirm_guardian_code(p_guardian_id)`; `requestCode` já é compatível (função aceita `studentId`)
+  - [ ] `schoolBrands` → ler/escrever em `schools` (logo, colors) em vez de `clubs`; `students.club_id` deixa de existir na UI
+  - [ ] `approvals.listPending`: parar de selecionar `school_id, student_record_id, age_bracket, guardian_name, guardian_consent`; remover `listLinkableStudentAccounts`, `linkStudentAccount`, `listLinkedStudentRecordIds`, `listStudentAccounts`, `listLinkedStudentAccounts`, `unlinkStudentAccount` do contrato, do Supabase e do mock
+  - [ ] `mock/index.ts` e `mock/seed.ts`: mesmos papéis e mesmo modelo (`schools`, `school_members`, `guardians`)
+  - [ ] Checagens `role === "super_admin"` em `App.tsx`, `app-shell.tsx`, `gallery.tsx`, `students.tsx`, `student-detail.tsx` passam a aceitar `dev` também
 - [ ] Telas: cadastro de escola (dados + identidade, substitui `/escolas`), séries/salas, e ficha do aluno com nome, matrícula, sala, responsável e WhatsApp. Os dois toggles de consentimento (foto e envio por WhatsApp) e a foto de referência entram no M4, porque gravam em `authorizations`
 - [ ] Aposentar o autocadastro de aluno (decisão #2): menor de 16 não deve ter conta própria (Lei 15.211/2025, art. 24). Saem `role = 'student'`, `list_approved_schools()`, `my_school_id()`, `profiles.school_id`, `profiles.student_record_id`, `student-area.tsx` e o ramo de aluno de `signup.tsx`; a constraint de `profiles` que exige responsável autorizado para conta de criança perde o objeto — revisar `src/lib/eca.ts` no mesmo passo
 - [ ] Atualizar `SUPABASE.md` e a tabela de fases de `AGENTS.md` ao fechar (a spec §4 já foi atualizada em 16/09/2026)
