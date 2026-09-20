@@ -12,6 +12,7 @@ import {
 import type {
   ApprovalRepository,
   AuthService,
+  ClassRepository,
   SchoolBrandRepository,
   DataLayer,
   GeneratedPostRepository,
@@ -24,7 +25,11 @@ import type {
 } from "../contract";
 import type {
   AppUser,
+  Grade,
+  SchoolAddress,
   SchoolBrand,
+  SchoolClass,
+  SchoolContact,
   SchoolMembership,
   GeneratedPost,
   PendingRegistration,
@@ -87,6 +92,22 @@ async function edgeFunctionMessage(
 }
 
 /** Erro de lixeira com dica quando a migração ainda não foi aplicada. */
+/**
+ * `unique (school_id, school_year, grade, name)` em `classes`: o banco é a
+ * autoridade sobre duplicidade (não a tela), então traduzimos o 23505.
+ */
+function failDuplicateClass(
+  context: string,
+  error: { message: string; code?: string } | null,
+): never {
+  if (error?.code === "23505") {
+    throw new Error(
+      "Já existe uma turma com essa série, nome e ano letivo nesta escola.",
+    );
+  }
+  fail(context, error);
+}
+
 function failTrash(
   context: string,
   error: { message: string; code?: string } | null,
@@ -215,6 +236,9 @@ function toSchoolBrand(r: Row): SchoolBrand {
     name: r["name"] as string,
     logo: (r["logo"] as StoredImage | null) ?? undefined,
     colors: (r["colors"] as string[] | null) ?? [],
+    cnpj: (r["cnpj"] as string | null) ?? undefined,
+    address: (r["address"] as SchoolAddress | null) ?? undefined,
+    contact: (r["contact"] as SchoolContact | null) ?? undefined,
     createdAt: r["created_at"] as string,
     updatedAt: r["updated_at"] as string,
   };
@@ -225,6 +249,42 @@ function fromSchoolBrand(p: Partial<Omit<SchoolBrand, "id">>): Row {
   if ("name" in p) r["name"] = p.name;
   if ("logo" in p) r["logo"] = p.logo ?? null;
   if ("colors" in p) r["colors"] = p.colors ?? [];
+  // CNPJ tem unique no banco: string vazia viraria uma segunda escola "com
+  // CNPJ vazio" e estouraria a chave na terceira. Vazio grava null.
+  if ("cnpj" in p) r["cnpj"] = p.cnpj?.replace(/\D/g, "") || null;
+  if ("address" in p) r["address"] = emptyToNull(p.address);
+  if ("contact" in p) r["contact"] = emptyToNull(p.contact);
+  return r;
+}
+
+/** jsonb só com campos vazios vira null — evita `{}` ocupando a coluna. */
+function emptyToNull<T extends object>(value: T | undefined): T | null {
+  if (!value) return null;
+  const filled = Object.values(value).some(
+    (v) => typeof v === "string" && v.trim() !== "",
+  );
+  return filled ? value : null;
+}
+
+function toSchoolClass(r: Row): SchoolClass {
+  return {
+    id: r["id"] as string,
+    schoolId: r["school_id"] as string,
+    schoolYear: r["school_year"] as number,
+    grade: r["grade"] as Grade,
+    name: r["name"] as string,
+    teacherId: (r["teacher_id"] as string | null) ?? undefined,
+    createdAt: r["created_at"] as string,
+    updatedAt: r["updated_at"] as string,
+  };
+}
+
+function fromSchoolClass(p: Partial<Omit<SchoolClass, "id">>): Row {
+  const r: Row = {};
+  if ("schoolYear" in p) r["school_year"] = p.schoolYear;
+  if ("grade" in p) r["grade"] = p.grade;
+  if ("name" in p) r["name"] = p.name?.trim();
+  if ("teacherId" in p) r["teacher_id"] = p.teacherId ?? null;
   return r;
 }
 
@@ -901,7 +961,8 @@ export function createSupabaseDataLayer(): DataLayer {
 
   // Identidade visual = a própria escola (tabela `schools`, M1). A RLS já
   // limita às escolas de que a pessoa é membro.
-  const SCHOOL_SELECT = "id, name, logo, colors, created_at, updated_at";
+  const SCHOOL_SELECT =
+    "id, name, logo, colors, cnpj, address, contact, created_at, updated_at";
   const schoolBrands: SchoolBrandRepository = {
     async list() {
       const { data, error } = await supabase
@@ -930,9 +991,67 @@ export function createSupabaseDataLayer(): DataLayer {
         .eq("id", id)
         .select(SCHOOL_SELECT)
         .single();
-      if (error) fail("Falha ao atualizar escola", error);
+      if (error) {
+        // `schools.cnpj` é unique: outra escola já cadastrou este CNPJ.
+        if (error.code === "23505") {
+          throw new Error("Este CNPJ já está cadastrado em outra escola.");
+        }
+        fail("Falha ao atualizar escola", error);
+      }
       profileCache.clear(); // o nome da escola aparece no seletor da sessão
       return toSchoolBrand(data);
+    },
+  };
+
+  // Salas (`classes`). A RLS já limita às escolas de que a pessoa é membro;
+  // o filtro por escola aqui é da interface (escola ativa), não de segurança.
+  const CLASS_SELECT =
+    "id, school_id, school_year, grade, name, teacher_id, created_at, updated_at";
+  const classes: ClassRepository = {
+    async list(schoolId) {
+      let query = supabase.from("classes").select(CLASS_SELECT);
+      if (schoolId) query = query.eq("school_id", schoolId);
+      const { data, error } = await query
+        .order("school_year", { ascending: false })
+        .order("grade", { ascending: true })
+        .order("name", { ascending: true });
+      if (error) fail("Falha ao listar turmas", error);
+      return (data ?? []).map(toSchoolClass);
+    },
+    async get(id) {
+      const { data, error } = await supabase
+        .from("classes")
+        .select(CLASS_SELECT)
+        .eq("id", id)
+        .maybeSingle();
+      if (error) fail("Falha ao carregar turma", error);
+      return data ? toSchoolClass(data) : null;
+    },
+    async create(input) {
+      const schoolId = await requireActiveSchool(input.schoolId);
+      const { data, error } = await supabase
+        .from("classes")
+        .insert({ ...fromSchoolClass(input), school_id: schoolId })
+        .select(CLASS_SELECT)
+        .single();
+      if (error) failDuplicateClass("Falha ao criar turma", error);
+      return toSchoolClass(data);
+    },
+    async update(id, patch) {
+      const { data, error } = await supabase
+        .from("classes")
+        .update({ ...fromSchoolClass(patch), updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select(CLASS_SELECT)
+        .single();
+      if (error) failDuplicateClass("Falha ao atualizar turma", error);
+      return toSchoolClass(data);
+    },
+    async delete(id) {
+      // `students.class_id` é `on delete set null`: os alunos ficam sem turma,
+      // não somem junto.
+      const { error } = await supabase.from("classes").delete().eq("id", id);
+      if (error) fail("Falha ao excluir turma", error);
     },
   };
 
@@ -1366,6 +1485,7 @@ export function createSupabaseDataLayer(): DataLayer {
     storage,
     students,
     schoolBrands,
+    classes,
     references,
     generatedPosts,
     promptTemplate,

@@ -5,6 +5,7 @@
 import type {
   ApprovalRepository,
   AuthService,
+  ClassRepository,
   SchoolBrandRepository,
   DataLayer,
   GeneratedPostRepository,
@@ -19,6 +20,7 @@ import type {
 import type {
   AppUser,
   SchoolBrand,
+  SchoolClass,
   GeneratedPost,
   PendingRegistration,
   PromptTemplateSetting,
@@ -425,6 +427,84 @@ const schoolBrands: SchoolBrandRepository = {
   },
 };
 
+const classesCrud = makeCrud<SchoolClass>("classes");
+
+/** Mesma chave do banco: `unique (school_id, school_year, grade, name)`. */
+function classKey(c: {
+  schoolId: string;
+  schoolYear: number;
+  grade: string;
+  name: string;
+}): string {
+  return [c.schoolId, c.schoolYear, c.grade, c.name.trim().toLowerCase()].join("|");
+}
+
+const classes: ClassRepository = {
+  async list(schoolId) {
+    const session = currentSession();
+    return (await classesCrud.list())
+      .filter((c) => canSee(session, c.schoolId))
+      .filter((c) => !schoolId || c.schoolId === schoolId)
+      .sort(
+        (a, b) =>
+          b.schoolYear - a.schoolYear ||
+          a.grade.localeCompare(b.grade) ||
+          a.name.localeCompare(b.name),
+      );
+  },
+  async get(id) {
+    const c = await classesCrud.get(id);
+    return c && canSee(currentSession(), c.schoolId) ? c : null;
+  },
+  async create(input) {
+    const session = currentSession();
+    const schoolId = input.schoolId ?? session?.activeSchoolId;
+    if (!schoolId) {
+      throw new Error(
+        isPlatformAdmin(session?.user.role)
+          ? "Selecione a escola em que este registro deve ser criado."
+          : "Sua conta ainda não está vinculada a uma escola.",
+      );
+    }
+    const next = { ...input, schoolId, name: input.name.trim() };
+    const existing = readCollection<SchoolClass>("classes", []);
+    if (existing.some((c) => classKey(c) === classKey(next))) {
+      throw new Error(
+        "Já existe uma turma com essa série, nome e ano letivo nesta escola.",
+      );
+    }
+    return classesCrud.create(next as unknown as Record<string, unknown>);
+  },
+  async update(id, patch) {
+    const current = await classesCrud.get(id);
+    if (!current) throw new Error("Registro não encontrado");
+    const next = {
+      ...current,
+      ...patch,
+      name: (patch.name ?? current.name).trim(),
+    };
+    const clash = readCollection<SchoolClass>("classes", []).some(
+      (c) => c.id !== id && classKey(c) === classKey(next),
+    );
+    if (clash) {
+      throw new Error(
+        "Já existe uma turma com essa série, nome e ano letivo nesta escola.",
+      );
+    }
+    return classesCrud.update(id, { ...patch, name: next.name });
+  },
+  async delete(id) {
+    await classesCrud.delete(id);
+    // Espelha `on delete set null` em students.class_id: o aluno perde a
+    // turma, não o cadastro.
+    const students = readCollection<OwnedStudent>("students", []);
+    const touched = students.map((s) =>
+      s.classId === id ? { ...s, classId: undefined } : s,
+    );
+    writeCollection("students", touched);
+  },
+};
+
 const referencesCrud = makeCrud<ReferencePost>("references");
 const references: ReferenceRepository = {
   list: () => referencesCrud.list(),
@@ -705,6 +785,7 @@ export function createMockDataLayer(): DataLayer {
     storage,
     students,
     schoolBrands,
+    classes,
     references,
     generatedPosts,
     promptTemplate,

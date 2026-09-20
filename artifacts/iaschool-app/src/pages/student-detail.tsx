@@ -46,6 +46,7 @@ import {
 import { Label } from "@workspace/iaschool-ui/components/ui/label";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { PageHeader } from "@/components/app-shell";
+import { useClassLabels } from "@/hooks/use-classes";
 import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { StudentFormDialog } from "@/components/student-form-dialog";
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -79,6 +80,7 @@ export default function StudentDetailPage() {
   const isAdmin = isPlatformAdmin(session?.user.role);
 
   const student = useStudent(id);
+  const classLabels = useClassLabels();
   const schoolBrands = useSchoolBrands();
   const posts = useGeneratedPosts();
   const moveToTrash = useMoveStudentsToTrash();
@@ -386,6 +388,14 @@ export default function StudentDetailPage() {
                 )}
               </div>
             )}
+            <div className="border-t border-border pt-3">
+              <p className="mb-1 text-muted-foreground">Turma</p>
+              <p data-testid="text-student-class">
+                {(s.classId && classLabels.get(s.classId)) || (
+                  <span className="text-muted-foreground">Sem turma</span>
+                )}
+              </p>
+            </div>
             {s.enrollmentNumber && (
               <div className="border-t border-border pt-3">
                 <p className="mb-1 text-muted-foreground">Matrícula</p>

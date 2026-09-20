@@ -6,6 +6,7 @@ export const qk = {
   student: (id: string) => ["students", id] as const,
   schoolBrands: ["school-brands"] as const,
   schoolBrand: (id: string) => ["school-brands", id] as const,
+  classes: (schoolId?: string) => ["classes", schoolId ?? "all"] as const,
   references: ["references"] as const,
   generatedPosts: ["generated-posts"] as const,
   generatedPostsTrash: ["generated-posts", "trash"] as const,

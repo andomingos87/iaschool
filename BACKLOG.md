@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 20/09/2026 (M1 fechado: migration aplicada, edge function republicada, 55 testes de integração verdes)
+**Atualizado em:** 20/09/2026 (M1 fechado por completo: banco + telas de escola e turmas; 145 testes verdes)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -23,7 +23,7 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 | --- | --- | --- | --- |
 | 0 — Descontaminação | — | ✅ concluída (30/08/2026) | — |
 | Transversal — produção e conformidade | pendências #1–#7 | ❌ nenhum item andou | depende de compra de domínio/Resend/Meta |
-| 1 — Fundação escolar | M1 (mínima) + Fase 1 completa | 🚧 **M1 no ar** (migration aplicada em 20/09/2026); faltam dados da escola e séries/salas | 2–2,5 sem (M1) |
+| 1 — Fundação escolar | M1 (mínima) + Fase 1 completa | ✅ **M1 concluído** (20/09/2026); Fase 1 completa (CSV, papel `dev`, professor da turma) segue aberta | 2–2,5 sem (M1) |
 | 2 — Upload em massa | M2, M3 | ❌ | 3,5 sem |
 | 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito, código zero | 6 sem |
 | 4 — Autorização granular + portal | — | ❌ sem spec | 2–3 sem |
@@ -140,14 +140,20 @@ Pré-requisito de tudo: `photos` precisa de `event_id`, que precisa de `school_i
   - [x] `supabase/index.ts`: perfil + `my_schools()`, `setActiveSchool`, `signUp` só escola, upload com prefixo da escola ativa, `students` com embed de `guardians` e upsert por (escola, número), `schoolBrands` em `schools`, `school_id` em artes e referências, `confirmCode` por `guardian_id`, aprovações sem vínculo de conta (20/09/2026)
   - [x] `mock/index.ts` e `mock/seed.ts` no mesmo modelo, tolerando sessão gravada antes do M1 (20/09/2026)
   - [x] Checagens de papel de plataforma via `isPlatformAdmin` (aceita `dev`) em `App.tsx`, `app-shell.tsx`, `students.tsx`, `student-detail.tsx`; `gallery.tsx` ainda usa `role === "super_admin"` (só esconde ações de admin; corrigir quando o papel `dev` for usado de fato) (20/09/2026)
-- [~] Telas: identidade da escola virou só edição (a escola nasce na aprovação); ficha do aluno ganhou **matrícula** e perdeu o seletor de escola; seletor de escola ativa no topo para quem é membro de mais de uma. **Faltam**: cadastro dos dados da escola (CNPJ, endereço, contato) e séries/salas (`classes`, `students.class_id`). Os dois toggles de consentimento (foto e envio por WhatsApp) e a foto de referência entram no M4, porque gravam em `authorizations`
+- [x] Telas: identidade da escola virou só edição (a escola nasce na aprovação); ficha do aluno ganhou **matrícula** e perdeu o seletor de escola; seletor de escola ativa no topo para quem é membro de mais de uma (20/09/2026). Os dois toggles de consentimento (foto e envio por WhatsApp) e a foto de referência entram no M4, porque gravam em `authorizations`
+  - [x] **Cadastro da escola** (`/escolas`, agora "Escola"): CNPJ com máscara e validação dos dígitos verificadores, endereço (CEP, logradouro, número, complemento, bairro, cidade, UF) e contato (telefone, e-mail, responsável). `schools.address`/`contact` são jsonb; jsonb só com campos vazios grava null, e CNPJ vazio grava null para não estourar o unique. O cartão mostra CNPJ, cidade e contato, com aviso de "cadastro incompleto" enquanto não houver CNPJ. O 23505 do CNPJ vira "Este CNPJ já está cadastrado em outra escola" (20/09/2026)
+  - [x] **Turmas** (`/turmas`): CRUD de `classes` agrupado por ano letivo, série em lista fixa no app (`GRADES`/`GRADE_LABEL` em `types.ts`), contagem de alunos por sala e aviso de "N alunos ainda estão sem turma". A duplicata de (ano letivo, série, nome) é recusada no mock e no banco (unique 23505), com a mesma mensagem. Excluir a turma deixa o aluno sem turma (`on delete set null`), nunca apaga o cadastro (20/09/2026)
+  - [x] **`students.class_id` ligado**: seletor de turma na ficha do aluno (turmas da escola do aluno, não da ativa), coluna "Turma" na lista e linha "Turma" na ficha (20/09/2026)
+  - [x] Camada de dados: `ClassRepository` no contrato, com implementação Supabase e mock; `SchoolBrand` ganhou `cnpj`, `address` e `contact` (20/09/2026)
+  - [x] Verificado: typecheck do workspace, 145 testes (87 unitários — 6 novos de `classes` no mock —, 46 de RLS — 3 novos do cadastro da escola — e 12 do OTP) e o fluxo no navegador em modo demo: criar turma, vincular a aluna demo, ver a contagem virar "1 aluno", gravar CNPJ/cidade/telefone e ver o CNPJ inválido ser recusado (20/09/2026)
 - [x] Aposentar o autocadastro de aluno (decisão #2): saíram `role = 'student'`, `list_approved_schools()`, `my_school_id()`, `profiles.school_id`, `profiles.student_record_id`, `student-area.tsx`, `link-student-account-dialog.tsx`, o ramo de aluno de `signup.tsx` e o usuário demo "aluno". `src/lib/eca.ts` mantém `requiresGuardianAccount`/`AGE_ACCOUNT_LINK` (sem uso de produto, cobertos por teste) para a Fase 4 (20/09/2026)
-- [~] Atualizar `SUPABASE.md` ✅ (20/09/2026) e a tabela de fases de `AGENTS.md` ao fechar (a spec §4 já foi atualizada em 16/09/2026)
+- [x] Atualizar `SUPABASE.md` e a tabela de fases de `AGENTS.md` (20/09/2026; a spec §4 já tinha sido atualizada em 16/09/2026)
 - [x] **Migration aplicada** (`iaschool_fase1_schools_members_classes` via MCP), edge function `send-guardian-code` republicada (versão 2, modelo por `guardian_id`) e os dois testes de integração rodados contra o projeto: `tests/rls.integration.test.ts` (43 casos) e `tests/guardian-verification.integration.test.ts` (12 casos), todos verdes. Duas correções saíram daí: o `afterAll` do teste do OTP não apagava as escolas criadas pela aprovação (`schools.id` é o uid, sem FK para `auth.users`, então não cascateia) e as funções `storage_school_id`/`touch_updated_at` nasceram sem `search_path` fixo (migration `iaschool_fase1_fix_function_search_path`; o SQL de referência também foi corrigido) (20/09/2026)
 
 ### Fase 1 completa (fora do M1, sem prazo)
 
 - [ ] Importação de lista de alunos e responsáveis (CSV), casando por `enrollment_number`
+- [ ] Professor responsável pela turma (`classes.teacher_id`): a coluna e o campo no domínio existem desde o M1, mas a tela não os expõe — falta listar os membros da escola (`school_members`), que hoje não tem repositório no app
 - [ ] Remover a tabela `clubs` depois de um ciclo com `schools` estável (a consolidação em si entrou no M1; `my_school_id()` já morre no M1 com o autocadastro de aluno)
 - [ ] Papel `dev`: telas de manutenção (`face_recognition_settings`, `prompt_settings`, expurgo manual, logs técnicos) — o papel nasce no M1, as telas podem vir depois
 

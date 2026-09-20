@@ -18,6 +18,7 @@ import type {
   PromptTemplateVersion,
   ReferencePost,
   SchoolBrand,
+  SchoolClass,
   Session,
   ShareLog,
   SignUpInput,
@@ -149,6 +150,37 @@ export interface SchoolBrandRepository {
   ): Promise<SchoolBrand>;
 }
 
+/** Dados para criar uma sala; `schoolId` ausente = escola ativa da sessão. */
+export type SchoolClassInput = Omit<
+  SchoolClass,
+  "id" | "createdAt" | "updatedAt" | "schoolId"
+> & { schoolId?: string };
+
+/**
+ * Salas da escola (`classes`). A sala é a linha e a série é coluna; a chave
+ * `unique (school_id, school_year, grade, name)` é validada no banco e
+ * reportada em pt-BR aqui.
+ */
+export interface ClassRepository {
+  /**
+   * Salas das escolas da pessoa, da mais recente para a mais antiga em ano
+   * letivo. `schoolId` restringe a uma escola; sem ele vêm todas as visíveis.
+   */
+  list(schoolId?: string): Promise<SchoolClass[]>;
+  get(id: string): Promise<SchoolClass | null>;
+  /** Cria na escola ativa (ou na informada). */
+  create(input: SchoolClassInput): Promise<SchoolClass>;
+  update(
+    id: string,
+    patch: Partial<Omit<SchoolClass, "id" | "schoolId">>,
+  ): Promise<SchoolClass>;
+  /**
+   * Remove a sala. Alunos vinculados não são apagados: `students.class_id`
+   * vira nulo (`on delete set null`), e eles voltam para "sem turma".
+   */
+  delete(id: string): Promise<void>;
+}
+
 export interface ReferenceRepository {
   list(): Promise<ReferencePost[]>;
   create(input: Omit<ReferencePost, "id" | "createdAt">): Promise<ReferencePost>;
@@ -251,6 +283,7 @@ export interface DataLayer {
   storage: StorageService;
   students: StudentRepository;
   schoolBrands: SchoolBrandRepository;
+  classes: ClassRepository;
   references: ReferenceRepository;
   generatedPosts: GeneratedPostRepository;
   promptTemplate: PromptTemplateRepository;

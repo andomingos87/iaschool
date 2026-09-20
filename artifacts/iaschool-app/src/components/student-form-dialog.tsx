@@ -24,9 +24,18 @@ import { Textarea } from "@workspace/iaschool-ui/components/ui/textarea";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
 import { Label } from "@workspace/iaschool-ui/components/ui/label";
 import { Checkbox } from "@workspace/iaschool-ui/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/iaschool-ui/components/ui/select";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { MultiUpload } from "@/components/multi-upload";
 import { useCreateStudent, useUpdateStudent } from "@/hooks/use-students";
+import { useClasses } from "@/hooks/use-classes";
+import { GRADE_LABEL } from "@/lib/data";
 import type { Student, StoredImage, StudentInput } from "@/lib/data";
 import { BUCKETS } from "@/lib/constants";
 import { ageBracket, AGE_BRACKET_LABEL, requiresGuardianConsent } from "@/lib/eca";
@@ -39,6 +48,9 @@ import {
   storedToMasked,
   whatsappToStored,
 } from "@/lib/format";
+
+/** Radix Select não aceita valor vazio; "sem turma" precisa de um sentinela. */
+const NO_CLASS = "__none__";
 
 /**
  * A data de nascimento passa a ser obrigatória: é ela que define qual proteção
@@ -58,6 +70,7 @@ const schema = z
       ),
     notes: z.string().optional(),
     enrollmentNumber: z.string().optional(),
+    classId: z.string().optional(),
     guardianName: z.string().optional(),
     guardianWhatsapp: z.string().optional(),
     guardianEmail: z.string().optional(),
@@ -96,6 +109,7 @@ const EMPTY_VALUES: FormValues = {
   birthDate: "",
   notes: "",
   enrollmentNumber: "",
+  classId: NO_CLASS,
   guardianName: "",
   guardianWhatsapp: "",
   guardianEmail: "",
@@ -143,6 +157,8 @@ interface Props {
 export function StudentFormDialog({ open, onOpenChange, student }: Props) {
   const create = useCreateStudent();
   const update = useUpdateStudent();
+  // Ao editar, as turmas são as da escola do aluno (pode não ser a ativa).
+  const classes = useClasses(student?.schoolId);
   const [photos, setPhotos] = useState<StoredImage[]>([]);
 
   const form = useForm<FormValues>({
@@ -159,6 +175,7 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
         birthDate: isoToBrDate(student.birthDate),
         notes: student.notes ?? "",
         enrollmentNumber: student.enrollmentNumber ?? "",
+        classId: student.classId ?? NO_CLASS,
         guardianName: student.guardian?.name ?? "",
         guardianWhatsapp: student.guardian?.whatsapp
           ? storedToMasked(student.guardian.whatsapp)
@@ -189,6 +206,7 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
       birthDate: brDateToIso(values.birthDate) || undefined,
       notes: values.notes?.trim() || undefined,
       enrollmentNumber: values.enrollmentNumber?.trim() || undefined,
+      classId: values.classId && values.classId !== NO_CLASS ? values.classId : undefined,
       guardian: buildGuardian(values, student),
       photos,
     };
@@ -301,6 +319,41 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
                 )}
               />
             </div>
+
+            <FormField
+              control={form.control}
+              name="classId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Turma</FormLabel>
+                  <Select
+                    value={field.value || NO_CLASS}
+                    onValueChange={field.onChange}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-student-class">
+                        <SelectValue placeholder="Sem turma" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value={NO_CLASS}>Sem turma</SelectItem>
+                      {(classes.data ?? []).map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {GRADE_LABEL[c.grade] ?? c.grade} · {c.name} ({c.schoolYear})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {(classes.data?.length ?? 0) === 0 && !classes.isLoading && (
+                    <p className="text-xs text-muted-foreground">
+                      Nenhuma turma cadastrada ainda. Crie as turmas em
+                      &ldquo;Turmas&rdquo; para poder vincular o aluno.
+                    </p>
+                  )}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}
