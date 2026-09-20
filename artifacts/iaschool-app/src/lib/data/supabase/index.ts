@@ -25,6 +25,7 @@ import type {
 import type {
   AppUser,
   SchoolBrand,
+  SchoolMembership,
   GeneratedPost,
   PendingRegistration,
   PromptTemplateSetting,
@@ -36,9 +37,21 @@ import type {
   StoredImage,
   Student,
 } from "../types";
-import { TRASH_RETENTION_DAYS } from "../types";
+import { TRASH_RETENTION_DAYS, isPlatformAdmin } from "../types";
 import { createOpenAIGenerationService } from "../openai-generation";
-import { ageBracket, requiresGuardianAccount } from "../../eca";
+
+/** `guardians.whatsapp` é E.164 (+55…); o domínio usa só dígitos. */
+function toE164(digits: string): string {
+  return `+${digits.replace(/\D/g, "")}`;
+}
+function fromE164(e164: string): string {
+  return e164.replace(/\D/g, "");
+}
+
+/** Chave da escola ativa escolhida na interface, por usuário. */
+function activeSchoolKey(userId: string): string {
+  return `iaschool:active-school:${userId}`;
+}
 
 function required(name: string, value: string | undefined): string {
   if (!value) throw new Error(`Variável de ambiente ausente: ${name}`);
@@ -95,6 +108,46 @@ const SIGNED_URL_TTL = 365 * 24 * 3600;
 
 // ---------- mapeadores snake_case ↔ domínio ----------
 
+/** Colunas de `guardians` embutidas na consulta de alunos. */
+const GUARDIAN_EMBED =
+  "primary_guardian:guardians!students_primary_guardian_id_fkey(id, name, whatsapp, email, relationship, whatsapp_verified_at)";
+const STUDENT_SELECT = `*, ${GUARDIAN_EMBED}`;
+
+type GuardianRow = {
+  id: string;
+  name: string;
+  whatsapp: string;
+  email: string | null;
+  relationship: string | null;
+  whatsapp_verified_at: string | null;
+};
+
+/**
+ * Responsável composto: identidade e verificação do canal vêm da linha em
+ * `guardians` (M1); consentimento continua no jsonb `students.guardian`,
+ * que é a origem até o M4 (spec §4.7, item 4).
+ */
+function composeGuardian(
+  json: Guardian | null,
+  row: GuardianRow | null,
+): Guardian | undefined {
+  if (!row) {
+    if (!json) return undefined;
+    // Sem linha em guardians não há canal verificado, seja o que for que o
+    // jsonb antigo diga.
+    const { whatsappVerifiedAt: _ignored, ...rest } = json;
+    return rest;
+  }
+  return {
+    ...(json ?? {}),
+    name: row.name,
+    whatsapp: fromE164(row.whatsapp),
+    email: row.email ?? json?.email,
+    relationship: row.relationship ?? json?.relationship,
+    whatsappVerifiedAt: row.whatsapp_verified_at ?? undefined,
+  };
+}
+
 function toStudent(r: Row): Student {
   return {
     id: r["id"] as string,
@@ -103,8 +156,14 @@ function toStudent(r: Row): Student {
     birthDate: (r["birth_date"] as string | null) ?? undefined,
     notes: (r["notes"] as string | null) ?? undefined,
     photos: (r["photos"] as StoredImage[] | null) ?? [],
-    guardian: (r["guardian"] as Guardian | null) ?? undefined,
-    schoolBrandId: (r["club_id"] as string | null) ?? undefined,
+    guardian: composeGuardian(
+      (r["guardian"] as Guardian | null) ?? null,
+      (r["primary_guardian"] as GuardianRow | null) ?? null,
+    ),
+    schoolId: r["school_id"] as string,
+    classId: (r["class_id"] as string | null) ?? undefined,
+    enrollmentNumber: (r["enrollment_number"] as string | null) ?? undefined,
+    primaryGuardianId: (r["primary_guardian_id"] as string | null) ?? undefined,
     createdAt: r["created_at"] as string,
     updatedAt: r["updated_at"] as string,
     deletedAt: (r["deleted_at"] as string | null) ?? undefined,
@@ -118,8 +177,18 @@ function fromStudent(p: Partial<Omit<Student, "id">>): Row {
   if ("birthDate" in p) r["birth_date"] = p.birthDate ?? null;
   if ("notes" in p) r["notes"] = p.notes ?? null;
   if ("photos" in p) r["photos"] = p.photos ?? [];
-  if ("guardian" in p) r["guardian"] = p.guardian ?? null;
-  if ("schoolBrandId" in p) r["club_id"] = p.schoolBrandId ?? null;
+  if ("schoolId" in p && p.schoolId) r["school_id"] = p.schoolId;
+  if ("classId" in p) r["class_id"] = p.classId ?? null;
+  if ("enrollmentNumber" in p) r["enrollment_number"] = p.enrollmentNumber?.trim() || null;
+  if ("guardian" in p) {
+    // O jsonb guarda o consentimento; a verificação do canal vive em guardians.
+    if (p.guardian) {
+      const { whatsappVerifiedAt: _ignored, ...rest } = p.guardian;
+      r["guardian"] = rest;
+    } else {
+      r["guardian"] = null;
+    }
+  }
   return r;
 }
 
@@ -209,9 +278,7 @@ export function createSupabaseDataLayer(): DataLayer {
     if (cached) return cached;
     const { data, error } = await supabase
       .from("profiles")
-      .select(
-        "id, email, name, role, school_name, approval_status, school_id, student_record_id",
-      )
+      .select("id, email, name, role, school_name, approval_status")
       .eq("id", userId)
       .maybeSingle();
     if (error) fail("Falha ao carregar perfil", error);
@@ -220,19 +287,48 @@ export function createSupabaseDataLayer(): DataLayer {
         "Seu usuário não tem perfil cadastrado. Peça ao administrador para criar seu registro na tabela profiles.",
       );
     }
+    // Escolas de que a pessoa é membro (RPC security definer, M1).
+    let schools: SchoolMembership[] = [];
+    if (data.approval_status === "approved") {
+      const { data: memberships, error: mErr } = await supabase.rpc("my_schools");
+      if (mErr) fail("Falha ao carregar escolas do usuário", mErr);
+      schools = (
+        (memberships ?? []) as Array<{ id: string; name: string; role: string }>
+      ).map((m) => ({
+        schoolId: m.id,
+        schoolName: m.name,
+        role: m.role as SchoolMembership["role"],
+      }));
+    }
     const user: AppUser = {
       id: data.id,
       email: data.email ?? sb.user.email ?? "",
       name: data.name,
       role: data.role,
-      schoolName: data.school_name ?? undefined,
+      schoolName: data.school_name ?? schools[0]?.schoolName ?? undefined,
       approvalStatus: data.approval_status ?? "approved",
-      schoolId: data.school_id ?? undefined,
-      studentRecordId: data.student_record_id ?? undefined,
+      schools,
     };
     // Não cachear perfis pendentes: o status pode mudar a qualquer momento.
     if (user.approvalStatus === "approved") profileCache.set(userId, user);
     return user;
+  }
+
+  /**
+   * Escola ativa: a última escolhida na interface, se ainda for uma escola
+   * da pessoa; senão a primeira. Nunca decide RLS — só preenche `school_id`
+   * ao criar registros e o prefixo dos uploads.
+   */
+  function resolveActiveSchool(user: AppUser): string | undefined {
+    if (user.schools.length === 0) return undefined;
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(activeSchoolKey(user.id));
+    } catch {
+      // sem localStorage: cai na primeira escola
+    }
+    const found = stored && user.schools.find((m) => m.schoolId === stored);
+    return (found || user.schools[0])!.schoolId;
   }
 
   async function toSession(sb: SbSession | null): Promise<Session | null> {
@@ -243,6 +339,7 @@ export function createSupabaseDataLayer(): DataLayer {
       expiresAt: sb.expires_at
         ? new Date(sb.expires_at * 1000).toISOString()
         : new Date(Date.now() + 3600_000).toISOString(),
+      activeSchoolId: resolveActiveSchool(user),
     };
   }
 
@@ -253,6 +350,69 @@ export function createSupabaseDataLayer(): DataLayer {
     if (!uid) throw new Error("Você precisa estar logado para realizar esta ação.");
     return uid;
   }
+
+  /** Sessão de domínio atual (perfil + escolas), ou erro se deslogado. */
+  async function currentSession(): Promise<Session> {
+    const { data } = await supabase.auth.getSession();
+    const session = await toSession(data.session);
+    if (!session) throw new Error("Você precisa estar logado para realizar esta ação.");
+    return session;
+  }
+
+  /**
+   * Escola em que registros novos nascem. Obrigatória para quem é membro de
+   * escola; super_admin sem vínculo precisa informar a escola explicitamente.
+   */
+  async function requireActiveSchool(explicit?: string): Promise<string> {
+    if (explicit) return explicit;
+    const session = await currentSession();
+    if (session.activeSchoolId) return session.activeSchoolId;
+    throw new Error(
+      isPlatformAdmin(session.user.role)
+        ? "Selecione a escola em que este registro deve ser criado."
+        : "Sua conta ainda não está vinculada a uma escola.",
+    );
+  }
+
+  /**
+   * Garante a linha do responsável em `guardians` (por escola + número) e
+   * devolve o id. Trocar o número é outra linha, e nasce sem verificação —
+   * exatamente o que o Decreto nº 12.880/2026, art. 35 pede.
+   */
+  async function upsertGuardian(schoolId: string, g: Guardian): Promise<string> {
+    const whatsapp = toE164(g.whatsapp);
+    const { data: existing, error: findErr } = await supabase
+      .from("guardians")
+      .select("id")
+      .eq("school_id", schoolId)
+      .eq("whatsapp", whatsapp)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (findErr) fail("Falha ao localizar responsável", findErr);
+    const fields = {
+      name: g.name,
+      email: g.email ?? null,
+      relationship: g.relationship ?? null,
+    };
+    if (existing) {
+      const { error } = await supabase
+        .from("guardians")
+        .update(fields)
+        .eq("id", existing.id);
+      if (error) fail("Falha ao atualizar responsável", error);
+      return existing.id;
+    }
+    const { data, error } = await supabase
+      .from("guardians")
+      .insert({ school_id: schoolId, whatsapp, ...fields })
+      .select("id")
+      .single();
+    if (error) fail("Falha ao cadastrar responsável", error);
+    return data.id;
+  }
+
+  /** Ouvintes do app, para a troca de escola ativa também ser notificada. */
+  const authListeners: Array<(s: Session | null) => void> = [];
 
   const auth: AuthService = {
     async getAccessToken() {
@@ -290,46 +450,15 @@ export function createSupabaseDataLayer(): DataLayer {
       }
     },
     async signUp(input) {
-      // O trigger handle_new_user (setup.sql) cria o profile pendente a
-      // partir dos metadados — funciona mesmo com confirmação de e-mail ativa.
-      const metadata =
-        input.kind === "school"
-          ? {
-              signup_role: "school_user",
-              signup_name: input.schoolName.trim(),
-              signup_school_name: input.schoolName.trim(),
-            }
-          : {
-              signup_role: "student",
-              signup_name: input.name.trim(),
-              signup_school_id: input.schoolId,
-              // Faixa etária, não a data de nascimento: o metadado do auth é
-              // lido pelo trigger e não precisa da data exata
-              // (Decreto 12.880/2026, art. 24, § 3º).
-              signup_age_bracket: ageBracket(input.birthDate),
-              signup_guardian_name: input.guardian?.name.trim() ?? null,
-              signup_guardian_consent: Boolean(input.guardian?.consent),
-            };
-      // Trava de idade antes de tocar no auth: menor de 16 não cria conta sem
-      // responsável legal (Lei 15.211/2025, art. 24). A aprovação da escola
-      // não substitui essa autorização.
-      if (input.kind === "student") {
-        if (!ageBracket(input.birthDate)) {
-          throw new Error("Informe uma data de nascimento válida.");
-        }
-        if (requiresGuardianAccount(input.birthDate)) {
-          if (!input.guardian?.name || !input.guardian?.whatsapp) {
-            throw new Error(
-              "Menores de 16 anos precisam de um responsável legal no cadastro.",
-            );
-          }
-          if (!input.guardian.consent) {
-            throw new Error(
-              "É necessária a autorização do responsável legal para criar a conta.",
-            );
-          }
-        }
-      }
+      // O trigger handle_new_user (M1) cria o profile pendente a partir dos
+      // metadados — funciona mesmo com confirmação de e-mail ativa. Só
+      // existe cadastro de escola: menor de 16 não tem conta própria
+      // (Lei 15.211/2025, art. 24).
+      const metadata = {
+        signup_role: "school",
+        signup_name: input.schoolName.trim(),
+        signup_school_name: input.schoolName.trim(),
+      };
       const { data, error } = await supabase.auth.signUp({
         email: input.email.trim(),
         password: input.password,
@@ -345,12 +474,18 @@ export function createSupabaseDataLayer(): DataLayer {
       // Cadastro fica pendente: não manter a sessão criada pelo signUp.
       if (data.session) await supabase.auth.signOut();
     },
-    async listApprovedSchools() {
-      const { data, error } = await supabase.rpc("list_approved_schools");
-      if (error) fail("Falha ao listar escolas", error);
-      return ((data ?? []) as Array<{ id: string; name: string }>).map(
-        (s) => ({ id: s.id, name: s.name }),
-      );
+    async setActiveSchool(schoolId) {
+      const session = await currentSession();
+      if (!session.user.schools.some((m) => m.schoolId === schoolId)) {
+        throw new Error("Você não é membro desta escola.");
+      }
+      try {
+        localStorage.setItem(activeSchoolKey(session.user.id), schoolId);
+      } catch {
+        // sem localStorage: a escolha vale só até recarregar
+      }
+      const updated = { ...session, activeSchoolId: schoolId };
+      for (const cb of authListeners) cb(updated);
     },
     async resetPassword(email) {
       // O link do e-mail volta para o app com `type=recovery` no hash;
@@ -380,14 +515,17 @@ export function createSupabaseDataLayer(): DataLayer {
       if (error) fail("Falha ao sair", error);
     },
     onAuthStateChange(cb) {
-      const { data } = supabase.auth.onAuthStateChange((event, sb) => {
-        // Evita chamadas ao banco em refresh de token (sessão já mapeada).
-        if (event === "TOKEN_REFRESHED") return;
+      authListeners.push(cb);
+      const { data } = supabase.auth.onAuthStateChange((_event, sb) => {
         void toSession(sb)
-          .then(cb)
+          .then((session) => cb(session))
           .catch(() => cb(null));
       });
-      return () => data.subscription.unsubscribe();
+      return () => {
+        const i = authListeners.indexOf(cb);
+        if (i >= 0) authListeners.splice(i, 1);
+        data.subscription.unsubscribe();
+      };
     },
   };
 
@@ -398,13 +536,16 @@ export function createSupabaseDataLayer(): DataLayer {
 
   const storage: StorageService = {
     async upload(bucket, file, fileName) {
-      const uid = await currentUserId();
       const safeName = fileName
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .replace(/[^a-zA-Z0-9._-]/g, "-");
-      // Prefixo com uid garante isolamento por usuário nas políticas de Storage.
-      const objectPath = `${uid}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+      // O primeiro segmento do caminho é o id da ESCOLA (M1): é ele que a
+      // policy de Storage confere com is_member_of(). super_admin sem escola
+      // sobe na própria pasta (a policy o deixa passar).
+      const session = await currentSession();
+      const prefix = session.activeSchoolId ?? session.user.id;
+      const objectPath = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
 
       const { error: uploadErr } = await supabase.storage
         .from(bucket)
@@ -647,7 +788,7 @@ export function createSupabaseDataLayer(): DataLayer {
       void purgeExpiredStudentTrash();
       const { data, error } = await supabase
         .from("students")
-        .select("*")
+        .select(STUDENT_SELECT)
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
       if (error) {
@@ -657,7 +798,7 @@ export function createSupabaseDataLayer(): DataLayer {
         if (error.code === "42703") {
           const { data: all, error: err2 } = await supabase
             .from("students")
-            .select("*")
+            .select(STUDENT_SELECT)
             .order("created_at", { ascending: false });
           if (err2) fail("Falha ao listar alunos", err2);
           return refreshImages((all ?? []).map(toStudent), studentImages);
@@ -670,7 +811,7 @@ export function createSupabaseDataLayer(): DataLayer {
       await purgeExpiredStudentTrash();
       const { data, error } = await supabase
         .from("students")
-        .select("*")
+        .select(STUDENT_SELECT)
         .not("deleted_at", "is", null)
         .order("deleted_at", { ascending: false });
       if (error) failTrash("Falha ao listar a lixeira de alunos", error);
@@ -706,7 +847,7 @@ export function createSupabaseDataLayer(): DataLayer {
     async get(id) {
       const { data, error } = await supabase
         .from("students")
-        .select("*")
+        .select(STUDENT_SELECT)
         .eq("id", id)
         .maybeSingle();
       if (error) fail("Falha ao carregar aluno", error);
@@ -716,39 +857,65 @@ export function createSupabaseDataLayer(): DataLayer {
     },
     async create(input) {
       const uid = await currentUserId();
+      const schoolId = await requireActiveSchool(input.schoolId);
+      const row = fromStudent(input);
+      if (input.guardian?.whatsapp) {
+        row["primary_guardian_id"] = await upsertGuardian(schoolId, input.guardian);
+      }
       const { data, error } = await supabase
         .from("students")
-        .insert({ ...fromStudent(input), owner_id: uid })
-        .select("*")
+        .insert({ ...row, school_id: schoolId, owner_id: uid })
+        .select(STUDENT_SELECT)
         .single();
       if (error) fail("Falha ao criar aluno", error);
       return toStudent(data);
     },
     async update(id, patch) {
+      const row = fromStudent(patch);
+      if ("guardian" in patch) {
+        if (patch.guardian?.whatsapp) {
+          const { data: current, error: curErr } = await supabase
+            .from("students")
+            .select("school_id")
+            .eq("id", id)
+            .single();
+          if (curErr) fail("Falha ao carregar aluno", curErr);
+          row["primary_guardian_id"] = await upsertGuardian(
+            current.school_id as string,
+            patch.guardian,
+          );
+        } else {
+          row["primary_guardian_id"] = null;
+        }
+      }
       const { data, error } = await supabase
         .from("students")
-        .update({ ...fromStudent(patch), updated_at: new Date().toISOString() })
+        .update({ ...row, updated_at: new Date().toISOString() })
         .eq("id", id)
-        .select("*")
+        .select(STUDENT_SELECT)
         .single();
       if (error) fail("Falha ao atualizar aluno", error);
       return toStudent(data);
     },
   };
 
+  // Identidade visual = a própria escola (tabela `schools`, M1). A RLS já
+  // limita às escolas de que a pessoa é membro.
+  const SCHOOL_SELECT = "id, name, logo, colors, created_at, updated_at";
   const schoolBrands: SchoolBrandRepository = {
     async list() {
       const { data, error } = await supabase
-        .from("clubs")
-        .select("*")
-        .order("created_at", { ascending: false });
+        .from("schools")
+        .select(SCHOOL_SELECT)
+        .is("deleted_at", null)
+        .order("name", { ascending: true });
       if (error) fail("Falha ao listar escolas", error);
       return refreshImages((data ?? []).map(toSchoolBrand), schoolBrandImages);
     },
     async get(id) {
       const { data, error } = await supabase
-        .from("clubs")
-        .select("*")
+        .from("schools")
+        .select(SCHOOL_SELECT)
         .eq("id", id)
         .maybeSingle();
       if (error) fail("Falha ao carregar escola", error);
@@ -756,29 +923,16 @@ export function createSupabaseDataLayer(): DataLayer {
       const [brand] = await refreshImages([toSchoolBrand(data)], schoolBrandImages);
       return brand!;
     },
-    async create(input) {
-      const uid = await currentUserId();
-      const { data, error } = await supabase
-        .from("clubs")
-        .insert({ ...fromSchoolBrand(input), owner_id: uid })
-        .select("*")
-        .single();
-      if (error) fail("Falha ao criar escola", error);
-      return toSchoolBrand(data);
-    },
     async update(id, patch) {
       const { data, error } = await supabase
-        .from("clubs")
-        .update({ ...fromSchoolBrand(patch), updated_at: new Date().toISOString() })
+        .from("schools")
+        .update(fromSchoolBrand(patch))
         .eq("id", id)
-        .select("*")
+        .select(SCHOOL_SELECT)
         .single();
       if (error) fail("Falha ao atualizar escola", error);
+      profileCache.clear(); // o nome da escola aparece no seletor da sessão
       return toSchoolBrand(data);
-    },
-    async delete(id) {
-      const { error } = await supabase.from("clubs").delete().eq("id", id);
-      if (error) fail("Falha ao remover escola", error);
     },
   };
 
@@ -792,14 +946,17 @@ export function createSupabaseDataLayer(): DataLayer {
       return refreshImages((data ?? []).map(toReference), (r) => [r.image]);
     },
     async create(input) {
-      const uid = await currentUserId();
+      // Referência de escola leva school_id; a do super_admin sem escola é
+      // global (school_id nulo — só ele a vê).
+      const session = await currentSession();
       const { data, error } = await supabase
         .from("reference_posts")
         .insert({
           image: input.image,
           title: input.title ?? null,
           uploaded_by: input.uploadedBy,
-          owner_id: uid,
+          owner_id: session.user.id,
+          school_id: session.activeSchoolId ?? null,
         })
         .select("*")
         .single();
@@ -952,6 +1109,13 @@ export function createSupabaseDataLayer(): DataLayer {
     },
     async create(input) {
       const uid = await currentUserId();
+      // A arte pertence à escola do aluno, não à escola ativa da sessão.
+      const { data: student, error: sErr } = await supabase
+        .from("students")
+        .select("school_id")
+        .eq("id", input.studentId)
+        .single();
+      if (sErr) fail("Falha ao localizar o aluno da arte", sErr);
       const { data, error } = await supabase
         .from("generated_posts")
         .insert({
@@ -959,27 +1123,11 @@ export function createSupabaseDataLayer(): DataLayer {
           image_url: input.imageUrl,
           details: input.details ?? null,
           owner_id: uid,
+          school_id: student.school_id,
         })
         .select("*")
         .single();
-      if (error) {
-        // Base ainda sem a coluna `details` (setup.sql não re-executado):
-        // salva o post sem os detalhes em vez de perder a imagem no histórico.
-        if (/details/i.test(error.message) && /column/i.test(error.message)) {
-          const { data: retry, error: retryErr } = await supabase
-            .from("generated_posts")
-            .insert({
-              student_id: input.studentId,
-              image_url: input.imageUrl,
-              owner_id: uid,
-            })
-            .select("*")
-            .single();
-          if (retryErr) fail("Falha ao salvar post gerado", retryErr);
-          return toGeneratedPost(retry);
-        }
-        fail("Falha ao salvar post gerado", error);
-      }
+      if (error) fail("Falha ao salvar post gerado", error);
       return toGeneratedPost(data);
     },
   };
@@ -990,59 +1138,17 @@ export function createSupabaseDataLayer(): DataLayer {
     async listPending() {
       const { data, error } = await supabase
         .from("profiles")
-        .select(
-          "id, email, name, role, school_name, school_id, student_record_id, age_bracket, guardian_name, guardian_consent, created_at",
-        )
+        .select("id, email, name, role, school_name, created_at")
         .eq("approval_status", "pending")
         .order("created_at", { ascending: true });
       if (error) fail("Falha ao listar cadastros pendentes", error);
-      const rows = data ?? [];
-      // Nome do registro students vinculado (se houver — vínculo é feito pela
-      // escola, mas o admin vê o estado atual na tela de Aprovações).
-      const recordIds = [
-        ...new Set(rows.map((r) => r.student_record_id).filter(Boolean)),
-      ] as string[];
-      const recordNames = new Map<string, string>();
-      if (recordIds.length > 0) {
-        const { data: recs, error: recsErr } = await supabase
-          .from("students")
-          .select("id, name")
-          .in("id", recordIds);
-        if (recsErr) fail("Falha ao carregar registros de alunos", recsErr);
-        for (const rec of recs ?? []) recordNames.set(rec.id, rec.name);
-      }
-      // Nome da escola escolhida pelos alunos pendentes.
-      const schoolIds = [
-        ...new Set(rows.map((r) => r.school_id).filter(Boolean)),
-      ] as string[];
-      const schoolNames = new Map<string, string>();
-      if (schoolIds.length > 0) {
-        const { data: schools, error: schoolsErr } = await supabase
-          .from("profiles")
-          .select("id, school_name, name")
-          .in("id", schoolIds);
-        if (schoolsErr) fail("Falha ao carregar escolas", schoolsErr);
-        for (const s of schools ?? []) {
-          schoolNames.set(s.id, s.school_name ?? s.name);
-        }
-      }
-      return rows.map(
+      return (data ?? []).map(
         (r): PendingRegistration => ({
           id: r.id,
           email: r.email,
           name: r.name,
           role: r.role,
           schoolName: r.school_name ?? undefined,
-          schoolLabel: r.school_id
-            ? (schoolNames.get(r.school_id) ?? undefined)
-            : undefined,
-          studentRecordId: r.student_record_id ?? undefined,
-          studentRecordLabel: r.student_record_id
-            ? (recordNames.get(r.student_record_id) ?? undefined)
-            : undefined,
-          ageBracket: r.age_bracket ?? undefined,
-          guardianName: r.guardian_name ?? undefined,
-          guardianConsent: r.guardian_consent ?? undefined,
           createdAt: r.created_at,
         }),
       );
@@ -1073,9 +1179,8 @@ export function createSupabaseDataLayer(): DataLayer {
       };
     },
     async approve(profileId) {
-      // student_record_id é deixado null: a escola vincula manualmente após a
-      // aprovação (para evitar que nomes ambíguos ou com wildcards exponham
-      // dados de outro aluno — veja task #20 "vincular manualmente").
+      // O trigger profiles_ensure_school_on_approval (M1) cria a escola e o
+      // vínculo school_admin no mesmo UPDATE.
       const { error } = await supabase
         .from("profiles")
         .update({ approval_status: "approved" })
@@ -1090,121 +1195,6 @@ export function createSupabaseDataLayer(): DataLayer {
         .eq("id", profileId);
       if (error) fail("Falha ao recusar cadastro", error);
       profileCache.delete(profileId);
-    },
-    async listLinkableStudentAccounts() {
-      // RPC security definer (setup.sql): school_user vê só os alunos da
-      // própria escola; super_admin vê todos.
-      const { data, error } = await supabase.rpc(
-        "list_linkable_student_accounts",
-      );
-      if (error) fail("Falha ao listar contas de aluno sem vínculo", error);
-      return (
-        (data ?? []) as Array<{ id: string; name: string; email: string }>
-      ).map((r) => ({ id: r.id, name: r.name, email: r.email }));
-    },
-    async listLinkedStudentRecordIds() {
-      // RPC security definer (setup.sql): school_user vê só os vínculos dos
-      // alunos da própria escola; super_admin vê todos.
-      const { data, error } = await supabase.rpc(
-        "list_linked_student_record_ids",
-      );
-      if (error) {
-        // RPC ainda não aplicada no banco (setup.sql pendente): degrade sem
-        // selo em vez de quebrar a lista de alunos. 42883 = função inexistente;
-        // PGRST202 = função fora do schema cache do PostgREST.
-        if (error.code === "42883" || error.code === "PGRST202") return [];
-        fail("Falha ao listar registros de alunos vinculados", error);
-      }
-      return ((data ?? []) as Array<{ student_record_id: string }>).map(
-        (r) => r.student_record_id,
-      );
-    },
-    async linkStudentAccount(profileId, studentRecordId) {
-      // RPC security definer (setup.sql) valida escola, registro e duplicidade.
-      const { error } = await supabase.rpc("link_student_account", {
-        p_profile_id: profileId,
-        p_student_record_id: studentRecordId,
-      });
-      if (error) fail("Falha ao vincular conta de aluno", error);
-      profileCache.delete(profileId);
-    },
-    async listLinkedStudentAccounts() {
-      // RPC security definer (setup.sql): school_user vê só os alunos da
-      // própria escola; super_admin vê todos.
-      const { data, error } = await supabase.rpc(
-        "list_linked_student_accounts",
-      );
-      if (error) fail("Falha ao listar contas de aluno vinculadas", error);
-      return (
-        (data ?? []) as Array<{
-          id: string;
-          name: string;
-          email: string;
-          student_record_id: string;
-        }>
-      ).map((r) => ({
-        id: r.id,
-        name: r.name,
-        email: r.email,
-        studentRecordId: r.student_record_id,
-      }));
-    },
-    async unlinkStudentAccount(studentRecordId) {
-      // RPC security definer (setup.sql) espelha link_student_account:
-      // valida escola e posse do registro antes de zerar o vínculo.
-      const { error } = await supabase.rpc("unlink_student_account", {
-        p_student_record_id: studentRecordId,
-      });
-      if (error) fail("Falha ao desvincular conta de aluno", error);
-      profileCache.clear();
-    },
-    async listStudentAccounts() {
-      // Visão do super_admin (RLS de profiles permite ler todos).
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, email, name, school_id, student_record_id")
-        .eq("role", "student")
-        .eq("approval_status", "approved")
-        .order("name", { ascending: true });
-      if (error) fail("Falha ao listar contas de aluno", error);
-      const rows = data ?? [];
-      const schoolIds = [
-        ...new Set(rows.map((r) => r.school_id).filter(Boolean)),
-      ] as string[];
-      const schoolNames = new Map<string, string>();
-      if (schoolIds.length > 0) {
-        const { data: schools, error: schoolsErr } = await supabase
-          .from("profiles")
-          .select("id, school_name, name")
-          .in("id", schoolIds);
-        if (schoolsErr) fail("Falha ao carregar escolas", schoolsErr);
-        for (const s of schools ?? [])
-          schoolNames.set(s.id, s.school_name ?? s.name);
-      }
-      const recordIds = [
-        ...new Set(rows.map((r) => r.student_record_id).filter(Boolean)),
-      ] as string[];
-      const recordNames = new Map<string, string>();
-      if (recordIds.length > 0) {
-        const { data: recs, error: recsErr } = await supabase
-          .from("students")
-          .select("id, name")
-          .in("id", recordIds);
-        if (recsErr) fail("Falha ao carregar registros de alunos", recsErr);
-        for (const rec of recs ?? []) recordNames.set(rec.id, rec.name);
-      }
-      return rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        email: r.email,
-        schoolLabel: r.school_id
-          ? (schoolNames.get(r.school_id) ?? undefined)
-          : undefined,
-        studentRecordId: r.student_record_id ?? undefined,
-        studentRecordLabel: r.student_record_id
-          ? (recordNames.get(r.student_record_id) ?? undefined)
-          : undefined,
-      }));
     },
   };
 
@@ -1299,8 +1289,14 @@ export function createSupabaseDataLayer(): DataLayer {
       return { demoCode: data?.demoCode };
     },
     async confirmCode(studentId, code) {
+      // A verificação é por responsável (M1): resolve a linha em guardians.
+      const current = await students.get(studentId);
+      if (!current) throw new Error("Aluno não encontrado.");
+      if (!current.primaryGuardianId) {
+        throw new Error("Cadastre o responsável legal antes de verificar o WhatsApp.");
+      }
       const { error } = await supabase.rpc("confirm_guardian_code", {
-        p_student_id: studentId,
+        p_guardian_id: current.primaryGuardianId,
         p_code: code.replace(/\D/g, ""),
       });
       if (error) {

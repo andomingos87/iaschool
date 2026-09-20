@@ -11,8 +11,5 @@ export const qk = {
   generatedPostsTrash: ["generated-posts", "trash"] as const,
   promptTemplate: ["prompt-template"] as const,
   promptTemplateVersions: ["prompt-template-versions"] as const,
-  linkableStudentAccounts: ["linkable-student-accounts"] as const,
-  linkedStudentRecordIds: ["linked-student-record-ids"] as const,
-  linkedStudentAccounts: ["linked-student-accounts"] as const,
   generationQuota: ["generation-quota"] as const,
 };

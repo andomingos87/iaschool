@@ -8,16 +8,6 @@ export function useSchoolBrands() {
   return useQuery({ queryKey: qk.schoolBrands, queryFn: () => data.schoolBrands.list() });
 }
 
-export function useCreateSchoolBrand() {
-  const data = getDataLayer();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: Omit<SchoolBrand, "id" | "createdAt" | "updatedAt">) =>
-      data.schoolBrands.create(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.schoolBrands }),
-  });
-}
-
 export function useUpdateSchoolBrand() {
   const data = getDataLayer();
   const qc = useQueryClient();
@@ -28,11 +18,3 @@ export function useUpdateSchoolBrand() {
   });
 }
 
-export function useDeleteSchoolBrand() {
-  const data = getDataLayer();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => data.schoolBrands.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.schoolBrands }),
-  });
-}

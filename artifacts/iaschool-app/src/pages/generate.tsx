@@ -14,7 +14,6 @@ import {
   Wand2,
   Plus,
   Pencil,
-  Save,
   Loader2,
   ShieldAlert,
   ShieldCheck,
@@ -52,7 +51,7 @@ import { GenerationLoader } from "@/components/generation-loader";
 import { GenerationDetailsSection } from "@/components/generation-details";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { GuardianVerifyDialog } from "@/components/guardian-verify-dialog";
-import { useStudents, useUpdateStudent } from "@/hooks/use-students";
+import { useStudents } from "@/hooks/use-students";
 import { useSchoolBrands } from "@/hooks/use-school-brands";
 import { useReferences } from "@/hooks/use-references";
 import { useCreateGeneratedPost } from "@/hooks/use-generated-posts";
@@ -90,7 +89,6 @@ export default function GeneratePage() {
   const schoolBrands = useSchoolBrands();
   const references = useReferences();
   const createPost = useCreateGeneratedPost();
-  const updateStudent = useUpdateStudent();
   const quota = useGenerationQuota();
   const queryClient = useQueryClient();
   const { session } = useAuth();
@@ -173,7 +171,7 @@ export default function GeneratePage() {
     if (!s) return;
     setStudent(s);
     setPhoto(s.photos?.[0] ?? null);
-    setSelectedBrandId(s.schoolBrandId ?? null);
+    setSelectedBrandId(s.schoolId ?? null);
     setShowSchoolLogo(true);
     // Remove o parâmetro para que "Gerar outra imagem" comece limpo.
     const url = new URL(window.location.href);
@@ -238,37 +236,6 @@ export default function GeneratePage() {
     if (id === selectedBrandId) return;
     setSelectedBrandId(id);
     setShowSchoolLogo(true);
-  }
-
-  // Escola criada/editada no diálogo dentro do wizard.
-  function onSchoolBrandSaved(saved: SchoolBrand) {
-    // Escola nova fica selecionada automaticamente.
-    if (!brandDialogEditing) selectSchoolBrand(saved.id);
-  }
-
-  // Salva o vínculo da escola escolhida no cadastro do aluno.
-  async function saveSchoolBrandLink() {
-    if (!student) return;
-    try {
-      const updated = await updateStudent.mutateAsync({
-        id: student.id,
-        patch: { schoolBrandId: selectedBrandId ?? undefined },
-      });
-      setStudent(updated);
-      toast({
-        title: "Vínculo salvo",
-        description:
-          selectedBrandId && schoolBrand
-            ? `${student.name} agora está vinculado a ${schoolBrand.name}.`
-            : `${student.name} ficou sem escola no cadastro.`,
-      });
-    } catch (err) {
-      toast({
-        variant: "destructive",
-        title: "Não foi possível salvar o vínculo",
-        description: err instanceof Error ? err.message : "Tente novamente.",
-      });
-    }
   }
 
   async function generate() {
@@ -675,7 +642,7 @@ export default function GeneratePage() {
                       onClick={() => {
                         setStudent(s);
                         setPhoto(s.photos?.[0] ?? null);
-                        setSelectedBrandId(s.schoolBrandId ?? null);
+                        setSelectedBrandId(s.schoolId ?? null);
                         setShowSchoolLogo(true);
                       }}
                       className={cn(
@@ -780,23 +747,15 @@ export default function GeneratePage() {
                   <ErrorState onRetry={() => schoolBrands.refetch()} />
                 ) : (
                   <>
-                    {student?.schoolBrandId ? (
-                      <p className="text-sm text-muted-foreground">
-                        A escola vinculada no cadastro do aluno já vem
-                        pré-selecionada. Você pode trocar por outra ou seguir
-                        sem escola.
-                      </p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        Este aluno não tem escola vinculada. Selecione uma
-                        escola existente, crie uma nova ou siga sem escola.
-                      </p>
-                    )}
+                    <p className="text-sm text-muted-foreground">
+                      A escola do aluno já vem selecionada, com o logo e as
+                      cores cadastrados em "Identidade da escola". Você pode
+                      seguir sem escola para gerar sem logo e sem cores.
+                    </p>
 
                     {(schoolBrands.data?.length ?? 0) === 0 ? (
                       <div className="rounded-md border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
-                        Nenhuma escola cadastrada — crie uma nova para usar logo
-                        e cores na arte.
+                        Sua conta ainda não está vinculada a nenhuma escola.
                       </div>
                     ) : (
                       <div className="grid gap-3 sm:grid-cols-2">
@@ -851,9 +810,9 @@ export default function GeneratePage() {
                               <div className="min-w-0">
                                 <p className="truncate font-medium">
                                   {b.name}
-                                  {student?.schoolBrandId === b.id && (
+                                  {student?.schoolId === b.id && (
                                     <span className="ml-2 text-xs font-normal text-muted-foreground">
-                                      (vinculado)
+                                      (escola do aluno)
                                     </span>
                                   )}
                                 </p>
@@ -880,43 +839,6 @@ export default function GeneratePage() {
                       </div>
                     )}
 
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setBrandDialogEditing(null);
-                        setBrandDialogOpen(true);
-                      }}
-                      data-testid="button-new-school-brand-wizard"
-                    >
-                      <Plus className="size-4" /> Criar nova escola
-                    </Button>
-
-                    {student &&
-                      (selectedBrandId ?? null) !==
-                        (student.schoolBrandId ?? null) && (
-                        <div className="rounded-md border border-border bg-card/50 p-4">
-                          <p className="text-sm font-medium">
-                            Salvar esta escola no cadastro do aluno?
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Se não salvar, a escola vale só para esta geração.
-                          </p>
-                          <Button
-                            size="sm"
-                            className="mt-3"
-                            onClick={saveSchoolBrandLink}
-                            disabled={updateStudent.isPending}
-                            data-testid="button-save-school-brand-link"
-                          >
-                            {updateStudent.isPending ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : (
-                              <Save className="size-4" />
-                            )}
-                            Salvar vínculo no cadastro
-                          </Button>
-                        </div>
-                      )}
                   </>
                 )}
               </div>
@@ -1091,7 +1013,6 @@ export default function GeneratePage() {
         open={brandDialogOpen}
         onOpenChange={setBrandDialogOpen}
         brand={brandDialogEditing}
-        onSaved={onSchoolBrandSaved}
       />
       <GuardianVerifyDialog
         open={guardianDialogOpen}

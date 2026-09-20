@@ -36,19 +36,25 @@ beforeAll(async () => {
   dataLayer = createMockDataLayer();
 });
 
-function setSession(role: "school_user" | "super_admin") {
+function setSession(role: "user" | "super_admin") {
+  // Modelo do M1: papel global + vínculo com escola em `schools`.
+  const schools =
+    role === "user"
+      ? [{ schoolId: "school-test", schoolName: "Escola Teste", role: "school_admin" }]
+      : [];
   localStorage.setItem(
     "iaschool:session",
     JSON.stringify({
-      user: { id: "test-user", email: "t@t.com", name: "Teste", role },
+      user: { id: "test-user", email: "t@t.com", name: "Teste", role, schools },
       expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      activeSchoolId: schools[0]?.schoolId,
     }),
   );
 }
 
 beforeEach(() => {
   localStorage.clear();
-  setSession("school_user");
+  setSession("user");
 });
 
 async function createStudent(name: string) {

@@ -22,19 +22,12 @@ import {
 import { Input } from "@workspace/iaschool-ui/components/ui/input";
 import { Textarea } from "@workspace/iaschool-ui/components/ui/textarea";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/iaschool-ui/components/ui/select";
 import { Label } from "@workspace/iaschool-ui/components/ui/label";
 import { Checkbox } from "@workspace/iaschool-ui/components/ui/checkbox";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { MultiUpload } from "@/components/multi-upload";
 import { useCreateStudent, useUpdateStudent } from "@/hooks/use-students";
-import type { SchoolBrand, Student, StoredImage } from "@/lib/data";
+import type { Student, StoredImage, StudentInput } from "@/lib/data";
 import { BUCKETS } from "@/lib/constants";
 import { ageBracket, AGE_BRACKET_LABEL, requiresGuardianConsent } from "@/lib/eca";
 import {
@@ -46,8 +39,6 @@ import {
   storedToMasked,
   whatsappToStored,
 } from "@/lib/format";
-
-const NO_SCHOOL_BRAND = "__none__";
 
 /**
  * A data de nascimento passa a ser obrigatória: é ela que define qual proteção
@@ -66,7 +57,7 @@ const schema = z
         "Informe uma data de nascimento válida (dd/mm/aaaa)",
       ),
     notes: z.string().optional(),
-    schoolBrandId: z.string().optional(),
+    enrollmentNumber: z.string().optional(),
     guardianName: z.string().optional(),
     guardianWhatsapp: z.string().optional(),
     guardianEmail: z.string().optional(),
@@ -104,7 +95,7 @@ const EMPTY_VALUES: FormValues = {
   whatsapp: "",
   birthDate: "",
   notes: "",
-  schoolBrandId: NO_SCHOOL_BRAND,
+  enrollmentNumber: "",
   guardianName: "",
   guardianWhatsapp: "",
   guardianEmail: "",
@@ -147,15 +138,9 @@ interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   student: Student | null;
-  schoolBrands: SchoolBrand[];
 }
 
-export function StudentFormDialog({
-  open,
-  onOpenChange,
-  student,
-  schoolBrands,
-}: Props) {
+export function StudentFormDialog({ open, onOpenChange, student }: Props) {
   const create = useCreateStudent();
   const update = useUpdateStudent();
   const [photos, setPhotos] = useState<StoredImage[]>([]);
@@ -173,7 +158,7 @@ export function StudentFormDialog({
         whatsapp: storedToMasked(student.whatsapp),
         birthDate: isoToBrDate(student.birthDate),
         notes: student.notes ?? "",
-        schoolBrandId: student.schoolBrandId || NO_SCHOOL_BRAND,
+        enrollmentNumber: student.enrollmentNumber ?? "",
         guardianName: student.guardian?.name ?? "",
         guardianWhatsapp: student.guardian?.whatsapp
           ? storedToMasked(student.guardian.whatsapp)
@@ -198,15 +183,12 @@ export function StudentFormDialog({
   const needsGuardian = requiresGuardianConsent(birthIso);
 
   async function onSubmit(values: FormValues) {
-    const payload: Omit<Student, "id" | "createdAt" | "updatedAt"> = {
+    const payload: StudentInput = {
       name: values.name.trim(),
       whatsapp: whatsappToStored(values.whatsapp),
       birthDate: brDateToIso(values.birthDate) || undefined,
       notes: values.notes?.trim() || undefined,
-      schoolBrandId:
-        values.schoolBrandId === NO_SCHOOL_BRAND
-          ? undefined
-          : values.schoolBrandId,
+      enrollmentNumber: values.enrollmentNumber?.trim() || undefined,
       guardian: buildGuardian(values, student),
       photos,
     };
@@ -276,25 +258,17 @@ export function StudentFormDialog({
               />
               <FormField
                 control={form.control}
-                name="schoolBrandId"
+                name="enrollmentNumber"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Escola</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-school-brand">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value={NO_SCHOOL_BRAND}>Sem escola</SelectItem>
-                        {schoolBrands.map((b) => (
-                          <SelectItem key={b.id} value={b.id}>
-                            {b.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>Matrícula</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Opcional — número na escola"
+                        data-testid="input-enrollment-number"
+                        {...field}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

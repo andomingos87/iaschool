@@ -62,7 +62,8 @@ o mecanismo de aplicação. Mantenha-os fiéis ao banco.
 | Arquivo | O que descreve |
 | --- | --- |
 | [`setup.sql`](./supabase/setup.sql) | `profiles`, `students`, `clubs`, `reference_posts`, `generated_posts`, `prompt_settings`, `prompt_template_versions`, funções auxiliares de RLS, buckets e políticas de Storage |
-| [`eca-digital.sql`](./supabase/eca-digital.sql) | `guardian_verification_codes`, `share_logs`, `confirm_guardian_code()` e o trigger `handle_new_user` com os campos de consentimento |
+| [`fase1-min-schools-events.sql`](./supabase/fase1-min-schools-events.sql) | **M1 (Fase 1 mínima)**: `schools`, `school_members`, `classes`, `guardians`, `events`; papéis globais; RLS por escola; Storage por escola; OTP por responsável; aprovação criando a escola. Ensaio com rollback em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) |
+| [`eca-digital.sql`](./supabase/eca-digital.sql) | `share_logs` e o modelo antigo do OTP (por aluno, superado pelo M1) |
 | [`generation-quota.sql`](./supabase/generation-quota.sql) | `generation_usage` + `consume_generation_quota()` |
 | [`generation-logs.sql`](./supabase/generation-logs.sql) | `generation_logs` + bucket privado `generation-logs` |
 | [`create-super-admin.sql`](./supabase/create-super-admin.sql) | Operação de dado: promove um usuário a `super_admin` aprovado |
@@ -74,22 +75,32 @@ Todas com RLS habilitada.
 
 | Tabela | Papel |
 | --- | --- |
-| `profiles` | Usuário do produto: `role`, `approval_status`, vínculo com escola/aluno |
-| `students` | Aluno cadastrado pela escola; soft delete via `deleted_at` |
-| `clubs` | Identidade visual da escola (logo e cores) — nome de tabela herdado; consolidar em `schools` é decisão da Fase 1 |
+| `profiles` | Usuário do produto: papel **global** (`dev`, `super_admin`, `user`) e `approval_status` |
+| `schools` | Tenant: a escola, com identidade visual (`logo`, `colors`) absorvida de `clubs`. Escola migrada ou criada na aprovação nasce com `id` = uid do perfil (mantém válido o prefixo dos objetos no Storage) |
+| `school_members` | Vínculo pessoa ↔ escola com papel na escola (`school_admin`, `school_staff`, `teacher`); é o que a RLS consulta |
+| `classes` | Sala: `school_year`, `grade` (lista fixa no app), `name`, `teacher_id` |
+| `guardians` | Responsável legal, por escola + WhatsApp (E.164); `whatsapp_verified_at` só é carimbado pela RPC do OTP e zera ao trocar o número |
+| `events` | Evento escolar (Fase 2): status, retenção das fotos, declaração de direito de imagem |
+| `students` | Aluno cadastrado pela escola (`school_id`, `class_id`, `enrollment_number`, `primary_guardian_id`); soft delete via `deleted_at` |
+| `clubs` | Legado: identidade visual antiga. Sem uso no app desde o M1; removida depois de um ciclo com `schools` estável |
 | `reference_posts` | Modelos de arte (referência de estilo) |
 | `generated_posts` | Artes geradas; soft delete via `deleted_at` |
 | `prompt_settings` / `prompt_template_versions` | Template de prompt e seu histórico |
 | `generation_usage` | Cota diária de geração, persistida |
 | `generation_logs` | Auditoria das gerações (tela `/admin/logs`). RLS ligada e **sem políticas**: só o api-server (service_role) lê e escreve |
-| `guardian_verification_codes` | OTP de verificação do responsável (ECA Digital) |
+| `guardian_verification_codes` | OTP de verificação do responsável (ECA Digital), chaveado por `guardian_id` |
 | `share_logs` | Trilha imutável de compartilhamento (ECA Digital) |
 
 Pontos de RLS e retenção que importam:
 
-- Isolamento por usuário: `super_admin` vê tudo; `school_user` acessa apenas os
-  próprios registros (`owner_id = auth.uid()`). Isso **não** é multi-tenancy de
-  escola — trocar para `school_id` é a Fase 1 da pivotagem.
+- Isolamento por **escola** (M1): toda policy de domínio é
+  `is_member_of(school_id) or is_super_admin()`. `is_member_of` é pura (só
+  consulta `school_members`); `is_super_admin()` vale para `dev` e
+  `super_admin`. `owner_id` continua nas tabelas como auditoria de quem
+  cadastrou, sem uso em RLS. Não existe `active_school_id()`: a escola "atual"
+  é escolha de interface (seletor no topo para quem é membro de mais de uma).
+- Storage: o primeiro segmento do caminho é o **id da escola**
+  (`storage_school_id(name)`), conferido com `is_member_of`.
 - Lixeira de 30 dias em `students` e `generated_posts`: excluir é `UPDATE` em
   `deleted_at`. A política `students_delete` é restrita a `super_admin`
   justamente para que `school_user` não contorne a retenção via `DELETE` direto
@@ -116,23 +127,22 @@ rate limits) estão em
 
 ## Cadastro público e aprovação
 
-- Na tela de login há "Criar conta": escolas (`role = 'school_user'`) e
-  alunos (`role = 'student'`, com escolha da escola) se cadastram sozinhos.
-- O `signUp` envia metadados (`signup_role`, `signup_name`,
-  `signup_school_name`/`signup_school_id`); o trigger `handle_new_user`
-  (setup.sql) cria a linha em `profiles` com `approval_status = 'pending'`.
+- Na tela de login há "Criar conta": **só escola**. Menor de 16 não tem conta
+  própria (Lei 15.211/2025, art. 24); o aluno é um registro em `students`
+  feito pela escola. O autocadastro de aluno foi aposentado no M1.
+- O `signUp` envia metadados (`signup_role = 'school'`, `signup_name`,
+  `signup_school_name`); o trigger `handle_new_user` cria a linha em
+  `profiles` com `role = 'user'` e `approval_status = 'pending'`.
 - Contas pendentes/recusadas: veem apenas a tela "Aguardando aprovação"
   no app; a RLS (`is_approved()`) impede qualquer leitura de dados e o
   api-server recusa a rota de geração (HTTP 403).
-- O super_admin aprova/recusa na tela **Aprovações** do app (update em
-  `profiles.approval_status`). Ao aprovar um aluno, o app tenta vincular o
-  registro da tabela `students` da escola pelo nome
-  (`profiles.student_record_id`).
-- Aluno aprovado: área própria somente leitura (perfil + posts gerados
-  sobre ele — políticas `students_select`/`generated_posts_select` via
-  `my_student_record_id()`). Alunos não geram imagens.
-- A lista de escolas do cadastro de aluno vem da RPC pública
-  `list_approved_schools()` (só expõe id e nome).
+- O super_admin aprova/recusa na tela **Aprovações** (update em
+  `profiles.approval_status`). Ao aprovar, o trigger
+  `profiles_ensure_school_on_approval` cria a `schools` (id = uid) e o vínculo
+  `school_admin` em `school_members`, se a pessoa ainda não é membro de
+  nenhuma escola. Para pôr uma segunda pessoa na mesma escola, insira em
+  `school_members` antes de aprovar (o trigger então não cria outra escola).
+- O app lê as escolas da pessoa pela RPC `my_schools()`.
 
 
 ## Recuperação de senha e convite
@@ -186,15 +196,18 @@ Observações:
 
 | Interface (`contract.ts`) | Supabase |
 | --- | --- |
-| `AuthService` | `supabase.auth` (signInWithPassword, signOut, getSession, onAuthStateChange); papel/nome vêm da tabela `profiles` |
-| `StorageService` | `supabase.storage` — buckets privados `students`, `clubs`, `references`, `generated`; paths prefixados com `{uid}/`; URLs assinadas (TTL 1 ano) |
-| Repositórios | Tabelas acima; colunas snake_case mapeadas em `src/lib/data/supabase/index.ts`; `owner_id` injetado automaticamente no insert |
+| `AuthService` | `supabase.auth` (signInWithPassword, signOut, getSession, onAuthStateChange); papel/nome vêm de `profiles`, escolas de `my_schools()`; `setActiveSchool` guarda a escolha em localStorage |
+| `StorageService` | `supabase.storage` — buckets privados `students`, `clubs`, `references`, `generated`; paths prefixados com `{school_id}/` (uid para super_admin sem escola); URLs assinadas (TTL 1 ano) |
+| Repositórios | Tabelas acima; colunas snake_case mapeadas em `src/lib/data/supabase/index.ts`; `school_id` (escola ativa, ou a do aluno no caso das artes) e `owner_id` injetados no insert. `students` embute `guardians` via `primary_guardian_id`; o responsável do domínio junta a linha de `guardians` (identidade, verificação) com o jsonb `students.guardian` (consentimento, até o M4) |
+| `SchoolBrandRepository` | Tabela `schools` (nome, logo, cores) — só leitura/edição das escolas da pessoa |
+| `GuardianVerificationService` | Edge function `send-guardian-code` (aceita `studentId` ou `guardianId`) e RPC `confirm_guardian_code(p_guardian_id, p_code)` |
 | `ImageGenerationService` | api-server `POST /api/generation/post-image` (OpenAI GPT Image) — exige `Authorization: Bearer <access_token>` **e** uma linha válida em `profiles` |
 
-Papéis: `super_admin`, `school_user` e `student` (coluna `role` em
-`profiles`); `approval_status` controla o acesso (`pending`/`approved`/
-`rejected`). O papel `guardian` (responsável) previsto na pivotagem ainda não
-existe.
+Papéis globais: `dev`, `super_admin` e `user` (coluna `role` em `profiles`);
+papel na escola: `school_admin`, `school_staff`, `teacher` (`school_members`);
+`approval_status` controla o acesso (`pending`/`approved`/`rejected`). O papel
+`guardian` (responsável) previsto na pivotagem entra na Fase 4 como quarto
+valor do `check` de `profiles.role` — `guardians.user_id` já existe para isso.
 Usuário logado sem linha em `profiles` é tratado como deslogado no frontend
 e bloqueado na rota de geração (HTTP 403) no backend.
 

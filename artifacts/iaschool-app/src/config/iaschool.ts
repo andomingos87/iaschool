@@ -27,9 +27,14 @@ export const iaschool = {
     teachers: "Professores",
   },
   roles: {
+    dev: "Desenvolvedor",
     super_admin: "Administrador",
-    school_user: "Professor",
-    student: "Aluno",
+    user: "Escola",
+  },
+  memberRoles: {
+    school_admin: "Administrador da escola",
+    school_staff: "Equipe",
+    teacher: "Professor(a)",
   },
   generation: {
     /**

@@ -29,7 +29,7 @@ alvo e o roadmap por fases.
 | Fase | Escopo | Estado |
 | --- | --- | --- |
 | 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
-| 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ⏳ próxima |
+| 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | 🔨 M1 em andamento: migration ensaiada e app adaptado (20/09/2026); falta aplicar no banco |
 | 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ❌ |
 | 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | ❌ |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
@@ -184,7 +184,11 @@ MCP.
 Tabelas atuais em `public`: `profiles`, `students`, `clubs`, `reference_posts`,
 `generated_posts`, `prompt_settings`, `prompt_template_versions`,
 `generation_usage`, `generation_logs`, `guardian_verification_codes`,
-`share_logs` — todas com RLS habilitada.
+`share_logs` — todas com RLS habilitada. A migration do M1
+(`supabase/fase1-min-schools-events.sql`: `schools`, `school_members`,
+`classes`, `guardians`, `events`, RLS por escola) está escrita e ensaiada, mas
+**ainda não aplicada**; o app em `main` já espera o modelo novo, então a
+migration precisa subir antes do próximo deploy. Estado em `BACKLOG.md`, M1.
 
 **Como alterar o schema:** exclusivamente por `apply_migration` do servidor MCP
 `supabase-iaschool` (seção abaixo). Não use o SQL Editor do painel para mudança

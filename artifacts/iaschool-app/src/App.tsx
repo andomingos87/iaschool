@@ -26,8 +26,8 @@ import GeneratePage from '@/pages/generate';
 import AdminPromptPage from '@/pages/admin-prompt';
 import AdminLogsPage from '@/pages/admin-logs';
 import { LOGS_ADMIN_EMAIL } from '@/lib/constants';
+import { isPlatformAdmin } from '@/lib/data';
 import ApprovalsPage from '@/pages/approvals';
-import StudentAreaPage from '@/pages/student-area';
 import PendingApprovalPage from '@/pages/pending-approval';
 import NotFound from '@/pages/not-found';
 
@@ -41,17 +41,8 @@ function Pages() {
   const { session } = useAuth();
   const role = session?.user.role;
 
-  // Área do aluno: somente visualização (perfil + posts).
-  if (role === 'student') {
-    return (
-      <Switch>
-        <Route path="/" component={StudentAreaPage} />
-        <Route component={NotFound} />
-      </Switch>
-    );
-  }
-
-  const isSuperAdmin = role === 'super_admin';
+  // Papel de plataforma (super_admin ou dev): aprovações, prompt, logs.
+  const isSuperAdmin = isPlatformAdmin(role);
   // Logs de geração: além de super_admin, exige o e-mail exato do admin.
   const isLogsAdmin =
     isSuperAdmin &&

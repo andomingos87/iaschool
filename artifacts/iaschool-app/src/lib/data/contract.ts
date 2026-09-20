@@ -13,20 +13,16 @@ import type {
   GeneratedPost,
   GenerationDetails,
   GenerationRequest,
-  LinkableStudentAccount,
-  LinkedStudentAccount,
   PendingRegistration,
   PromptTemplateSetting,
   PromptTemplateVersion,
   ReferencePost,
-  SchoolOption,
   SchoolBrand,
   Session,
   ShareLog,
   SignUpInput,
   StoredImage,
   Student,
-  StudentAccountOverview,
 } from "./types";
 
 export interface AuthService {
@@ -37,16 +33,18 @@ export interface AuthService {
   /** Equivalente a supabase.auth.signOut(). */
   signOut(): Promise<void>;
   /**
-   * Cadastro público (escola ou aluno). A conta nasce com status "pending"
-   * e só ganha acesso após aprovação do super_admin.
+   * Cadastro público de escola. A conta nasce com status "pending" e só
+   * ganha acesso após aprovação do super_admin — que, no Supabase, cria a
+   * escola e o vínculo `school_admin` por trigger.
    * Equivalente a supabase.auth.signUp() + profile pendente (via trigger).
    */
   signUp(input: SignUpInput): Promise<void>;
   /**
-   * Escolas aprovadas para o seletor do cadastro de aluno.
-   * Acessível sem login (RPC pública no Supabase).
+   * Troca a escola "atual" (só para quem é membro de mais de uma). Dispara
+   * onAuthStateChange com a sessão atualizada. Escolha de interface: a RLS
+   * continua filtrando por todas as escolas da pessoa.
    */
-  listApprovedSchools(): Promise<SchoolOption[]>;
+  setActiveSchool(schoolId: string): Promise<void>;
   /**
    * Dispara o e-mail de recuperação de senha.
    * Equivalente a supabase.auth.resetPasswordForEmail(email, { redirectTo }).
@@ -77,11 +75,18 @@ export interface StorageService {
   remove(bucket: string, path: string): Promise<void>;
 }
 
+/** Dados para criar um aluno; `schoolId` ausente = escola ativa da sessão. */
+export type StudentInput = Omit<
+  Student,
+  "id" | "createdAt" | "updatedAt" | "schoolId" | "primaryGuardianId"
+> & { schoolId?: string };
+
 export interface StudentRepository {
-  /** Alunos ativos (fora da lixeira), mais recentes primeiro. */
+  /** Alunos das escolas da pessoa, ativos (fora da lixeira), mais recentes primeiro. */
   list(): Promise<Student[]>;
   get(id: string): Promise<Student | null>;
-  create(input: Omit<Student, "id" | "createdAt" | "updatedAt">): Promise<Student>;
+  /** Cria na escola ativa (ou na informada). Responsável vira linha em `guardians`. */
+  create(input: StudentInput): Promise<Student>;
   update(id: string, patch: Partial<Omit<Student, "id">>): Promise<Student>;
   /**
    * Alunos na lixeira, mais recentes primeiro. Antes de listar, faz o
@@ -130,18 +135,18 @@ export interface ShareLogRepository {
   record(input: Omit<ShareLog, "id" | "createdAt">): Promise<ShareLog>;
 }
 
-/** Identidade visual das escolas (tabela `clubs` por herança do schema). */
+/**
+ * Identidade visual das escolas: desde o M1 lê e escreve na tabela `schools`
+ * (só as escolas de que a pessoa é membro). Escola nasce na aprovação do
+ * cadastro e só o super_admin a remove, por isso não há create/delete aqui.
+ */
 export interface SchoolBrandRepository {
   list(): Promise<SchoolBrand[]>;
   get(id: string): Promise<SchoolBrand | null>;
-  create(
-    input: Omit<SchoolBrand, "id" | "createdAt" | "updatedAt">,
-  ): Promise<SchoolBrand>;
   update(
     id: string,
     patch: Partial<Omit<SchoolBrand, "id">>,
   ): Promise<SchoolBrand>;
-  delete(id: string): Promise<void>;
 }
 
 export interface ReferenceRepository {
@@ -215,42 +220,10 @@ export interface ApprovalRepository {
 
   onPendingCountChange(cb: () => void): () => void;
 
+  /** Aprova o cadastro; no Supabase o trigger cria a escola e o vínculo. */
   approve(profileId: string): Promise<void>;
 
   reject(profileId: string): Promise<void>;
-  /**
-   * Contas de aluno aprovadas e ainda sem vínculo com um registro de students.
-   * Para school_user: apenas alunos da própria escola. super_admin vê todas.
-   */
-
-  listLinkableStudentAccounts(): Promise<LinkableStudentAccount[]>;
-  /**
-   * Vincula manualmente uma conta de aluno (profiles.student_record_id) a um
-   * registro da tabela students. Falha se o registro já tiver conta vinculada.
-   */
-
-  linkStudentAccount(profileId: string, studentRecordId: string): Promise<void>;
-  /**
-   * IDs dos registros de students que JÁ têm conta vinculada
-   * (profiles.student_record_id). Para school_user: apenas registros da
-   * própria escola. Usado para o selo "Conta vinculada" na lista de Alunos.
-   */
-
-  listLinkedStudentRecordIds(): Promise<string[]>;
-  /**
-   * Contas de aluno aprovadas com o estado do vínculo — visão do super_admin
-   * na tela de Aprovações (o vínculo em si é feito pela escola).
-   */
-
-  listStudentAccounts(): Promise<StudentAccountOverview[]>;
-
-  listLinkedStudentAccounts(): Promise<LinkedStudentAccount[]>;
-  /**
-   * Desfaz um vínculo feito por engano: zera profiles.student_record_id da
-   * conta ligada ao registro informado (mesmas validações de escola do link).
-   */
-
-  unlinkStudentAccount(studentRecordId: string): Promise<void>;
 }
 
 /**
