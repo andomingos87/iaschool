@@ -3,10 +3,11 @@
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { loadNativeTools } from './lib/native-tools.mjs';
+import { COREPACK, spawnOptionsFor } from './lib/corepack.mjs';
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], ...spawnOptionsFor(command) });
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });
@@ -17,7 +18,7 @@ function run(command, args) {
 
 export async function verifyNativeTools({ runCommand = run } = {}) {
   const report = {
-    package: '@workspace/r9-app',
+    package: '@workspace/iaschool-app',
     platform: process.platform,
     arch: process.arch,
     loaded: [],
@@ -27,7 +28,7 @@ export async function verifyNativeTools({ runCommand = run } = {}) {
   try {
     const loaded = await loadNativeTools();
     report.loaded = loaded.loaded;
-    const vite = await runCommand('corepack', ['pnpm', '--filter', '@workspace/r9-app', 'exec', 'vite', '--version']);
+    const vite = await runCommand(COREPACK, ['pnpm', '--filter', '@workspace/iaschool-app', 'exec', 'vite', '--version']);
     report.viteVersion = vite.output.trim();
     if (vite.code !== 0) throw new Error(`Vite version command exited with code ${vite.code}`);
     report.status = 'passed';

@@ -14,11 +14,11 @@ corepack pnpm install --frozen-lockfile
 pnpm run verify:native
 pnpm run smoke:web
 pnpm run typecheck
-pnpm --filter @workspace/r9-app run build
+pnpm --filter @workspace/iaschool-app run build
 ```
 
 `verify:native` confirms that Vite and its native tooling can load on the
-current platform. `smoke:web` starts the R9 app on `127.0.0.1:5173`, checks an
+current platform. `smoke:web` starts the IAschool app on `127.0.0.1:5173`, checks an
 HTTP response, and terminates the child process. The typecheck and package
 build are local evidence; they do not prove a CI or production deployment.
 

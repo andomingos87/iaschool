@@ -1,5 +1,5 @@
 // Cota diária de gerações persistida no Supabase (tabela generation_usage +
-// função consume_generation_quota, ver artifacts/r9-app/supabase/setup.sql).
+// função consume_generation_quota, ver artifacts/iaschool-app/supabase/setup.sql).
 // A contagem por usuário/dia é atômica no banco, então resiste a reinícios do
 // servidor e vale entre múltiplas instâncias.
 //

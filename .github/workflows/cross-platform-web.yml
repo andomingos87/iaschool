@@ -43,8 +43,11 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Build R9 app
-        run: pnpm --filter @workspace/r9-app run build
+      - name: Build IAschool app
+        run: pnpm --filter @workspace/iaschool-app run build
+
+      - name: Run compatibility tests
+        run: pnpm run test:compat
 
       - name: Run web smoke test
         shell: bash

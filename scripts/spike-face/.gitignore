@@ -1,0 +1,5 @@
+# O LFW (232 MB) e o venv são baixados por quem roda; nunca versionados.
+data/
+.venv/
+# results/ É versionado de propósito: são os números que sustentam o relatório.
+__pycache__/

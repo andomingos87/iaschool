@@ -1,0 +1,31 @@
+/* ============================================================
+   mobile.css — camada 9:16 do deck IAschool (deck v2, tema navy)
+   O build (scripts/deck/build.mjs) troca o palco para 1080×1920
+   e injeta este arquivo. Os slides continuam autorados em
+   1920×1080: aqui eles são escalados (0.5625) e centralizados
+   verticalmente — letterbox sobre o fundo navy do palco.
+   Nenhum conteúdo é reescrito nesta camada.
+   ============================================================ */
+
+.deck-stage{background:#071426}
+
+.slide{
+  width:1920px;
+  height:1080px;
+  left:0;
+  top:0;
+  transform:translateY(656px) scale(0.5625);
+  transform-origin:top left;
+}
+
+@media print{
+  @page{size:1080px 1920px;margin:0}
+  html,body{width:1080px}
+  .slide{
+    /* zoom afeta o layout (ao contrário de transform), então cada
+       página 1080×1920 recebe o slide 1080×607 centralizado */
+    transform:none;
+    zoom:0.5625;
+    margin:1166px 0 0;
+  }
+}

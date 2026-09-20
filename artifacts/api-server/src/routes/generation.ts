@@ -10,7 +10,7 @@ import {
   type LogAttachment,
 } from "../lib/generation-log";
 
-// Geração da arte de post (R9 Escolinhas) com a OpenAI GPT Image.
+// Geração da arte de post escolar (IAschool) com a OpenAI GPT Image.
 // A chave OPENAI_API_KEY fica somente no backend — nunca no navegador.
 
 const router: IRouter = Router();
