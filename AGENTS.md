@@ -205,8 +205,9 @@ Tabelas atuais em `public`: `profiles`, `students`, `clubs`, `reference_posts`,
 `generated_posts`, `prompt_settings`, `prompt_template_versions`,
 `generation_usage`, `generation_logs`, `guardian_verification_codes`,
 `share_logs`, desde o M1 `schools`, `school_members`, `classes`, `guardians`
-e `events`, desde o M2 `photos` e `batch_jobs`, e desde o M3 `photo_jobs`
-(sem policy: só `service_role` e RPCs) — todas com RLS habilitada.
+e `events`, desde o M2 `photos` e `batch_jobs`, desde o M3 `photo_jobs`
+(sem policy: só `service_role` e RPCs) e desde o M4 `authorizations` e
+`student_reference_faces` (idem, sem policy) — todas com RLS habilitada.
 A migration do M1 (`iaschool_fase1_schools_members_classes`, referência em
 `supabase/fase1-min-schools-events.sql`) foi **aplicada em 20/09/2026**: a
 escola é o tenant, `profiles.role` é papel global (`dev`/`super_admin`/`user`)
@@ -218,7 +219,12 @@ com `unique (event_id, content_hash)`, `batch_jobs`, buckets `event-photos`,
 e `iaschool_fase2_batch_progress_rpcs`, referência em
 `supabase/fase2-photo-jobs-worker.sql`) foram **aplicadas em 21/09/2026**:
 fila `photo_jobs`, `photos.batch_id`, RPCs de progresso e view
-`stalled_batch_jobs`. Estado em `BACKLOG.md`, M1 a M3.
+`stalled_batch_jobs`. As do M4 (`iaschool_fase3_authorizations_reference_faces`
+e `iaschool_fase3_has_active_authorization_tenant_check`, referência em
+`supabase/fase3-authorizations-reference-faces.sql`) foram **aplicadas em
+21/09/2026**: extensão `vector`, consentimento por escopo em `authorizations`
+(indelével: revogar é `revoked_at`), `student_reference_faces` e o bucket
+`student-refs`. Estado em `BACKLOG.md`, M1 a M4.
 
 **Como alterar o schema:** exclusivamente por `apply_migration` do servidor MCP
 `supabase-iaschool` (seção abaixo). Não use o SQL Editor do painel para mudança

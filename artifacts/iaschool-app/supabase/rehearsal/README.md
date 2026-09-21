@@ -77,3 +77,43 @@ Dois `NOTICE … does not exist, skipping` dos `drop trigger if exists` são
 esperados na primeira execução.
 
 Executado em 21/09/2026: `roundtrip M3 ok`.
+
+## M4 — `fase3-authorizations-reference-faces.sql`
+
+Ensaio estrutural + migração de dados + roundtrip funcional numa tacada só. O
+`m4-seed.sql` semeia um aluno no formato da Fase 0 (consentimento como carimbo
+em `students.guardian`) para a seção 7 ter o que migrar:
+
+```bash
+psql "$DSN" -v ON_ERROR_STOP=1 -q -c "begin;" \
+  -f artifacts/iaschool-app/supabase/rehearsal/m4-seed.sql \
+  -f artifacts/iaschool-app/supabase/fase3-authorizations-reference-faces.sql \
+  -f artifacts/iaschool-app/supabase/rehearsal/m4-checks.sql \
+  -c "rollback;"
+psql "$DSN" -Atc "select to_regclass('public.authorizations') is null"   # t
+```
+
+O roundtrip cobre o que a estrutura sozinha não mostra: autorização com escola
+diferente da do aluno é recusada, referência sem `biometric_sorting` ativo é
+recusada, dois consentimentos ativos do mesmo escopo colidem no índice único,
+revogar libera reconceder (linha nova, histórico inteiro preservado), a
+prova é imutável pela API (só `revoked_at` muda, e desrevogar dá erro),
+`has_active_authorization` e `student_biometric_readiness` não respondem sobre
+escola de que a sessão não é membro, e a referência **não** some ao revogar —
+o expurgo é do M6.
+
+Dentro do roundtrip a sessão vira membro comum (`role = 'user'`, vínculo em
+`school_members`, claim `request.jwt.claims`): com super admin, `is_super_admin()`
+deixaria tudo passar e o isolamento entre escolas não seria testado. O rollback
+desfaz o rebaixamento.
+
+Depois da migration aplicada, o mesmo arquivo de checks roda sozinho contra o
+banco real (a parte da migração legada é pulada por falta do seed):
+
+```bash
+psql "$DSN" -v ON_ERROR_STOP=1 -q -c "begin;" \
+  -f artifacts/iaschool-app/supabase/rehearsal/m4-checks.sql -c "rollback;"
+```
+
+Executado em 21/09/2026: `migração legada ok` e `roundtrip M4 ok`, antes e
+depois de aplicar.

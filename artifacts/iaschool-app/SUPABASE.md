@@ -40,6 +40,8 @@ aplicadas via MCP; as duas do M1 subiram em **20/09/2026**:
 | `20260921023500` | `iaschool_fase2_photos_event_school_check` (M2: triggers que exigem `photos.school_id` = `events.school_id`, idem `batch_jobs`) |
 | `20260921100408` | `iaschool_fase2_photo_jobs_queue` (M3, 21/09/2026: `photo_jobs`, `photos.batch_id` + trigger de enfileiramento, `batch_jobs.upload_finished_at`/`updated_at`, `claim_photo_jobs`) |
 | `20260921100446` | `iaschool_fase2_batch_progress_rpcs` (M3, 21/09/2026: `finish_batch_upload`, `complete_photo_job`, `retry_failed_photo_jobs`, `batch_jobs_try_close`, `batch_pending_jobs`, view `stalled_batch_jobs`; `photos_restrict_client_update` passa a respeitar a flag `iaschool.photos_rpc`) |
+| `20260921103748` | `iaschool_fase3_authorizations_reference_faces` (M4, 21/09/2026: extensão `vector`, `authorizations` com os 4 escopos, `student_reference_faces`, `has_active_authorization`, view `v_biometric_consent`, RPCs de leitura, bucket `student-refs`, migração do consentimento legado) |
+| `20260921103854` | `iaschool_fase3_has_active_authorization_tenant_check` (M4: a função definer passa a conferir o tenant por dentro — sem isso, um autenticado sondaria o consentimento de aluno de outra escola) |
 
 ### Como alterar o schema
 
@@ -71,6 +73,7 @@ o mecanismo de aplicação. Mantenha-os fiéis ao banco.
 | [`fase1-min-schools-events.sql`](./supabase/fase1-min-schools-events.sql) | **M1 (Fase 1 mínima)**: `schools`, `school_members`, `classes`, `guardians`, `events`; papéis globais; RLS por escola; Storage por escola; OTP por responsável; aprovação criando a escola. Aplicada em 20/09/2026; ensaio com rollback em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) |
 | [`fase2-photos-upload.sql`](./supabase/fase2-photos-upload.sql) | **M2 (upload em massa)**: `photos` com dedup por hash, `batch_jobs`, trigger que restringe o UPDATE do cliente a `deleted_at`, buckets `event-photos`/`event-thumbs`/`event-originals` com policies por escola, RPC `event_photo_counts`, Realtime em `batch_jobs`. Aplicada em 20/09/2026 |
 | [`fase2-photo-jobs-worker.sql`](./supabase/fase2-photo-jobs-worker.sql) | **M3 (fila e worker)**: `photo_jobs` (RLS sem policy, só `service_role`), `photos.batch_id` + trigger `photos_enqueue_ingest`, `batch_jobs.upload_finished_at`/`updated_at`, `claim_photo_jobs` (`for update skip locked`), RPCs `finish_batch_upload` / `complete_photo_job` / `retry_failed_photo_jobs`, view `stalled_batch_jobs`. Aplicada em 21/09/2026; ensaio em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) (`m3-checks.sql`) |
+| [`fase3-authorizations-reference-faces.sql`](./supabase/fase3-authorizations-reference-faces.sql) | **M4 (autorizações e rosto de referência)**: extensão `vector`, `authorizations` (4 escopos, sem delete, prova imutável), `student_reference_faces` (RLS sem policy), `has_active_authorization`, view `v_biometric_consent`, RPCs `list_student_reference_faces` / `student_biometric_readiness`, bucket `student-refs` (insert exige consentimento ativo), migração de `students.guardian->>'consentAt'`. Aplicada em 21/09/2026; ensaio em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) (`m4-seed.sql` + `m4-checks.sql`) |
 | [`eca-digital.sql`](./supabase/eca-digital.sql) | `share_logs` e o modelo antigo do OTP (por aluno, superado pelo M1) |
 | [`generation-quota.sql`](./supabase/generation-quota.sql) | `generation_usage` + `consume_generation_quota()` |
 | [`generation-logs.sql`](./supabase/generation-logs.sql) | `generation_logs` + bucket privado `generation-logs` |
@@ -101,6 +104,8 @@ Todas com RLS habilitada.
 | `photos` | Foto de evento (M2): `storage_path` em `event-photos`, `content_hash` (SHA-256 do original) com `unique (event_id, content_hash)`, `status` do pipeline (`pending` → `processed`/`failed`); `batch_id` (M3) aponta o lote do upload e dispara o job de ingest; `taken_at` vem do cliente no insert; `thumb_path`/`width`/`height` são escritos pelo worker. Soft delete via `deleted_at`. Pela API autenticada o UPDATE só alcança `deleted_at` (trigger `photos_restrict_client_update`); o resto é do worker (`service_role`) ou de RPC definer com a flag `iaschool.photos_rpc` |
 | `batch_jobs` | Lote de processamento: um por sessão de upload (`kind = 'ingest'`). `total` é contado no servidor em `finish_batch_upload`; `processed`/`failed` são incrementados pelo worker via `complete_photo_job`; `upload_finished_at` marca o fim do envio e o lote só fecha (`done`/`failed`) quando `processed + failed >= total`. `updated_at` (trigger) alimenta a view `stalled_batch_jobs`. Publicado no Realtime: o app assina por `event_id` |
 | `photo_jobs` | Fila em tabela (D2, M3): `kind` (`ingest`/`recognize`), `status` (`queued`/`leased`/`done`/`failed`), `attempts` (máx. 5), `leased_until`, `last_error`. RLS ligada e **sem políticas**: só o `ingest-worker` (`service_role`) via `claim_photo_jobs`/`complete_photo_job`, e as RPCs definer. Jobs `recognize` ficam `queued` até o `face-worker` (M5) |
+| `authorizations` | Consentimento por escopo (M4, spec §5.4): `biometric_sorting`, `delivery_whatsapp`, `internal_use`, `social_media`. Um ativo por (aluno, escopo) — índice único parcial `where revoked_at is null`. Revogar é preencher `revoked_at`: **não há policy de delete** e o privilégio também foi revogado. Pela API o cliente só muda `revoked_at`, e só de nulo para uma data (trigger `authorizations_restrict_client_update`); desrevogar é recusado, reconceder é linha nova. `evidence` guarda termo, versão e origem |
+| `student_reference_faces` | Rosto de referência do aluno (M4, spec §5.3): `embedding` `vector(512)` com índice HNSW, `authorization_id` obrigatório e conferido pelo trigger (`biometric_sorting` ativo do próprio aluno — D5 no banco, não na tela), `retention_until` = fim do ano letivo corrente, sem renovação automática. RLS ligada e **sem políticas**: só `service_role` e as RPCs definer. A tela lê por `list_student_reference_faces`, que nunca devolve o vetor |
 
 Pontos de RLS e retenção que importam:
 
@@ -130,6 +135,15 @@ Pontos de RLS e retenção que importam:
   `deleted_at`; qualquer outro campo enviado num UPDATE autenticado é
   descartado pelo trigger. Hard delete só `super_admin`. A dedup é do banco:
   `unique (event_id, content_hash)` devolve 23505 e o app conta "já enviada".
+- Biometria e consentimento (M4): `student_reference_faces` não tem policy
+  nenhuma — o vetor não sai por consulta de cliente, nem com token válido. A
+  tela lê por `list_student_reference_faces` (sem `embedding`) e a lista de
+  alunos por `student_biometric_readiness`; as duas checam `is_member_of` por
+  dentro. `authorizations` é legível pelo membro, mas indelével: sem policy de
+  delete e com o privilégio revogado de `anon`/`authenticated`. O bucket
+  `student-refs` (`{school_id}/{student_id}/{ref_id}.jpg`, só `image/jpeg`, até
+  10 MB) só aceita insert quando o aluno do 2º segmento tem `biometric_sorting`
+  ativo — a mesma trava da tabela, aplicada no Storage.
 - Fila e progresso (M3): `photo_jobs` não tem policy nenhuma. O cliente só
   toca a fila por três RPCs `security definer` que checam `is_member_of`
   por dentro: `finish_batch_upload` (dono do lote), `retry_failed_photo_jobs`

@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 21/09/2026 (M4 iniciado na branch `feat/m4-autorizacoes-rosto-referencia`; M3 implementado: fila `photo_jobs` e RPCs no banco real, `ingest-worker` rodado contra o banco com fotos sintéticas, galeria virtualizada e progresso por Realtime; 129 testes unitários do app + 20 do worker + 19 de integração verdes; deploy na Fly preparado, não executado)
+**Atualizado em:** 21/09/2026 (M4 em andamento na branch `feat/m4-autorizacoes-rosto-referencia`: banco pronto — `authorizations`, `student_reference_faces`, bucket `student-refs` e extensão `vector` aplicados e ensaiados —, camada de app pendente; M3 implementado: fila `photo_jobs` e RPCs no banco real, `ingest-worker` rodado contra o banco com fotos sintéticas, galeria virtualizada e progresso por Realtime; 129 testes unitários do app + 20 do worker + 19 de integração verdes; deploy na Fly preparado, não executado)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -209,19 +209,26 @@ Migrations `iaschool_fase2_photo_jobs_queue` e `iaschool_fase2_batch_progress_rp
 
 ### M4 — Autorizações e rosto de referência (spec §5.3, §5.4, §7.4) · 1 semana · risco médio
 
-- [ ] Tabela `authorizations` com os **quatro** escopos da spec §5.4 (`biometric_sorting`, `delivery_whatsapp`, `internal_use`, `social_media`), `guardian_id`, `evidence` (termo, versão, data), `revoked_at`, **sem policy de delete**. Criar a tabela **não** depende do texto jurídico; `internal_use` entra desde já porque separar escopos depois exige recolher o consentimento outra vez
+Migrations `iaschool_fase3_authorizations_reference_faces` e
+`iaschool_fase3_has_active_authorization_tenant_check` aplicadas no banco real em
+21/09/2026 (referência em `supabase/fase3-authorizations-reference-faces.sql`;
+ensaio com rollback, migração de dados semeada e roundtrip funcional em
+`supabase/rehearsal/m4-seed.sql` + `m4-checks.sql`). Falta a camada de app:
+telas, repositórios e o caminho que gera o embedding.
+
+- [x] Tabela `authorizations` com os **quatro** escopos da spec §5.4 (`biometric_sorting`, `delivery_whatsapp`, `internal_use`, `social_media`), `guardian_id`, `evidence` (termo, versão, data), `revoked_at`, **sem policy de delete**. Criar a tabela **não** depende do texto jurídico; `internal_use` entra desde já porque separar escopos depois exige recolher o consentimento outra vez (21/09/2026). Três travas além do que a spec pedia, todas cobertas pelo roundtrip: um índice único parcial garante um consentimento ativo por (aluno, escopo) — reconceder depois de revogar é linha nova, o histórico fica; o trigger `authorizations_check_school` recusa aluno ou responsável de outra escola; e `authorizations_restrict_client_update` congela a prova (pela API só `revoked_at` muda, e só de nulo para uma data — desrevogar dá erro). O privilégio de `delete` também foi revogado de `anon`/`authenticated`, não só a policy
 - [!] Colher consentimento real em `authorizations` — bloqueado pelo texto jurídico do termo (seção Transversal). O que trava é gravar `granted_at` com `evidence` de um responsável de verdade, não a estrutura
-- [ ] Migrar `students.guardian->>'consentAt'` para `authorizations`, mantendo o booleano como origem
+- [x] Migrar `students.guardian->>'consentAt'` para `authorizations`, mantendo o booleano como origem (21/09/2026). **Decisão de conformidade:** o carimbo legado é um booleano genérico ("autorizou o uso da imagem e dos dados"), então vira **só `internal_use`** — o escopo mais restrito que cobre o que o produto já fazia. Nenhum `biometric_sorting`, `delivery_whatsapp` ou `social_media` é inferido dele: consentimento que ninguém deu não se deduz de um booleano antigo. `evidence.source = 'students.guardian.consentAt'` marca o que é herança para a revisão jurídica. Na base real não havia linha a migrar (banco sem alunos); o caminho foi validado no ensaio com `m4-seed.sql`
 - [ ] Ficha do aluno: dois toggles, "foto para reconhecimento" → `biometric_sorting` e "envio por WhatsApp" → `delivery_whatsapp`. Cada toggle grava uma linha em `authorizations` com `evidence` (quem registrou, quando, versão do termo), nunca um booleano em `students`. Toggle marcado pela escola é declaração de que colheu, não consentimento do responsável; o OTP de WhatsApp fecha o ciclo depois
-- [ ] Tabela `student_reference_faces` (sem policy; só `service_role` e RPC) + bucket `student-refs`
+- [x] Tabela `student_reference_faces` (sem policy; só `service_role` e RPC) + bucket `student-refs` (21/09/2026). A extensão `vector` foi instalada aqui (estava listada no M5; sem ela a coluna `embedding` não existe). O trigger `student_reference_faces_check` exige `authorization_id` de `biometric_sorting` **ativa e do próprio aluno** — a D5 passa a viver no banco, não na tela. O bucket repete a trava no Storage: o insert só passa se o aluno do 2º segmento do caminho tiver consentimento ativo. Leitura pela tela por `list_student_reference_faces`, que nunca devolve o vetor
 - [ ] Aba "Rosto de referência" em `/alunos/:id`: **1 foto aceita no cadastro** para não travar a matrícula, com aviso "cobertura baixa" até haver 2 frontais (o spike mediu com 2); estado do consentimento, botão de revogar; sem `biometric_sorting` ativo a tela não deixa cadastrar (decisão #8)
-- [ ] `student_reference_faces.retention_until` = **fim do ano letivo**, sem renovação automática; ao vencer, as fotos já confirmadas mantêm o `student_id` (mesma regra da revogação)
-- [ ] Indicador de prontidão na lista de alunos: "182 de 240 com referência · 58 sem consentimento", clicável para a lista de quem falta
+- [x] `student_reference_faces.retention_until` = **fim do ano letivo**, sem renovação automática (21/09/2026): default `reference_retention_default()` = 31/12 do ano corrente. O efeito de vencer (apagar a referência mantendo o `student_id` das fotos confirmadas) é o expurgo do M6 — hoje o prazo é registro, não ação: nem vencer nem revogar apagam nada sozinhos
+- [ ] Indicador de prontidão na lista de alunos: "182 de 240 com referência · 58 sem consentimento", clicável para a lista de quem falta — a RPC `student_biometric_readiness(p_school)` já existe (uma linha por aluno ativo: `has_consent`, `reference_count`, `low_coverage`); falta a tela
 - [ ] Embedding de referência com `det_size` 640
 
 ### M5 — face-worker, atribuição e pasta do aluno (spec §5.3, §7.3, §7.6, §11) · 2,5 semanas · **risco alto**
 
-- [ ] Instalar extensão `vector` no projeto (disponível 0.8.2, não instalada)
+- [x] Instalar extensão `vector` no projeto (21/09/2026, antecipada no M4: `student_reference_faces.embedding` depende dela)
 - [ ] `docker build` do `Dockerfile` de `scripts/spike-face/` — nunca foi construído (sem Docker na máquina do spike)
 - [ ] Rodar `bench_throughput.py` **na máquina alvo** da Fly antes de dimensionar; os números do spike são de Apple M4
 - [ ] `face-worker` (Python 3.12, `onnxruntime` + `insightface`, modelos embutidos, `service_role`, 1 processo por máquina)
