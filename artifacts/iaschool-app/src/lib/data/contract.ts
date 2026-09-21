@@ -10,7 +10,10 @@
 
 import type {
   AppUser,
+  BatchJob,
   GeneratedPost,
+  Photo,
+  SchoolEvent,
   GenerationDetails,
   GenerationRequest,
   PendingRegistration,
@@ -181,6 +184,95 @@ export interface ClassRepository {
   delete(id: string): Promise<void>;
 }
 
+/** Dados para criar um evento; `schoolId` ausente = escola ativa da sessão. */
+export interface SchoolEventInput {
+  schoolId?: string;
+  name: string;
+  /** ISO "aaaa-mm-dd". */
+  eventDate: string;
+  classId?: string;
+  keepOriginals?: boolean;
+  /** ISO "aaaa-mm-dd"; ausente = padrão de 2 anos a partir de hoje. */
+  photoRetentionUntil?: string;
+  /**
+   * true grava `image_rights_declared_at/by` com o usuário atual: a escola
+   * declara possuir autorização de uso de imagem dos alunos presentes
+   * (spec §9.2). Sem isso o evento nasce, mas o upload não abre.
+   */
+  declareImageRights?: boolean;
+}
+
+/** Campos do evento editáveis depois de criado. */
+export type SchoolEventPatch = Partial<
+  Pick<
+    SchoolEvent,
+    "name" | "eventDate" | "classId" | "keepOriginals" | "photoRetentionUntil" | "status"
+  >
+>;
+
+/**
+ * Eventos (`events`): a unidade do upload em massa. RLS por escola no
+ * Supabase; o filtro por escola aqui é da interface (escola ativa).
+ */
+export interface EventRepository {
+  /** Eventos ativos (fora da lixeira), do mais recente para o mais antigo. */
+  list(schoolId?: string): Promise<SchoolEvent[]>;
+  get(id: string): Promise<SchoolEvent | null>;
+  /** Cria na escola ativa (ou na informada), com `created_by` = usuário atual. */
+  create(input: SchoolEventInput): Promise<SchoolEvent>;
+  update(id: string, patch: SchoolEventPatch): Promise<SchoolEvent>;
+  /** Registra a declaração de direito de imagem pelo usuário atual (spec §9.2). */
+  declareImageRights(id: string): Promise<SchoolEvent>;
+  /** Exclusão normal: lixeira de 30 dias (`deleted_at`), fotos ficam com o evento. */
+  moveToTrash(id: string): Promise<void>;
+  /** Quantidade de fotos ativas por evento da escola (`event_id` → total). */
+  photoCounts(schoolId: string): Promise<Map<string, number>>;
+}
+
+/** Uma foto pronta para subir: já redimensionada (D3), com o hash do original. */
+export interface PhotoUploadInput {
+  eventId: string;
+  schoolId: string;
+  /** SHA-256 (hex) do arquivo ORIGINAL, antes do redimensionamento. */
+  contentHash: string;
+  originalFilename: string;
+  /** JPEG redimensionado (2560px lado maior, q85). */
+  blob: Blob;
+  width?: number;
+  height?: number;
+}
+
+export type PhotoUploadResult =
+  | { outcome: "uploaded"; photo: Photo }
+  /** Já existia foto com o mesmo hash neste evento (R2): nada foi gravado. */
+  | { outcome: "duplicate" };
+
+/**
+ * Fotos de evento (`photos`) e lotes (`batch_jobs`). A chave
+ * `unique (event_id, content_hash)` é validada no banco; aqui ela vira
+ * `outcome: "duplicate"` para o contador "já enviada" da tela.
+ */
+export interface PhotoRepository {
+  /** Fotos ativas do evento, na ordem de envio, com `displayUrl` assinada. */
+  list(eventId: string): Promise<Photo[]>;
+  /** Dos hashes dados, quais já existem no evento (evita subir bytes à toa). */
+  findExistingHashes(eventId: string, hashes: string[]): Promise<Set<string>>;
+  /**
+   * Sobe o arquivo para `event-photos` e grava a linha em `photos`. Uma
+   * chamada = uma foto; a concorrência e as retentativas são do chamador.
+   */
+  upload(input: PhotoUploadInput): Promise<PhotoUploadResult>;
+  /** Exclusão normal: lixeira (`deleted_at`). */
+  moveToTrash(ids: string[]): Promise<void>;
+  /** Abre um lote `ingest` para o evento com o total previsto de arquivos. */
+  startBatch(eventId: string, total: number): Promise<BatchJob>;
+  /** Fecha o lote com os números finais do cliente (o worker mexe em `processed`). */
+  finishBatch(
+    id: string,
+    result: { total: number; failed: number; cancelled?: boolean },
+  ): Promise<void>;
+}
+
 export interface ReferenceRepository {
   list(): Promise<ReferencePost[]>;
   create(input: Omit<ReferencePost, "id" | "createdAt">): Promise<ReferencePost>;
@@ -284,6 +376,8 @@ export interface DataLayer {
   students: StudentRepository;
   schoolBrands: SchoolBrandRepository;
   classes: ClassRepository;
+  events: EventRepository;
+  photos: PhotoRepository;
   references: ReferenceRepository;
   generatedPosts: GeneratedPostRepository;
   promptTemplate: PromptTemplateRepository;

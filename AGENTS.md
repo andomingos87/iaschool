@@ -30,7 +30,7 @@ alvo e o roadmap por fases.
 | --- | --- | --- |
 | 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
 | 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ✅ M1 concluído (20/09/2026): migration aplicada, OTP por responsável, telas de cadastro da escola e de turmas. Fase 1 completa (CSV, papel `dev`) segue aberta |
-| 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ❌ |
+| 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | 🟡 M2 concluído (20/09/2026): `photos`, `batch_jobs`, buckets, telas de eventos e upload em massa no cliente. M3 (fila `photo_jobs`, `ingest-worker`, miniaturas, galeria virtualizada) a fazer |
 | 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | ❌ |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
 | 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
@@ -40,10 +40,12 @@ O detalhe por item, com o que está feito e o que falta em cada fase, está em
 
 **O que existe hoje**: o núcleo herdado da Fase 0 (cadastro com aprovação,
 autenticação, conformidade ECA, cota de geração e geração **unitária** de arte,
-1 aluno por vez) mais o M1 — escola como tenant, RLS por escola, responsáveis
-com OTP, cadastro da escola e turmas (`classes`) ligadas ao aluno. Upload em
-massa, reconhecimento facial, `events` e envio em lote **não existem, nem
-parcialmente**.
+1 aluno por vez), o M1 — escola como tenant, RLS por escola, responsáveis
+com OTP, cadastro da escola e turmas (`classes`) ligadas ao aluno — e o M2 —
+eventos (`/eventos`), upload em massa no cliente com dedup por hash e retomada,
+tabela `photos` e buckets por escola. O que ainda **não existe**: fila
+`photo_jobs` e worker (miniaturas, EXIF), reconhecimento facial e envio em
+lote. As fotos enviadas hoje ficam `pending` até o M3.
 
 Ao trabalhar aqui, diferencie sempre protótipo, código local, integração
 configurada e evidência de produção.
@@ -186,13 +188,16 @@ MCP; a oitava e a nona são do M1 (20/09/2026).
 Tabelas atuais em `public`: `profiles`, `students`, `clubs`, `reference_posts`,
 `generated_posts`, `prompt_settings`, `prompt_template_versions`,
 `generation_usage`, `generation_logs`, `guardian_verification_codes`,
-`share_logs`, e desde o M1 `schools`, `school_members`, `classes`, `guardians`
-e `events` — todas com RLS habilitada. A migration do M1
-(`iaschool_fase1_schools_members_classes`, referência em
+`share_logs`, desde o M1 `schools`, `school_members`, `classes`, `guardians`
+e `events`, e desde o M2 `photos` e `batch_jobs` — todas com RLS habilitada.
+A migration do M1 (`iaschool_fase1_schools_members_classes`, referência em
 `supabase/fase1-min-schools-events.sql`) foi **aplicada em 20/09/2026**: a
 escola é o tenant, `profiles.role` é papel global (`dev`/`super_admin`/`user`)
-e o vínculo vive em `school_members`. `main` ainda está no modelo antigo, então
-o merge da branch do M1 vem antes de qualquer deploy. Estado em `BACKLOG.md`, M1.
+e o vínculo vive em `school_members`. A do M2
+(`iaschool_fase2_photos_batch_jobs_buckets`, referência em
+`supabase/fase2-photos-upload.sql`) foi **aplicada em 20/09/2026**: `photos`
+com `unique (event_id, content_hash)`, `batch_jobs`, buckets `event-photos`,
+`event-thumbs`, `event-originals`. Estado em `BACKLOG.md`, M1 e M2.
 
 **Como alterar o schema:** exclusivamente por `apply_migration` do servidor MCP
 `supabase-iaschool` (seção abaixo). Não use o SQL Editor do painel para mudança

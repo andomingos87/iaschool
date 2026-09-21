@@ -13,23 +13,31 @@ import type {
   ApprovalRepository,
   AuthService,
   ClassRepository,
+  EventRepository,
   SchoolBrandRepository,
   DataLayer,
   GeneratedPostRepository,
   GuardianVerificationService,
+  PhotoRepository,
   PromptTemplateRepository,
   ReferenceRepository,
+  SchoolEventPatch,
   ShareLogRepository,
   StorageService,
   StudentRepository,
 } from "../contract";
 import type {
   AppUser,
+  BatchJob,
+  EventStatus,
   Grade,
+  Photo,
+  PhotoStatus,
   SchoolAddress,
   SchoolBrand,
   SchoolClass,
   SchoolContact,
+  SchoolEvent,
   SchoolMembership,
   GeneratedPost,
   PendingRegistration,
@@ -42,8 +50,13 @@ import type {
   StoredImage,
   Student,
 } from "../types";
-import { TRASH_RETENTION_DAYS, isPlatformAdmin } from "../types";
+import {
+  EVENT_RETENTION_YEARS,
+  TRASH_RETENTION_DAYS,
+  isPlatformAdmin,
+} from "../types";
 import { createOpenAIGenerationService } from "../openai-generation";
+import { localIsoDatePlusYears } from "../../format";
 
 /** `guardians.whatsapp` é E.164 (+55…); o domínio usa só dígitos. */
 function toE164(digits: string): string {
@@ -287,6 +300,89 @@ function fromSchoolClass(p: Partial<Omit<SchoolClass, "id">>): Row {
   if ("teacherId" in p) r["teacher_id"] = p.teacherId ?? null;
   return r;
 }
+
+function toSchoolEvent(r: Row): SchoolEvent {
+  return {
+    id: r["id"] as string,
+    schoolId: r["school_id"] as string,
+    classId: (r["class_id"] as string | null) ?? undefined,
+    name: r["name"] as string,
+    eventDate: r["event_date"] as string,
+    status: r["status"] as EventStatus,
+    keepOriginals: Boolean(r["keep_originals"]),
+    photoRetentionUntil: r["photo_retention_until"] as string,
+    imageRightsDeclaredAt:
+      (r["image_rights_declared_at"] as string | null) ?? undefined,
+    imageRightsDeclaredBy:
+      (r["image_rights_declared_by"] as string | null) ?? undefined,
+    createdBy: r["created_by"] as string,
+    createdAt: r["created_at"] as string,
+    updatedAt: r["updated_at"] as string,
+    deletedAt: (r["deleted_at"] as string | null) ?? undefined,
+  };
+}
+
+function fromSchoolEvent(p: SchoolEventPatch): Row {
+  const r: Row = {};
+  if ("name" in p) r["name"] = p.name?.trim();
+  if ("eventDate" in p) r["event_date"] = p.eventDate;
+  if ("classId" in p) r["class_id"] = p.classId ?? null;
+  if ("keepOriginals" in p) r["keep_originals"] = Boolean(p.keepOriginals);
+  if ("photoRetentionUntil" in p) r["photo_retention_until"] = p.photoRetentionUntil;
+  if ("status" in p) r["status"] = p.status;
+  return r;
+}
+
+/** Data local de hoje mais N anos, em ISO "aaaa-mm-dd" (retenção padrão do evento). */
+function defaultRetentionDate(): string {
+  return localIsoDatePlusYears(EVENT_RETENTION_YEARS);
+}
+
+function toPhoto(r: Row): Photo {
+  return {
+    id: r["id"] as string,
+    schoolId: r["school_id"] as string,
+    eventId: r["event_id"] as string,
+    storagePath: r["storage_path"] as string,
+    thumbPath: (r["thumb_path"] as string | null) ?? undefined,
+    contentHash: r["content_hash"] as string,
+    originalFilename: r["original_filename"] as string,
+    bytes: r["bytes"] as number,
+    width: (r["width"] as number | null) ?? undefined,
+    height: (r["height"] as number | null) ?? undefined,
+    takenAt: (r["taken_at"] as string | null) ?? undefined,
+    status: r["status"] as PhotoStatus,
+    facesCount: (r["faces_count"] as number | null) ?? undefined,
+    error: (r["error"] as string | null) ?? undefined,
+    uploadedBy: r["uploaded_by"] as string,
+    createdAt: r["created_at"] as string,
+    deletedAt: (r["deleted_at"] as string | null) ?? undefined,
+  };
+}
+
+function toBatchJob(r: Row): BatchJob {
+  return {
+    id: r["id"] as string,
+    schoolId: r["school_id"] as string,
+    eventId: (r["event_id"] as string | null) ?? undefined,
+    kind: r["kind"] as BatchJob["kind"],
+    status: r["status"] as BatchJob["status"],
+    total: r["total"] as number,
+    processed: r["processed"] as number,
+    failed: r["failed"] as number,
+    createdBy: r["created_by"] as string,
+    createdAt: r["created_at"] as string,
+    finishedAt: (r["finished_at"] as string | null) ?? undefined,
+  };
+}
+
+/** Buckets do evento (spec §6). */
+const EVENT_PHOTOS_BUCKET = "event-photos";
+const EVENT_THUMBS_BUCKET = "event-thumbs";
+/** URLs da galeria valem 1 h (spec §10); re-assinadas a cada listagem. */
+const GALLERY_URL_TTL = 3600;
+/** `createSignedUrls` em lotes de 100 caminhos (spec §10). */
+const SIGN_BATCH = 100;
 
 function toReference(r: Row): ReferencePost {
   return {
@@ -1055,6 +1151,239 @@ export function createSupabaseDataLayer(): DataLayer {
     },
   };
 
+  // ---------- Eventos e fotos (Fase 2, M2) ----------
+
+  const EVENT_SELECT =
+    "id, school_id, class_id, name, event_date, status, keep_originals, photo_retention_until, image_rights_declared_at, image_rights_declared_by, created_by, created_at, updated_at, deleted_at";
+
+  const events: EventRepository = {
+    async list(schoolId) {
+      let query = supabase.from("events").select(EVENT_SELECT).is("deleted_at", null);
+      if (schoolId) query = query.eq("school_id", schoolId);
+      const { data, error } = await query
+        .order("event_date", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (error) fail("Falha ao listar eventos", error);
+      return (data ?? []).map(toSchoolEvent);
+    },
+    async get(id) {
+      const { data, error } = await supabase
+        .from("events")
+        .select(EVENT_SELECT)
+        .eq("id", id)
+        .maybeSingle();
+      if (error) fail("Falha ao carregar evento", error);
+      return data ? toSchoolEvent(data) : null;
+    },
+    async create(input) {
+      const uid = await currentUserId();
+      const schoolId = await requireActiveSchool(input.schoolId);
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("events")
+        .insert({
+          school_id: schoolId,
+          class_id: input.classId ?? null,
+          name: input.name.trim(),
+          event_date: input.eventDate,
+          keep_originals: Boolean(input.keepOriginals),
+          photo_retention_until: input.photoRetentionUntil ?? defaultRetentionDate(),
+          image_rights_declared_at: input.declareImageRights ? now : null,
+          image_rights_declared_by: input.declareImageRights ? uid : null,
+          created_by: uid,
+        })
+        .select(EVENT_SELECT)
+        .single();
+      if (error) fail("Falha ao criar evento", error);
+      return toSchoolEvent(data);
+    },
+    async update(id, patch) {
+      const { data, error } = await supabase
+        .from("events")
+        .update(fromSchoolEvent(patch))
+        .eq("id", id)
+        .select(EVENT_SELECT)
+        .single();
+      if (error) fail("Falha ao atualizar evento", error);
+      return toSchoolEvent(data);
+    },
+    async declareImageRights(id) {
+      const uid = await currentUserId();
+      const { data, error } = await supabase
+        .from("events")
+        .update({
+          image_rights_declared_at: new Date().toISOString(),
+          image_rights_declared_by: uid,
+        })
+        .eq("id", id)
+        .select(EVENT_SELECT)
+        .single();
+      if (error) fail("Falha ao registrar a declaração de direito de imagem", error);
+      return toSchoolEvent(data);
+    },
+    async moveToTrash(id) {
+      const { error } = await supabase
+        .from("events")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) fail("Falha ao mover evento para a lixeira", error);
+    },
+    async photoCounts(schoolId) {
+      const { data, error } = await supabase.rpc("event_photo_counts", {
+        p_school: schoolId,
+      });
+      if (error) fail("Falha ao contar fotos dos eventos", error);
+      const map = new Map<string, number>();
+      for (const r of (data ?? []) as Array<{ event_id: string; photos: number | string }>) {
+        map.set(r.event_id, Number(r.photos));
+      }
+      return map;
+    },
+  };
+
+  const PHOTO_SELECT =
+    "id, school_id, event_id, storage_path, thumb_path, content_hash, original_filename, bytes, width, height, taken_at, status, faces_count, error, uploaded_by, created_at, deleted_at";
+
+  /** Assina em lotes de 100 e devolve caminho → URL (falhas ficam de fora). */
+  async function signGallery(bucket: string, paths: string[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    for (let i = 0; i < paths.length; i += SIGN_BATCH) {
+      const chunk = paths.slice(i, i + SIGN_BATCH);
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrls(chunk, GALLERY_URL_TTL);
+      if (error || !data) continue;
+      for (const item of data) {
+        if (item.signedUrl && item.path) map.set(item.path, item.signedUrl);
+      }
+    }
+    return map;
+  }
+
+  const photos: PhotoRepository = {
+    async list(eventId) {
+      const { data, error } = await supabase
+        .from("photos")
+        .select(PHOTO_SELECT)
+        .eq("event_id", eventId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true });
+      if (error) fail("Falha ao listar fotos do evento", error);
+      const list = (data ?? []).map(toPhoto);
+      // Miniatura quando o worker já gerou (M3); senão a própria foto.
+      const withThumb = list.filter((p) => p.thumbPath);
+      const withoutThumb = list.filter((p) => !p.thumbPath);
+      const [thumbs, fulls] = await Promise.all([
+        signGallery(EVENT_THUMBS_BUCKET, withThumb.map((p) => p.thumbPath!)),
+        signGallery(EVENT_PHOTOS_BUCKET, withoutThumb.map((p) => p.storagePath)),
+      ]);
+      for (const p of list) {
+        p.displayUrl = p.thumbPath ? thumbs.get(p.thumbPath) : fulls.get(p.storagePath);
+      }
+      return list;
+    },
+    async findExistingHashes(eventId, hashes) {
+      const found = new Set<string>();
+      // `in` com listas enormes estoura a URL do PostgREST: vai em lotes.
+      for (let i = 0; i < hashes.length; i += 200) {
+        const chunk = hashes.slice(i, i + 200);
+        const { data, error } = await supabase
+          .from("photos")
+          .select("content_hash")
+          .eq("event_id", eventId)
+          .in("content_hash", chunk);
+        if (error) fail("Falha ao conferir fotos já enviadas", error);
+        for (const r of data ?? []) found.add(r.content_hash as string);
+      }
+      return found;
+    },
+    async upload(input) {
+      const uid = await currentUserId();
+      const photoId = crypto.randomUUID();
+      const path = `${input.schoolId}/${input.eventId}/${photoId}.jpg`;
+
+      const { error: upErr } = await supabase.storage
+        .from(EVENT_PHOTOS_BUCKET)
+        .upload(path, input.blob, { contentType: "image/jpeg", upsert: false });
+      if (upErr) fail("Falha ao enviar a foto", upErr);
+
+      const { data, error } = await supabase
+        .from("photos")
+        .insert({
+          id: photoId,
+          school_id: input.schoolId,
+          event_id: input.eventId,
+          storage_path: path,
+          content_hash: input.contentHash,
+          original_filename: input.originalFilename,
+          bytes: input.blob.size,
+          width: input.width ?? null,
+          height: input.height ?? null,
+          uploaded_by: uid,
+        })
+        .select(PHOTO_SELECT)
+        .single();
+      if (error) {
+        // Outro upload do mesmo arquivo chegou antes (mesma pasta em duas
+        // abas, por exemplo): o arquivo que subimos é descartado e a foto
+        // conta como "já enviada".
+        await supabase.storage.from(EVENT_PHOTOS_BUCKET).remove([path]);
+        if (error.code === "23505") return { outcome: "duplicate" };
+        fail("Falha ao registrar a foto", error);
+      }
+      return { outcome: "uploaded", photo: toPhoto(data) };
+    },
+    async moveToTrash(ids) {
+      if (ids.length === 0) return;
+      const { error } = await supabase
+        .from("photos")
+        .update({ deleted_at: new Date().toISOString() })
+        .in("id", ids);
+      if (error) fail("Falha ao mover fotos para a lixeira", error);
+    },
+    async startBatch(eventId, total) {
+      const uid = await currentUserId();
+      const { data: event, error: evErr } = await supabase
+        .from("events")
+        .select("school_id")
+        .eq("id", eventId)
+        .single();
+      if (evErr) fail("Falha ao localizar o evento do lote", evErr);
+      const { data, error } = await supabase
+        .from("batch_jobs")
+        .insert({
+          school_id: event.school_id,
+          event_id: eventId,
+          kind: "ingest",
+          status: "running",
+          total,
+          created_by: uid,
+        })
+        .select("*")
+        .single();
+      if (error) fail("Falha ao abrir o lote de upload", error);
+      // O evento sai do rascunho na primeira sessão de upload.
+      await supabase
+        .from("events")
+        .update({ status: "uploading" })
+        .eq("id", eventId)
+        .eq("status", "draft");
+      return toBatchJob(data);
+    },
+    async finishBatch(id, result) {
+      const { error } = await supabase
+        .from("batch_jobs")
+        .update({
+          total: result.total,
+          failed: result.failed,
+          status: result.cancelled ? "cancelled" : result.failed > 0 ? "failed" : "done",
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+      if (error) fail("Falha ao fechar o lote de upload", error);
+    },
+  };
+
   const references: ReferenceRepository = {
     async list() {
       const { data, error } = await supabase
@@ -1486,6 +1815,8 @@ export function createSupabaseDataLayer(): DataLayer {
     students,
     schoolBrands,
     classes,
+    events,
+    photos,
     references,
     generatedPosts,
     promptTemplate,

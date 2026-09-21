@@ -65,6 +65,24 @@ export function brDateToIso(br: string): string {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * Data local em ISO "aaaa-mm-dd". Diferente de `toISOString().slice(0, 10)`,
+ * que devolve a data em UTC e vira "amanhã" à noite no Brasil.
+ */
+export function localIsoDate(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** Data local mais N anos, em ISO "aaaa-mm-dd" (retenção padrão do evento). */
+export function localIsoDatePlusYears(years: number, from = new Date()): string {
+  const d = new Date(from);
+  d.setFullYear(d.getFullYear() + years);
+  return localIsoDate(d);
+}
+
 /** Converte ISO "aaaa-mm-dd" para "dd/mm/aaaa". */
 export function isoToBrDate(iso?: string): string {
   if (!iso) return "";

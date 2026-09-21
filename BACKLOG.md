@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 20/09/2026 (M1 fechado por completo: banco + telas de escola e turmas; 145 testes verdes)
+**Atualizado em:** 20/09/2026 (M2 implementado: `photos`/`batch_jobs`/buckets no banco real, telas de eventos e uploader no cliente; 106 testes unitários + 11 de RLS verdes)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -24,7 +24,7 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 | 0 — Descontaminação | — | ✅ concluída (30/08/2026) | — |
 | Transversal — produção e conformidade | pendências #1–#7 | ❌ nenhum item andou | depende de compra de domínio/Resend/Meta |
 | 1 — Fundação escolar | M1 (mínima) + Fase 1 completa | ✅ **M1 concluído** (20/09/2026); Fase 1 completa (CSV, papel `dev`, professor da turma) segue aberta | 2–2,5 sem (M1) |
-| 2 — Upload em massa | M2, M3 | ❌ | 3,5 sem |
+| 2 — Upload em massa | M2, M3 | ✅ **M2 concluído** (20/09/2026); M3 (fila, worker, galeria virtualizada) a fazer | 1,5 sem (M3) |
 | 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito, código zero | 6 sem |
 | 4 — Autorização granular + portal | — | ❌ sem spec | 2–3 sem |
 | 5 — Lote e WhatsApp | — | ❌ sem spec | 4–6 sem |
@@ -161,16 +161,21 @@ Pré-requisito de tudo: `photos` precisa de `event_id`, que precisa de `school_i
 
 ## Fase 2 — Upload em massa
 
-### M2 — Fotos e upload no cliente (spec §5.1, §6, §7.1) · 2 semanas · risco médio
+### M2 — Fotos e upload no cliente (spec §5.1, §6, §7.1) · 2 semanas · risco médio ✅ (20/09/2026)
 
-- [ ] Tabela `photos` com `unique (event_id, content_hash)` (idempotência do upload) e tabela `batch_jobs`
-- [ ] Buckets `event-photos`, `event-thumbs`, `event-originals`, policies com `school_id` como primeiro segmento do caminho
-- [ ] Telas `/eventos` (lista) e `/eventos/novo` (nome, data, turma, retenção com **padrão de 2 anos** editável, declaração de direito de imagem — sem ela o upload não abre)
-- [ ] Aviso no evento: "N alunos desta turma estão sem referência; as fotos deles vão para a fila manual" — avisa, não bloqueia
-- [ ] Tela `/eventos/:id` com dropzone de pasta
-- [ ] Upload no cliente: 6 simultâneos; 3 retentativas com backoff 1s/4s/16s; SHA-256 em Web Worker antes do redimensionamento; fila em IndexedDB por `event_id` com retomada; JPEG/PNG/HEIC (HEIC convertido no cliente); limite 5.000 arquivos por lote; 2560px lado maior, JPEG q85 (D3)
-- [ ] Contagem de "já enviada" no conflito de hash (R2)
-- [ ] `useImageUpload` atual permanece para logo e modelos de arte
+Migrations `iaschool_fase2_photos_batch_jobs_buckets` e `iaschool_fase2_photos_event_school_check` (foto e lote só apontam para evento da própria escola) aplicadas no banco real em 20/09/2026 (referência em `supabase/fase2-photos-upload.sql`). Uploader em `src/lib/upload/` (sem React nem Supabase: recebe hash, preparo, repositório e store por injeção), telas em `src/pages/events.tsx`, `event-new.tsx`, `event-detail.tsx`.
+
+- [x] Tabela `photos` com `unique (event_id, content_hash)` (idempotência do upload) e tabela `batch_jobs`; UPDATE do cliente só alcança `deleted_at` (trigger `photos_restrict_client_update`); RPC `event_photo_counts` (20/09/2026)
+- [x] Buckets `event-photos` (só JPEG, 20 MB), `event-thumbs` (só WebP), `event-originals`, policies com `school_id` como primeiro segmento do caminho (20/09/2026)
+- [x] Telas `/eventos` (lista por ano, status, contagem de fotos, selo da declaração) e `/eventos/novo` (nome, data, turma, retenção com **padrão de 2 anos** editável, `keep_originals`, declaração de direito de imagem — sem ela o upload não abre; a tela do evento oferece a declaração depois) (20/09/2026)
+- [x] Aviso no evento: "N alunos desta turma estão sem referência; as fotos deles vão para a fila manual" — avisa, não bloqueia. Até o M4 não existe `student_reference_faces`, então o aviso conta todos os alunos ativos da turma (ou da escola); `ReferenceCoverageNotice` passa a subtrair quem tem referência quando a tabela chegar (20/09/2026)
+- [x] Tela `/eventos/:id` com dropzone de pasta (drop recursivo via File and Directory Entries API + `webkitdirectory`), progresso do lote, lista de falhas com "tentar de novo", grade paginada das fotos enviadas (a galeria virtualizada com miniaturas é do M3) (20/09/2026)
+- [x] Upload no cliente: 6 simultâneos; 3 retentativas com backoff 1s/4s/16s; SHA-256 em Web Worker antes do redimensionamento; fila em IndexedDB por `event_id` com retomada (persiste nome/tamanho/data e estado — o File volta quando a pasta é arrastada de novo, e só o que falta segue); limite 5.000 arquivos por lote; 2560px lado maior, JPEG q85 (D3). 18 testes unitários do orquestrador e do store (20/09/2026)
+  - [~] HEIC convertido no cliente via `heic-to` (libheif em wasm, carregado sob demanda; licença LGPL-3.0) — código escrito e tipado, **não exercitado com um arquivo HEIC real** (sem amostra na máquina)
+- [x] Contagem de "já enviada" no conflito de hash (R2): conferência em lote antes de subir (`findExistingHashes`) + 23505 no insert como rede de segurança; o arquivo já subido é removido do bucket (20/09/2026)
+- [x] `useImageUpload` atual permanece para logo e modelos de arte (20/09/2026)
+- [x] Testes de RLS contra o banco real (`tests/photos-rls.integration.test.ts`, 11 testes): dedup por hash, isolamento entre escolas, UPDATE restrito a `deleted_at`, `batch_jobs`, `event_photo_counts`, Storage com prefixo da escola e MIME (20/09/2026)
+- [ ] Sobra do M2 para o M3: `events.status` só anda de `draft` → `uploading` (o resto é do worker); lixeira de eventos sem tela de restauração; `event-originals` criado, mas o cliente ainda não sobe o original quando `keep_originals` está ligado
 
 ### M3 — Fila, ingest-worker e galeria (spec §5.2, §7.2, §10, §11) · 1,5 semanas · risco baixo
 

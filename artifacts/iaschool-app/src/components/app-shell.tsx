@@ -2,6 +2,7 @@ import { type ReactNode, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
+  CalendarDays,
   Home,
   Users,
   School,
@@ -98,6 +99,7 @@ const NAV: NavItem[] = [
   { href: "/", label: "Início", icon: Home },
   { href: "/gerar", label: "Criar arte", icon: Sparkles, highlight: true },
   { href: "/galeria", label: "Galeria", icon: GalleryVerticalEnd },
+  { href: "/eventos", label: "Eventos", icon: CalendarDays },
   { href: "/alunos", label: "Alunos", icon: Users },
   { href: "/turmas", label: "Turmas", icon: GraduationCap },
   { href: "/escolas", label: "Escola", icon: School },
