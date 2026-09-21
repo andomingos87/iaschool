@@ -10,6 +10,7 @@
 // assim que os testes exercitam concorrência, retentativa e retomada.
 
 import type { PhotoRepository } from "../data/contract";
+import type { Photo } from "../data/types";
 import {
   MAX_FILES_PER_BATCH,
   UPLOAD_BACKOFF_MS,
@@ -18,6 +19,7 @@ import {
   HASH_WORKERS,
   isAcceptedImage,
 } from "./constants";
+import type { ReadTakenAt } from "./exif";
 import type { HashFile } from "./hash";
 import type { PreparePhoto } from "./image";
 import { fileKeyOf, type QueueEntry, type UploadQueueStore } from "./queue-store";
@@ -36,6 +38,16 @@ export interface UploaderDeps {
   prepare: PreparePhoto;
   repo: Pick<PhotoRepository, "findExistingHashes" | "upload" | "startBatch" | "finishBatch">;
   store: UploadQueueStore;
+  /** Lê `DateTimeOriginal` do arquivo original; ausente = `taken_at` nulo. */
+  readTakenAt?: ReadTakenAt;
+  /**
+   * Getter (não booleano) porque o evento pode ser editado com a tela aberta
+   * e este uploader vive enquanto ela estiver montada. `true` sobe o arquivo
+   * original para `event-originals` junto com o JPEG.
+   */
+  keepOriginals?: () => boolean;
+  /** Uma foto acabou de ser gravada no servidor (não dispara para duplicata). */
+  onUploaded?: (photo: Photo) => void;
   /** Injetável para os testes controlarem o backoff. */
   sleep?: (ms: number) => Promise<void>;
   concurrency?: number;
@@ -270,8 +282,14 @@ export function createEventUploader(deps: UploaderDeps): EventUploader {
     if (it.status !== "preparing") return; // virou duplicate na conferência
 
     let prepared;
+    let takenAt: string | undefined;
     try {
-      prepared = await deps.prepare(it.file!);
+      // EXIF é lido do arquivo ORIGINAL, em paralelo com o redimensionamento
+      // (que descarta o EXIF). Falha na leitura da data nunca derruba o item.
+      [prepared, takenAt] = await Promise.all([
+        deps.prepare(it.file!),
+        deps.readTakenAt ? deps.readTakenAt(it.file!).catch(() => undefined) : Promise.resolve(undefined),
+      ]);
     } catch (err) {
       set(it, {
         status: "failed",
@@ -285,18 +303,25 @@ export function createEventUploader(deps: UploaderDeps): EventUploader {
     for (let attempt = 0; ; attempt++) {
       try {
         set(it, { attempts: attempt + 1 });
+        if (!batchId) throw new Error("Lote de envio não está aberto.");
         const result = await deps.repo.upload({
           eventId: deps.eventId,
           schoolId: deps.schoolId,
+          batchId,
           contentHash: it.hash!,
           originalFilename: it.name,
           blob: prepared.blob,
           width: prepared.width,
           height: prepared.height,
+          takenAt,
+          // Com keep_originals, o original é o arquivo como veio (HEIC
+          // inclusive), não o JPEG convertido.
+          original: deps.keepOriginals?.() ? it.file : undefined,
         });
         if (result.outcome === "uploaded") {
           uploadedInRun++;
           set(it, { status: "done", error: undefined });
+          deps.onUploaded?.(result.photo);
         } else {
           set(it, { status: "duplicate", error: undefined });
         }
@@ -330,13 +355,11 @@ export function createEventUploader(deps: UploaderDeps): EventUploader {
     notify();
     if (id) {
       try {
-        await deps.repo.finishBatch(id, {
-          total: uploadedInRun,
-          failed: failedInRun,
-          cancelled,
-        });
+        // O servidor conta o total real; `uploadedInRun` só serve de conferência.
+        await deps.repo.finishBatch(id, { total: uploadedInRun, cancelled });
       } catch {
-        // O lote fica "running" no servidor; o M3 trata lote parado > 10 min.
+        // O lote fica "running" no servidor sem `upload_finished_at`; a view
+        // `stalled_batch_jobs` e o /health do worker apontam lote parado.
       }
     }
   }

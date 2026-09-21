@@ -30,7 +30,7 @@ alvo e o roadmap por fases.
 | --- | --- | --- |
 | 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
 | 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ✅ M1 concluído (20/09/2026): migration aplicada, OTP por responsável, telas de cadastro da escola e de turmas. Fase 1 completa (CSV, papel `dev`) segue aberta |
-| 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | 🟡 M2 concluído (20/09/2026): `photos`, `batch_jobs`, buckets, telas de eventos e upload em massa no cliente. M3 (fila `photo_jobs`, `ingest-worker`, miniaturas, galeria virtualizada) a fazer |
+| 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ✅ M2 (20/09/2026) e M3 (21/09/2026) concluídos: `photos`, `batch_jobs`, buckets, upload em massa no cliente; fila `photo_jobs`, `ingest-worker` (miniaturas WebP, `/health`), galeria virtualizada e progresso por Realtime. Deploy do worker na Fly preparado, **não executado** |
 | 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | ❌ |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
 | 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
@@ -41,11 +41,15 @@ O detalhe por item, com o que está feito e o que falta em cada fase, está em
 **O que existe hoje**: o núcleo herdado da Fase 0 (cadastro com aprovação,
 autenticação, conformidade ECA, cota de geração e geração **unitária** de arte,
 1 aluno por vez), o M1 — escola como tenant, RLS por escola, responsáveis
-com OTP, cadastro da escola e turmas (`classes`) ligadas ao aluno — e o M2 —
+com OTP, cadastro da escola e turmas (`classes`) ligadas ao aluno —, o M2 —
 eventos (`/eventos`), upload em massa no cliente com dedup por hash e retomada,
-tabela `photos` e buckets por escola. O que ainda **não existe**: fila
-`photo_jobs` e worker (miniaturas, EXIF), reconhecimento facial e envio em
-lote. As fotos enviadas hoje ficam `pending` até o M3.
+tabela `photos` e buckets por escola — e o M3 — fila `photo_jobs`,
+`artifacts/ingest-worker/` (Node 24 + `sharp`: dimensões, miniatura WebP
+320px, `/health`), galeria virtualizada e progresso por Realtime em
+`batch_jobs`. O que ainda **não existe**: worker rodando na Fly (só
+Dockerfile/`fly.toml`/roteiro), reconhecimento facial (os jobs `recognize`
+ficam na fila sem consumidor até o M5; o evento para em `processing`) e envio
+em lote.
 
 Ao trabalhar aqui, diferencie sempre protótipo, código local, integração
 configurada e evidência de produção.
@@ -91,6 +95,10 @@ consentimento ou compartilhamento, use a skill `eca-digital`
   SQL do Supabase em `supabase/`.
 - `artifacts/iaschool-ui/` — design system IAschool, tokens, componentes e preview.
 - `artifacts/api-server/` — servidor Express e fluxo de geração de imagens.
+- `artifacts/ingest-worker/` — worker Node 24 + `sharp` que consome
+  `photo_jobs` (miniaturas, dimensões, EXIF de reserva) e expõe `/health`.
+  Único lugar, além do `api-server`, com `SUPABASE_SERVICE_ROLE_KEY`;
+  `Dockerfile` e `fly.toml` próprios (um app por worker).
 - `artifacts/mockup-sandbox/` — sandbox para prototipação visual.
 - `lib/api-spec/` — contrato OpenAPI e configuração do Orval.
 - `lib/api-client-react/` — cliente React gerado a partir do contrato.
@@ -139,12 +147,15 @@ Para iniciar superfícies específicas:
 ```bash
 pnpm --filter @workspace/iaschool-app run dev
 pnpm --filter @workspace/api-server run dev
+pnpm --filter @workspace/ingest-worker run dev
 pnpm --filter @workspace/iaschool-ui run dev
 pnpm --filter @workspace/mockup-sandbox run dev
 ```
 
-O servidor da API usa a porta 5000 quando iniciado pelo fluxo documentado.
-Confirme a porta real no ambiente antes de compartilhar uma URL.
+O servidor da API usa a porta 5000 quando iniciado pelo fluxo documentado; o
+`ingest-worker` responde `/health` na 8080 e precisa de `SUPABASE_URL` e
+`SUPABASE_SERVICE_ROLE_KEY` exportadas. Confirme a porta real no ambiente
+antes de compartilhar uma URL.
 
 ## Testes e validação
 
@@ -158,6 +169,11 @@ Confirme a porta real no ambiente antes de compartilhar uma URL.
 - Typecheck completo: `pnpm run typecheck`.
 - Build completo: `pnpm run build`.
 - Testes do servidor: `pnpm --filter @workspace/api-server run test`.
+- Testes do worker: `pnpm --filter @workspace/ingest-worker run test` (sem
+  rede, imagens sintéticas geradas pelo `sharp`).
+- Testes de integração do app contra o banco real (`tests/*.integration.test.ts`)
+  exigem `SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY`
+  exportadas; `pnpm --filter @workspace/iaschool-app run test` roda tudo junto.
 - Testes de um pacote devem ser executados com `pnpm --filter <pacote>`.
 - Os checks locais não provam que uma implantação ou produção esteja funcionando.
 - Sempre informe separadamente checks não executados por falta de dependência,
@@ -189,7 +205,8 @@ Tabelas atuais em `public`: `profiles`, `students`, `clubs`, `reference_posts`,
 `generated_posts`, `prompt_settings`, `prompt_template_versions`,
 `generation_usage`, `generation_logs`, `guardian_verification_codes`,
 `share_logs`, desde o M1 `schools`, `school_members`, `classes`, `guardians`
-e `events`, e desde o M2 `photos` e `batch_jobs` — todas com RLS habilitada.
+e `events`, desde o M2 `photos` e `batch_jobs`, e desde o M3 `photo_jobs`
+(sem policy: só `service_role` e RPCs) — todas com RLS habilitada.
 A migration do M1 (`iaschool_fase1_schools_members_classes`, referência em
 `supabase/fase1-min-schools-events.sql`) foi **aplicada em 20/09/2026**: a
 escola é o tenant, `profiles.role` é papel global (`dev`/`super_admin`/`user`)
@@ -197,7 +214,11 @@ e o vínculo vive em `school_members`. A do M2
 (`iaschool_fase2_photos_batch_jobs_buckets`, referência em
 `supabase/fase2-photos-upload.sql`) foi **aplicada em 20/09/2026**: `photos`
 com `unique (event_id, content_hash)`, `batch_jobs`, buckets `event-photos`,
-`event-thumbs`, `event-originals`. Estado em `BACKLOG.md`, M1 e M2.
+`event-thumbs`, `event-originals`. As do M3 (`iaschool_fase2_photo_jobs_queue`
+e `iaschool_fase2_batch_progress_rpcs`, referência em
+`supabase/fase2-photo-jobs-worker.sql`) foram **aplicadas em 21/09/2026**:
+fila `photo_jobs`, `photos.batch_id`, RPCs de progresso e view
+`stalled_batch_jobs`. Estado em `BACKLOG.md`, M1 a M3.
 
 **Como alterar o schema:** exclusivamente por `apply_migration` do servidor MCP
 `supabase-iaschool` (seção abaixo). Não use o SQL Editor do painel para mudança

@@ -1210,6 +1210,19 @@ obrigatória (D6).
 
 ## 16. Decisões
 
+Decisões do M3, fechadas em 21/09/2026 na implementação:
+
+| Decisão | Resposta | Onde |
+| --- | --- | --- |
+| Quem enfileira `ingest` | trigger `after insert on photos` a partir de `photos.batch_id` (nova coluna, nullable), porque `photo_jobs` não tem policy para o cliente | §5.2, §8 |
+| `batch_jobs.total` | contado no **servidor** em `finish_batch_upload` (jobs ingest do lote); o valor do cliente só gera `warning` se divergir | §5.2 |
+| Fechamento do lote | `upload_finished_at` (novo) + `processed + failed >= total`; `updated_at` (novo) alimenta a view `stalled_batch_jobs` | §5.2, §11 |
+| `taken_at` | lido no **cliente**, do EXIF do original, antes do redimensionamento; o JPEG sobe sem EXIF (sem GPS). `OffsetTimeOriginal` quando existe, senão o fuso do navegador de quem envia. O worker lê EXIF só como reserva | §7.1, §7.2 |
+| `photos.status` | não passa por `processing`: `pending` → `processed`/`failed` (UPDATE extra por claim não vale o custo) | §5.1 |
+| Alerta de lote parado | view `security_invoker` `stalled_batch_jobs` + `/health` do worker devolve 503 só quando há job pendente; sem `pg_cron` | §11 |
+| `events.status` após o ingest | fica `processing` até o `face-worker` (M5) consumir `recognize` | §4.5 |
+| Deploy do worker | Dockerfile, `fly.toml` e roteiro prontos; `fly deploy` não executado no M3 | §11 |
+
 Respondidas em 31/08/2026:
 
 | Decisão | Resposta |

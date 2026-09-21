@@ -12,6 +12,7 @@ export const qk = {
   eventPhotoCounts: (schoolId?: string) =>
     ["events", "photo-counts", schoolId ?? "none"] as const,
   photos: (eventId: string) => ["photos", eventId] as const,
+  batch: (eventId: string) => ["batch-jobs", eventId] as const,
   references: ["references"] as const,
   generatedPosts: ["generated-posts"] as const,
   generatedPostsTrash: ["generated-posts", "trash"] as const,

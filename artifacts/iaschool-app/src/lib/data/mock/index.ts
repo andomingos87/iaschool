@@ -601,17 +601,122 @@ const events: EventRepository = {
 /**
  * No mock as fotos não vão para lugar nenhum: só os metadados ficam em
  * localStorage (5.000 data URLs estourariam a cota). O arquivo vira uma
- * object URL em memória, válida até recarregar a página.
+ * object URL em memória, válida até recarregar a página, e serve tanto de
+ * "miniatura" quanto de foto grande.
  */
 const photoObjectUrls = new Map<string, string>();
+
+const BATCH_CHANGED_EVENT = "iaschool:batch-changed";
+
+function readBatches(): BatchJob[] {
+  return readCollection<BatchJob>("batch-jobs", []);
+}
+
+function writeBatch(updated: BatchJob): void {
+  writeCollection(
+    "batch-jobs",
+    readBatches().map((b) => (b.id === updated.id ? updated : b)),
+  );
+  window.dispatchEvent(new CustomEvent(BATCH_CHANGED_EVENT, { detail: updated }));
+}
+
+/** Espelho de `batch_jobs_try_close`: fecha quando o envio acabou e tudo foi processado. */
+function tryCloseBatch(b: BatchJob): BatchJob {
+  if (b.status !== "running" || !b.uploadFinishedAt) return b;
+  if (b.processed + b.failed < b.total) return b;
+  return { ...b, status: b.failed > 0 ? "failed" : "done", finishedAt: nowIso(), updatedAt: nowIso() };
+}
+
+/**
+ * Worker simulado: a cada 400 ms "processa" até 3 fotos pendentes, gerando a
+ * miniatura (a mesma object URL) e, de vez em quando, uma falha, para a tela
+ * de progresso e o botão "tentar de novo" poderem ser exercitados sem
+ * Supabase. Para sozinho quando não sobra nada pendente.
+ */
+let mockWorkerTimer: ReturnType<typeof setInterval> | null = null;
+let mockWorkerTick = 0;
+
+function mockWorkerStep(): void {
+  const batches = readBatches();
+  const running = batches.filter((b) => b.kind === "ingest" && b.status === "running");
+  if (running.length === 0) {
+    stopMockWorker();
+    return;
+  }
+  const allPhotos = readCollection<Photo>("photos", []);
+  const runningIds = new Set(running.map((b) => b.id));
+  const pending = allPhotos
+    .filter((p) => p.status === "pending" && p.batchId && runningIds.has(p.batchId) && !p.deletedAt)
+    .slice(0, 3);
+  if (pending.length === 0) {
+    // Nada a processar: fecha o que já pode fechar e desliga se sobrou só lote sem fim de envio.
+    let closedAny = false;
+    for (const b of running) {
+      const closed = tryCloseBatch(b);
+      if (closed !== b) {
+        writeBatch(closed);
+        closedAny = true;
+      }
+    }
+    if (!closedAny && running.every((b) => !b.uploadFinishedAt)) return; // envio ainda em curso
+    if (!closedAny) stopMockWorker();
+    return;
+  }
+  const touched = new Map<string, BatchJob>();
+  const byId = new Map(allPhotos.map((p) => [p.id, p]));
+  for (const p of pending) {
+    mockWorkerTick++;
+    const fails = mockWorkerTick % 15 === 0;
+    const batch = touched.get(p.batchId!) ?? running.find((b) => b.id === p.batchId)!;
+    if (fails) {
+      byId.set(p.id, { ...p, status: "failed", error: "simulação: miniatura falhou" });
+      touched.set(batch.id, { ...batch, failed: batch.failed + 1, updatedAt: nowIso() });
+    } else {
+      byId.set(p.id, {
+        ...p,
+        status: "processed",
+        thumbPath: p.storagePath.replace(/\.jpg$/, ".webp"),
+        width: p.width ?? 1600,
+        height: p.height ?? 1200,
+        error: undefined,
+      });
+      touched.set(batch.id, { ...batch, processed: batch.processed + 1, updatedAt: nowIso() });
+    }
+  }
+  writeCollection("photos", [...byId.values()]);
+  for (const b of touched.values()) writeBatch(tryCloseBatch(b));
+}
+
+function ensureMockWorker(): void {
+  if (mockWorkerTimer) return;
+  mockWorkerTimer = setInterval(mockWorkerStep, 400);
+}
+
+function stopMockWorker(): void {
+  if (mockWorkerTimer) clearInterval(mockWorkerTimer);
+  mockWorkerTimer = null;
+}
 
 const photos: PhotoRepository = {
   async list(eventId) {
     await delay(150);
     return readCollection<Photo>("photos", [])
       .filter((p) => p.eventId === eventId && !p.deletedAt)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      .map((p) => ({ ...p, displayUrl: photoObjectUrls.get(p.id) }));
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  },
+  async signThumbUrls(items) {
+    const out = new Map<string, string>();
+    for (const p of items) {
+      const url = p.thumbPath ? photoObjectUrls.get(p.id) : undefined;
+      if (url) out.set(p.id, url);
+    }
+    return out;
+  },
+  async signPhotoUrl(photo) {
+    const id = photo.storagePath.split("/").pop()?.replace(/\.jpg$/, "") ?? "";
+    const url = photoObjectUrls.get(id);
+    if (!url) throw new Error("A foto de demonstração só fica disponível até recarregar a página.");
+    return url;
   },
   async findExistingHashes(eventId, hashes) {
     const wanted = new Set(hashes);
@@ -634,12 +739,14 @@ const photos: PhotoRepository = {
       id,
       schoolId: input.schoolId,
       eventId: input.eventId,
+      batchId: input.batchId,
       storagePath: `${input.schoolId}/${input.eventId}/${id}.jpg`,
       contentHash: input.contentHash,
       originalFilename: input.originalFilename,
       bytes: input.blob.size,
       width: input.width,
       height: input.height,
+      takenAt: input.takenAt,
       status: "pending",
       uploadedBy: uid,
       createdAt: nowIso(),
@@ -647,7 +754,9 @@ const photos: PhotoRepository = {
     items.push(photo);
     writeCollection("photos", items);
     photoObjectUrls.set(id, URL.createObjectURL(input.blob));
-    return { outcome: "uploaded", photo: { ...photo, displayUrl: photoObjectUrls.get(id) } };
+    // O original (keep_originals) não é guardado no mock.
+    ensureMockWorker();
+    return { outcome: "uploaded", photo };
   },
   async moveToTrash(ids) {
     await delay(200);
@@ -676,27 +785,84 @@ const photos: PhotoRepository = {
       failed: 0,
       createdBy: uid,
       createdAt: nowIso(),
+      updatedAt: nowIso(),
     };
-    writeCollection("batch-jobs", [batch, ...readCollection<BatchJob>("batch-jobs", [])]);
+    writeCollection("batch-jobs", [batch, ...readBatches()]);
+    window.dispatchEvent(new CustomEvent(BATCH_CHANGED_EVENT, { detail: batch }));
     if (event.status === "draft") await eventsCrud.update(eventId, { status: "uploading" });
     return batch;
   },
   async finishBatch(id, result) {
     await delay(100);
-    writeCollection(
-      "batch-jobs",
-      readCollection<BatchJob>("batch-jobs", []).map((b) =>
-        b.id === id
-          ? {
-              ...b,
-              total: result.total,
-              failed: result.failed,
-              status: result.cancelled ? "cancelled" : result.failed > 0 ? "failed" : "done",
-              finishedAt: nowIso(),
-            }
-          : b,
-      ),
+    const b = readBatches().find((x) => x.id === id);
+    if (!b || b.uploadFinishedAt) return;
+    // Espelho de `finish_batch_upload`: total contado no servidor.
+    const total = readCollection<Photo>("photos", []).filter((p) => p.batchId === id).length;
+    const finished: BatchJob = {
+      ...b,
+      total,
+      uploadFinishedAt: nowIso(),
+      updatedAt: nowIso(),
+      status: result.cancelled ? "cancelled" : b.status,
+    };
+    writeBatch(result.cancelled ? finished : tryCloseBatch(finished));
+    if (b.eventId) {
+      const event = await eventsCrud.get(b.eventId);
+      if (event?.status === "uploading") {
+        const activePhotos = readCollection<Photo>("photos", []).filter(
+          (p) => p.eventId === b.eventId && !p.deletedAt,
+        ).length;
+        await eventsCrud.update(
+          b.eventId,
+          { status: result.cancelled && total === 0 && activePhotos === 0 ? "draft" : "processing" },
+        );
+      }
+    }
+    ensureMockWorker();
+  },
+  async latestBatch(eventId) {
+    await delay(80);
+    return (
+      readBatches()
+        .filter((b) => b.eventId === eventId && b.kind === "ingest")
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null
     );
+  },
+  onBatchChange(eventId, cb) {
+    const onLocal = (e: Event) => {
+      const batch = (e as CustomEvent<BatchJob>).detail;
+      if (batch?.eventId === eventId) cb(batch);
+    };
+    window.addEventListener(BATCH_CHANGED_EVENT, onLocal);
+    return () => window.removeEventListener(BATCH_CHANGED_EVENT, onLocal);
+  },
+  async retryFailedJobs(eventId) {
+    await delay(150);
+    const all = readCollection<Photo>("photos", []);
+    const retried = all.filter((p) => p.eventId === eventId && p.status === "failed" && !p.deletedAt);
+    if (retried.length === 0) return 0;
+    const ids = new Set(retried.map((p) => p.id));
+    writeCollection(
+      "photos",
+      all.map((p) => (ids.has(p.id) ? { ...p, status: "pending", error: undefined } : p)),
+    );
+    const perBatch = new Map<string, number>();
+    for (const p of retried) if (p.batchId) perBatch.set(p.batchId, (perBatch.get(p.batchId) ?? 0) + 1);
+    for (const b of readBatches()) {
+      const n = perBatch.get(b.id);
+      if (!n) continue;
+      writeBatch({
+        ...b,
+        failed: Math.max(0, b.failed - n),
+        status: "running",
+        finishedAt: undefined,
+        updatedAt: nowIso(),
+      });
+    }
+    const event = await eventsCrud.get(eventId);
+    if (event && event.status !== "uploading") await eventsCrud.update(eventId, { status: "processing" });
+    ensureMockWorker();
+    return retried.length;
   },
 };
 

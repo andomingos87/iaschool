@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 20/09/2026 (M2 implementado: `photos`/`batch_jobs`/buckets no banco real, telas de eventos e uploader no cliente; 106 testes unitários + 11 de RLS verdes)
+**Atualizado em:** 21/09/2026 (M3 implementado: fila `photo_jobs` e RPCs no banco real, `ingest-worker` rodado contra o banco com fotos sintéticas, galeria virtualizada e progresso por Realtime; 129 testes unitários do app + 20 do worker + 19 de integração verdes; deploy na Fly preparado, não executado)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -175,18 +175,23 @@ Migrations `iaschool_fase2_photos_batch_jobs_buckets` e `iaschool_fase2_photos_e
 - [x] Contagem de "já enviada" no conflito de hash (R2): conferência em lote antes de subir (`findExistingHashes`) + 23505 no insert como rede de segurança; o arquivo já subido é removido do bucket (20/09/2026)
 - [x] `useImageUpload` atual permanece para logo e modelos de arte (20/09/2026)
 - [x] Testes de RLS contra o banco real (`tests/photos-rls.integration.test.ts`, 11 testes): dedup por hash, isolamento entre escolas, UPDATE restrito a `deleted_at`, `batch_jobs`, `event_photo_counts`, Storage com prefixo da escola e MIME (20/09/2026)
-- [ ] Sobra do M2 para o M3: `events.status` só anda de `draft` → `uploading` (o resto é do worker); lixeira de eventos sem tela de restauração; `event-originals` criado, mas o cliente ainda não sobe o original quando `keep_originals` está ligado
+- [x] Sobra do M2 resolvida no M3: `events.status` anda `draft` → `uploading` → `processing` (`finish_batch_upload`); o cliente sobe o original para `event-originals` (`{school_id}/{event_id}/{photo_id}.orig`, `Content-Type` do arquivo) quando `keep_originals` está ligado, e o `taken_at` é lido do EXIF do original antes do redimensionamento (21/09/2026)
+  - [ ] Lixeira de eventos sem tela de restauração (continua)
 
-### M3 — Fila, ingest-worker e galeria (spec §5.2, §7.2, §10, §11) · 1,5 semanas · risco baixo
+### M3 — Fila, ingest-worker e galeria (spec §5.2, §7.2, §10, §11) · 1,5 semanas · risco baixo ✅ (21/09/2026, exceto deploy)
 
-- [ ] Tabela `photo_jobs` + RPC `claim_photo_jobs` com `FOR UPDATE SKIP LOCKED`, `execute` só para `service_role` (D2)
-- [ ] Job com 5 tentativas estouradas → `failed` com `last_error` e botão "tentar de novo" na tela do evento
-- [ ] `ingest-worker` (Node 24 + `sharp`, concorrência 8): dimensões, EXIF, miniatura WebP 320px (D4), enfileira `recognize`
-- [ ] Galeria virtualizada (`@tanstack/react-virtual`) abrindo em ≤ 2 s com 2.000 miniaturas (R3)
-- [ ] Progresso: contador otimista + assinatura Realtime em `batch_jobs` (R1)
-- [ ] Deploy do worker na Fly (um app por worker), `/health`, alerta para `batch_jobs` parado > 10 min
-- [ ] Log estruturado com `batch_id`, `photo_id`, duração; nunca nome de aluno
-- [ ] Testes: dedup por `unique(event_id, content_hash)`; `claim_photo_jobs` sem corrida com 4 workers; RLS de `photos` entre escolas
+Migrations `iaschool_fase2_photo_jobs_queue` e `iaschool_fase2_batch_progress_rpcs` aplicadas no banco real em 21/09/2026 (referência em `supabase/fase2-photo-jobs-worker.sql`; ensaio com rollback e roundtrip funcional em `supabase/rehearsal/m3-checks.sql`). Worker em `artifacts/ingest-worker/`; cliente em `src/lib/gallery/`, `src/hooks/use-batch-progress.ts`, `src/components/event-photo-grid.tsx`, `event-upload-progress.tsx`.
+
+- [x] Tabela `photo_jobs` + RPC `claim_photo_jobs` com `FOR UPDATE SKIP LOCKED`, `execute` só para `service_role` (D2). Enfileiramento por trigger `after insert on photos` a partir de `photos.batch_id` (nullable: cliente antigo segue inserindo, foto fica `pending` sem job — backfill opcional documentado). RLS ligada e sem policy (21/09/2026)
+- [x] Job com 5 tentativas estouradas → `failed` com `last_error` (`complete_photo_job`), foto `failed` com `error`, e botão "N fotos não processadas — tentar de novo" na tela do evento (`retry_failed_photo_jobs`, membro da escola). A RPC seta a flag transacional `iaschool.photos_rpc` que o trigger `photos_restrict_client_update` passou a respeitar (21/09/2026)
+- [x] `ingest-worker` (Node 24 + `sharp`, concorrência 8, claim de 16 com lease de 120 s): dimensões orientadas, EXIF só como reserva de `taken_at` (o cliente manda a data no insert), miniatura WebP 320px q80 em `event-thumbs` (D4), `complete_photo_job` enfileira `recognize`. Rodado contra o banco real com 12 fotos sintéticas + 1 corrompida: 12 processadas, 1 `failed` na 5ª tentativa, lote fechado como `failed`, 12 jobs `recognize` na fila. ~1–3 s por foto **daqui** (rede até o Storage domina); a meta de ≤ 300 ms (§11.1) só se mede com o worker na mesma região (21/09/2026)
+- [x] Galeria virtualizada (`@tanstack/react-virtual`, `useWindowVirtualizer`): metadados das fotos de uma vez (paginado em blocos de 1.000 — antes o PostgREST cortava em 1.000 linhas), URLs assinadas só das células visíveis em lotes de 100 com cache por evento; célula sem miniatura vira skeleton, falhada vira aviso; lightbox assina a foto grande sob demanda. **Meta de ≤ 2 s com 2.000 fotos não medida**: não há acervo de demonstração desse tamanho (21/09/2026)
+- [x] Progresso: contador otimista do cliente + assinatura Realtime em `batch_jobs` filtrada por `event_id`, com polling de 15 s como rede de segurança; a galeria é refeita com throttle de 3 s enquanto o worker roda. Polling de 2 s do M2 removido; fotos enviadas entram na lista sem refetch (R1) (21/09/2026)
+- [~] Deploy do worker na Fly: `artifacts/ingest-worker/Dockerfile`, `fly.toml` (app `iaschool-ingest-worker`, gru, `min_machines_running = 1`, `auto_stop_machines = off`, check em `/health`) e roteiro no README **prontos, deploy não executado** (decisão de 21/09/2026). `docker build` também não rodou: daemon do Docker desligado nesta máquina
+- [x] `/health` responde 503 quando a view `stalled_batch_jobs` (lote `running` parado há > 10 min **com job pendente**) tem linhas, quando o laço trava (> 60 s sem tick) ou durante o encerramento; a checagem da Fly reinicia a máquina. Lote abandonado pelo cliente sem job pendente não derruba o health (21/09/2026)
+- [x] Log estruturado (pino) com `batch_id`, `photo_id`, `job_id`, `attempt`, `duration_ms`, `result`; nunca nome de arquivo, nome de aluno ou URL assinada — verificado no ensaio ao vivo (21/09/2026)
+- [x] Testes: 8 de integração da fila (`tests/photo-jobs.integration.test.ts`: `photo_jobs` invisível para `authenticated`, trigger de enfileiramento, `claim_photo_jobs` com 4 chamadas paralelas sem id repetido, lease expirado, ciclo completo até `failed` e retry, grants, `stalled_batch_jobs` sob RLS) + os 11 de RLS de `photos` do M2 (dedup e isolamento entre escolas) verdes; 20 unitários do worker (sharp com imagem sintética, laço com concorrência ≤ 8 e shutdown, health, config); 23 unitários novos no app (EXIF, layout, cache de URLs, throttle, uploader) (21/09/2026)
+- [ ] Sobras do M3: `events.status` fica em `processing` até o M5 consumir os jobs `recognize`; backfill das fotos `pending` do M2 sem `batch_id` (só se houver dado real — hoje o banco está vazio); medir R3 (≤ 2 s) e §11.1 (≤ 300 ms/miniatura) com acervo de demonstração e worker na Fly; HEIC continua sem amostra real
 
 ---
 
@@ -293,6 +298,16 @@ Ainda sem decisão:
 - **Versão desfocada: gerada a cada entrega ou cacheada?** Recomendação em aberto: gerar na entrega, a partir do original, para refletir a autorização do momento. Fase 5.
 
 ## Decisões tomadas
+
+**21/09/2026** — M3: deploy na Fly só preparado (Dockerfile, `fly.toml`,
+roteiro), sem `fly deploy` neste marco; `taken_at` extraído no **cliente** do
+EXIF do arquivo original (o JPEG sobe sem EXIF: nada de GPS nem modelo de
+câmera no Storage), com `OffsetTimeOriginal` quando existe e o fuso do
+navegador quando não — o worker lê EXIF só como reserva; `keep_originals`
+implementado no cliente (original vai para `event-originals`); alerta de lote
+parado = view `stalled_batch_jobs` + `/health` 503 no worker, sem `pg_cron`;
+`batch_jobs.total` contado no **servidor** em `finish_batch_upload`;
+`photos.status` não passa por `processing` (só `pending` → `processed`/`failed`).
 
 **31/08/2026** — D1 InsightFace self-hosted, D2 fila em tabela, D3 2560px q85,
 D4 miniaturas pelo worker, D5 embedding só com consentimento, D6 revisão humana

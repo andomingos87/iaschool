@@ -233,13 +233,27 @@ export interface EventRepository {
 export interface PhotoUploadInput {
   eventId: string;
   schoolId: string;
+  /** Lote aberto por `startBatch`; o banco enfileira o job de ingest a partir dele. */
+  batchId: string;
   /** SHA-256 (hex) do arquivo ORIGINAL, antes do redimensionamento. */
   contentHash: string;
   originalFilename: string;
-  /** JPEG redimensionado (2560px lado maior, q85). */
+  /** JPEG redimensionado (2560px lado maior, q85), sem EXIF. */
   blob: Blob;
   width?: number;
   height?: number;
+  /**
+   * `DateTimeOriginal` do EXIF do arquivo original, em ISO com instante.
+   * Lido no cliente antes do redimensionamento (o JPEG sobe sem EXIF: nada de
+   * GPS nem modelo de câmera no Storage). Sem `OffsetTimeOriginal` a hora da
+   * câmera é interpretada no fuso do navegador de quem envia.
+   */
+  takenAt?: string;
+  /**
+   * Arquivo original (JPEG/PNG/HEIC como veio da câmera), só quando
+   * `events.keep_originals` está ligado. Vai para `event-originals`.
+   */
+  original?: Blob;
 }
 
 export type PhotoUploadResult =
@@ -253,24 +267,51 @@ export type PhotoUploadResult =
  * `outcome: "duplicate"` para o contador "já enviada" da tela.
  */
 export interface PhotoRepository {
-  /** Fotos ativas do evento, na ordem de envio, com `displayUrl` assinada. */
+  /**
+   * Fotos ativas do evento, na ordem de envio, sem URL: a galeria assina só
+   * o que está visível com `signThumbUrls`. Pagina internamente em blocos de
+   * 1.000 (limite do PostgREST), então 2.000 fotos voltam inteiras.
+   */
   list(eventId: string): Promise<Photo[]>;
+  /**
+   * URLs assinadas (TTL 1 h) das miniaturas em `event-thumbs`, em lotes de
+   * 100 (spec §10). Fotos sem `thumbPath` ficam de fora (placeholder na tela).
+   * Devolve `photo.id` → URL.
+   */
+  signThumbUrls(
+    photos: ReadonlyArray<Pick<Photo, "id" | "thumbPath">>,
+  ): Promise<Map<string, string>>;
+  /** URL assinada da foto 2560px em `event-photos`, para o lightbox. */
+  signPhotoUrl(photo: Pick<Photo, "storagePath">): Promise<string>;
   /** Dos hashes dados, quais já existem no evento (evita subir bytes à toa). */
   findExistingHashes(eventId: string, hashes: string[]): Promise<Set<string>>;
   /**
-   * Sobe o arquivo para `event-photos` e grava a linha em `photos`. Uma
-   * chamada = uma foto; a concorrência e as retentativas são do chamador.
+   * Sobe o arquivo para `event-photos` (e o original para `event-originals`
+   * quando vier) e grava a linha em `photos`. Uma chamada = uma foto; a
+   * concorrência e as retentativas são do chamador.
    */
   upload(input: PhotoUploadInput): Promise<PhotoUploadResult>;
   /** Exclusão normal: lixeira (`deleted_at`). */
   moveToTrash(ids: string[]): Promise<void>;
   /** Abre um lote `ingest` para o evento com o total previsto de arquivos. */
   startBatch(eventId: string, total: number): Promise<BatchJob>;
-  /** Fecha o lote com os números finais do cliente (o worker mexe em `processed`). */
-  finishBatch(
-    id: string,
-    result: { total: number; failed: number; cancelled?: boolean },
-  ): Promise<void>;
+  /**
+   * Avisa que o envio acabou (RPC `finish_batch_upload`). O `total` real é
+   * contado no servidor; o lote em si só fecha quando o worker terminar.
+   */
+  finishBatch(id: string, result: { total: number; cancelled?: boolean }): Promise<void>;
+  /** Último lote `ingest` do evento, para mostrar o progresso do servidor. */
+  latestBatch(eventId: string): Promise<BatchJob | null>;
+  /**
+   * Notifica cada mudança nos lotes do evento (Realtime em `batch_jobs`;
+   * eventos locais no mock). Retorna a função de unsubscribe.
+   */
+  onBatchChange(eventId: string, cb: (batch: BatchJob) => void): () => void;
+  /**
+   * "N fotos não processadas — tentar de novo" (spec §5.2): volta para a fila
+   * os jobs que estouraram as 5 tentativas. Devolve quantas fotos voltaram.
+   */
+  retryFailedJobs(eventId: string): Promise<number>;
 }
 
 export interface ReferenceRepository {

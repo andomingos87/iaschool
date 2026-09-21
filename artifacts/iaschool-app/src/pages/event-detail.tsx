@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import {
   ArrowLeft,
@@ -25,7 +25,8 @@ import { EventPhotoGrid } from "@/components/event-photo-grid";
 import { ReferenceCoverageNotice } from "@/components/reference-coverage-notice";
 import { useClassLabels } from "@/hooks/use-classes";
 import { useDeclareImageRights, useEvent, useMoveEventToTrash } from "@/hooks/use-events";
-import { useEventPhotos } from "@/hooks/use-photos";
+import { useEventPhotos, useRetryFailedJobs } from "@/hooks/use-photos";
+import { useBatchProgress } from "@/hooks/use-batch-progress";
 import { useEventUpload } from "@/hooks/use-event-upload";
 import { EVENT_STATUS_LABEL } from "@/lib/data";
 import { TEST_DATA_ONLY } from "@/lib/constants";
@@ -46,6 +47,12 @@ export default function EventDetailPage() {
   const declare = useDeclareImageRights();
   const remove = useMoveEventToTrash();
   const { uploader, snapshot } = useEventUpload(event.data);
+  const { batch } = useBatchProgress(event.data?.id ?? null);
+  const retryJobs = useRetryFailedJobs(event.data?.id ?? "");
+  const failedJobs = useMemo(
+    () => photos.data?.filter((p) => p.status === "failed").length ?? 0,
+    [photos.data],
+  );
 
   const [accepted, setAccepted] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -232,16 +239,25 @@ export default function EventDetailPage() {
 
       <section className="space-y-4">
         <EventUploadDropzone disabled={!declared || !uploader} onFiles={onFiles} />
-        {snapshot && uploader && <EventUploadProgress snapshot={snapshot} uploader={uploader} />}
+        <EventUploadProgress
+          snapshot={snapshot}
+          uploader={uploader}
+          batch={batch}
+          failedJobs={failedJobs}
+          onRetryJobs={() => retryJobs.mutate()}
+          retryingJobs={retryJobs.isPending}
+        />
       </section>
 
       <section className="space-y-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground" data-testid="text-photos-title">
           <Images className="size-4" />
           {photos.data
-            ? photos.data.length === 1
-              ? "1 foto no evento"
-              : `${photos.data.length.toLocaleString("pt-BR")} fotos no evento`
+            ? `${
+                photos.data.length === 1
+                  ? "1 foto no evento"
+                  : `${photos.data.length.toLocaleString("pt-BR")} fotos no evento`
+              }${failedJobs > 0 ? ` · ${failedJobs.toLocaleString("pt-BR")} ${failedJobs === 1 ? "não processada" : "não processadas"}` : ""}`
             : "Fotos do evento"}
         </h2>
         {photos.isError ? (
@@ -259,7 +275,7 @@ export default function EventDetailPage() {
             }
           />
         ) : (
-          <EventPhotoGrid photos={photos.data ?? []} />
+          <EventPhotoGrid photos={photos.data ?? []} eventId={e.id} />
         )}
       </section>
 

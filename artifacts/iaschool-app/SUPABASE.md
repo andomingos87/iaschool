@@ -38,6 +38,8 @@ aplicadas via MCP; as duas do M1 subiram em **20/09/2026**:
 | `20260920160829` | `iaschool_fase1_fix_function_search_path` |
 | `20260921021539` | `iaschool_fase2_photos_batch_jobs_buckets` (M2, aplicada em 20/09/2026 no horário local) |
 | `20260921023500` | `iaschool_fase2_photos_event_school_check` (M2: triggers que exigem `photos.school_id` = `events.school_id`, idem `batch_jobs`) |
+| `20260921100408` | `iaschool_fase2_photo_jobs_queue` (M3, 21/09/2026: `photo_jobs`, `photos.batch_id` + trigger de enfileiramento, `batch_jobs.upload_finished_at`/`updated_at`, `claim_photo_jobs`) |
+| `20260921100446` | `iaschool_fase2_batch_progress_rpcs` (M3, 21/09/2026: `finish_batch_upload`, `complete_photo_job`, `retry_failed_photo_jobs`, `batch_jobs_try_close`, `batch_pending_jobs`, view `stalled_batch_jobs`; `photos_restrict_client_update` passa a respeitar a flag `iaschool.photos_rpc`) |
 
 ### Como alterar o schema
 
@@ -68,6 +70,7 @@ o mecanismo de aplicação. Mantenha-os fiéis ao banco.
 | [`setup.sql`](./supabase/setup.sql) | `profiles`, `students`, `clubs`, `reference_posts`, `generated_posts`, `prompt_settings`, `prompt_template_versions`, funções auxiliares de RLS, buckets e políticas de Storage |
 | [`fase1-min-schools-events.sql`](./supabase/fase1-min-schools-events.sql) | **M1 (Fase 1 mínima)**: `schools`, `school_members`, `classes`, `guardians`, `events`; papéis globais; RLS por escola; Storage por escola; OTP por responsável; aprovação criando a escola. Aplicada em 20/09/2026; ensaio com rollback em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) |
 | [`fase2-photos-upload.sql`](./supabase/fase2-photos-upload.sql) | **M2 (upload em massa)**: `photos` com dedup por hash, `batch_jobs`, trigger que restringe o UPDATE do cliente a `deleted_at`, buckets `event-photos`/`event-thumbs`/`event-originals` com policies por escola, RPC `event_photo_counts`, Realtime em `batch_jobs`. Aplicada em 20/09/2026 |
+| [`fase2-photo-jobs-worker.sql`](./supabase/fase2-photo-jobs-worker.sql) | **M3 (fila e worker)**: `photo_jobs` (RLS sem policy, só `service_role`), `photos.batch_id` + trigger `photos_enqueue_ingest`, `batch_jobs.upload_finished_at`/`updated_at`, `claim_photo_jobs` (`for update skip locked`), RPCs `finish_batch_upload` / `complete_photo_job` / `retry_failed_photo_jobs`, view `stalled_batch_jobs`. Aplicada em 21/09/2026; ensaio em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) (`m3-checks.sql`) |
 | [`eca-digital.sql`](./supabase/eca-digital.sql) | `share_logs` e o modelo antigo do OTP (por aluno, superado pelo M1) |
 | [`generation-quota.sql`](./supabase/generation-quota.sql) | `generation_usage` + `consume_generation_quota()` |
 | [`generation-logs.sql`](./supabase/generation-logs.sql) | `generation_logs` + bucket privado `generation-logs` |
@@ -95,8 +98,9 @@ Todas com RLS habilitada.
 | `generation_logs` | Auditoria das gerações (tela `/admin/logs`). RLS ligada e **sem políticas**: só o api-server (service_role) lê e escreve |
 | `guardian_verification_codes` | OTP de verificação do responsável (ECA Digital), chaveado por `guardian_id` |
 | `share_logs` | Trilha imutável de compartilhamento (ECA Digital) |
-| `photos` | Foto de evento (M2): `storage_path` em `event-photos`, `content_hash` (SHA-256 do original) com `unique (event_id, content_hash)`, `status` do pipeline; soft delete via `deleted_at`. Pela API autenticada o UPDATE só alcança `deleted_at` (trigger `photos_restrict_client_update`); o resto é do worker (`service_role`) |
-| `batch_jobs` | Lote de processamento (M2): um por sessão de upload (`kind = 'ingest'`), com `total`/`processed`/`failed`; publicado no Realtime para o progresso do M3 |
+| `photos` | Foto de evento (M2): `storage_path` em `event-photos`, `content_hash` (SHA-256 do original) com `unique (event_id, content_hash)`, `status` do pipeline (`pending` → `processed`/`failed`); `batch_id` (M3) aponta o lote do upload e dispara o job de ingest; `taken_at` vem do cliente no insert; `thumb_path`/`width`/`height` são escritos pelo worker. Soft delete via `deleted_at`. Pela API autenticada o UPDATE só alcança `deleted_at` (trigger `photos_restrict_client_update`); o resto é do worker (`service_role`) ou de RPC definer com a flag `iaschool.photos_rpc` |
+| `batch_jobs` | Lote de processamento: um por sessão de upload (`kind = 'ingest'`). `total` é contado no servidor em `finish_batch_upload`; `processed`/`failed` são incrementados pelo worker via `complete_photo_job`; `upload_finished_at` marca o fim do envio e o lote só fecha (`done`/`failed`) quando `processed + failed >= total`. `updated_at` (trigger) alimenta a view `stalled_batch_jobs`. Publicado no Realtime: o app assina por `event_id` |
+| `photo_jobs` | Fila em tabela (D2, M3): `kind` (`ingest`/`recognize`), `status` (`queued`/`leased`/`done`/`failed`), `attempts` (máx. 5), `leased_until`, `last_error`. RLS ligada e **sem políticas**: só o `ingest-worker` (`service_role`) via `claim_photo_jobs`/`complete_photo_job`, e as RPCs definer. Jobs `recognize` ficam `queued` até o `face-worker` (M5) |
 
 Pontos de RLS e retenção que importam:
 
@@ -126,6 +130,15 @@ Pontos de RLS e retenção que importam:
   `deleted_at`; qualquer outro campo enviado num UPDATE autenticado é
   descartado pelo trigger. Hard delete só `super_admin`. A dedup é do banco:
   `unique (event_id, content_hash)` devolve 23505 e o app conta "já enviada".
+- Fila e progresso (M3): `photo_jobs` não tem policy nenhuma. O cliente só
+  toca a fila por três RPCs `security definer` que checam `is_member_of`
+  por dentro: `finish_batch_upload` (dono do lote), `retry_failed_photo_jobs`
+  (membro da escola do evento) e `batch_pending_jobs` (usada pela view). O
+  linter do Supabase aponta essas três como "definer executável por
+  authenticated" — é intencional, mesmo padrão de `confirm_guardian_code` e
+  `my_schools`. `claim_photo_jobs` e `complete_photo_job` têm `execute` só para
+  `service_role`. `stalled_batch_jobs` é `security_invoker`: herda a RLS de
+  `batch_jobs`, então cada escola vê só os próprios lotes parados.
 
 ### Configuração do projeto (uma vez, no painel)
 

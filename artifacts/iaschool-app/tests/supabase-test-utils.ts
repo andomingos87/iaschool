@@ -235,3 +235,69 @@ export async function adminInsert(
   const [created] = (await resp.json()) as Array<{ id: string }>;
   return created!.id;
 }
+
+/** Chama uma RPC com service role (o que o worker faz). Devolve status e corpo JSON. */
+export async function adminRpc(
+  fn: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: unknown }> {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: { ...adminHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const text = await resp.text();
+  let parsed: unknown = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = text;
+  }
+  return { status: resp.status, body: parsed };
+}
+
+/** Chama uma RPC como o usuário (RLS e grants aplicados). */
+export async function userRpc(
+  user: TestUser,
+  fn: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: unknown; rows: unknown[] }> {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: {
+      apikey: ANON_KEY,
+      Authorization: `Bearer ${user.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await resp.text();
+  let parsed: unknown = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = text;
+  }
+  return { status: resp.status, body: parsed, rows: resp.ok && Array.isArray(parsed) ? parsed : [] };
+}
+
+/** INSERT como o usuário devolvendo a linha criada (ou null se recusado). */
+export async function userInsertReturning(
+  user: TestUser,
+  table: string,
+  row: Record<string, unknown>,
+): Promise<{ status: number; row: Record<string, unknown> | null }> {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      apikey: ANON_KEY,
+      Authorization: `Bearer ${user.token}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(row),
+  });
+  if (!resp.ok) return { status: resp.status, row: null };
+  const [created] = (await resp.json()) as Array<Record<string, unknown>>;
+  return { status: resp.status, row: created ?? null };
+}

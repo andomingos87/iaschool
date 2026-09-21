@@ -294,8 +294,10 @@ export interface Photo {
   eventId: string;
   /** Caminho no bucket `event-photos`: `{school_id}/{event_id}/{photo_id}.jpg`. */
   storagePath: string;
-  /** Caminho no bucket `event-thumbs`, preenchido pelo worker (M3). */
+  /** Caminho no bucket `event-thumbs`, preenchido pelo ingest-worker. */
   thumbPath?: string;
+  /** Lote de upload que originou a foto; o job de ingest nasce dele. */
+  batchId?: string;
   contentHash: string;
   originalFilename: string;
   bytes: number;
@@ -308,14 +310,17 @@ export interface Photo {
   uploadedBy: string;
   createdAt: string;
   deletedAt?: string;
-  /** URL assinada para exibição (miniatura quando existir, senão a foto). Preenchida ao listar. */
-  displayUrl?: string;
 }
 
 export type BatchJobKind = "ingest" | "recognize" | "reference";
 export type BatchJobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
-/** Lote de processamento (`batch_jobs`): um por sessão de upload no M2. */
+/**
+ * Lote de processamento (`batch_jobs`): um por sessão de upload. `total` é
+ * contado no servidor quando o envio acaba; `processed`/`failed` são os jobs
+ * de ingest concluídos pelo worker. O lote só fecha quando `uploadFinishedAt`
+ * está preenchido e `processed + failed >= total`.
+ */
 export interface BatchJob {
   id: string;
   schoolId: string;
@@ -327,6 +332,10 @@ export interface BatchJob {
   failed: number;
   createdBy: string;
   createdAt: string;
+  /** Momento em que o cliente avisou que terminou de enviar. */
+  uploadFinishedAt?: string;
+  /** Última mudança (contadores inclusive); base do alerta de lote parado. */
+  updatedAt?: string;
   finishedAt?: string;
 }
 
