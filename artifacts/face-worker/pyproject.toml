@@ -1,0 +1,9 @@
+# O face-worker é Python; este arquivo existe só para o pytest achar o pacote
+# em `src/` sem instalar nada. A dependência real está em requirements.txt,
+# com versão fixada — as mesmas do spike M0, para os números medidos lá
+# continuarem valendo aqui.
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

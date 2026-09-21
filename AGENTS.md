@@ -31,7 +31,7 @@ alvo e o roadmap por fases.
 | 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
 | 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ✅ M1 concluído (20/09/2026): migration aplicada, OTP por responsável, telas de cadastro da escola e de turmas. Fase 1 completa (CSV, papel `dev`) segue aberta |
 | 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ✅ M2 (20/09/2026) e M3 (21/09/2026) concluídos: `photos`, `batch_jobs`, buckets, upload em massa no cliente; fila `photo_jobs`, `ingest-worker` (miniaturas WebP, `/health`), galeria virtualizada e progresso por Realtime. Deploy do worker na Fly preparado, **não executado** |
-| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); ✅ **M4 concluído** (21/09/2026): `authorizations` com os 4 escopos, toggles na ficha do aluno, aba de rosto de referência, indicador de prontidão e a fila `student_reference_jobs`. O cálculo do embedding (`det_size` 640) vai com o `face-worker` do M5; M5 e M6 a fazer |
+| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); ✅ **M4 e M5 concluídos** (21/09/2026): consentimento por escopo, rosto de referência, `face-worker` em Python rodado contra o banco real, `photo_faces`, busca vetorial isolada por escola e pasta do aluno. Falta o M6 (revisão por aluno, trilha, expurgo) e o deploy dos workers |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
 | 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
 
@@ -46,13 +46,16 @@ eventos (`/eventos`), upload em massa no cliente com dedup por hash e retomada,
 tabela `photos` e buckets por escola — e o M3 — fila `photo_jobs`,
 `artifacts/ingest-worker/` (Node 24 + `sharp`: dimensões, miniatura WebP
 320px, `/health`), galeria virtualizada e progresso por Realtime em
-`batch_jobs` — e o M4: consentimento por escopo (`authorizations`) com os dois
-toggles na ficha do aluno, aba "Rosto de referência" que sobe a foto para
-`student-refs` e a enfileira, e o indicador de prontidão na lista de alunos.
-O que ainda **não existe**: worker rodando na Fly (só
-Dockerfile/`fly.toml`/roteiro), o motor de reconhecimento facial (os jobs
-`recognize` e os de rosto de referência ficam na fila sem consumidor até o M5;
-o evento para em `processing`) e envio em lote.
+`batch_jobs` —, o M4 — consentimento por escopo (`authorizations`) com os dois
+toggles na ficha do aluno, aba "Rosto de referência" e indicador de prontidão
+na lista de alunos — e o M5: `artifacts/face-worker/` (Python + InsightFace)
+consumindo as duas filas, `photo_faces` com o vetor bloqueado por privilégio
+de coluna, busca vetorial isolada por escola e a pasta do aluno em
+`/alunos/:id`. O que ainda **não existe**: worker nenhum rodando na Fly (os
+dois têm Dockerfile, `fly.toml` e imagem construída, mas nenhum `fly deploy`
+foi executado — sem eles, nada sai da fila em produção), a **tela de revisão**
+(M6), sem a qual nenhum rosto vira `confirmed` e a pasta do aluno fica vazia,
+o expurgo e o envio em lote.
 
 Ao trabalhar aqui, diferencie sempre protótipo, código local, integração
 configurada e evidência de produção.
@@ -100,8 +103,14 @@ consentimento ou compartilhamento, use a skill `eca-digital`
 - `artifacts/api-server/` — servidor Express e fluxo de geração de imagens.
 - `artifacts/ingest-worker/` — worker Node 24 + `sharp` que consome
   `photo_jobs` (miniaturas, dimensões, EXIF de reserva) e expõe `/health`.
-  Único lugar, além do `api-server`, com `SUPABASE_SERVICE_ROLE_KEY`;
   `Dockerfile` e `fly.toml` próprios (um app por worker).
+- `artifacts/face-worker/` — worker **Python 3.12** (`onnxruntime` +
+  `insightface`) que consome `photo_jobs` (`kind = 'recognize'`) e
+  `student_reference_jobs`: detecção SCRFD, embedding ArcFace 512-d e
+  atribuição por limiar. Um processo por máquina, `.venv` local (`pnpm
+  --filter @workspace/face-worker run setup`), testes com pytest.
+  `ingest-worker`, `face-worker` e `api-server` são os únicos lugares com
+  `SUPABASE_SERVICE_ROLE_KEY`.
 - `artifacts/mockup-sandbox/` — sandbox para prototipação visual.
 - `lib/api-spec/` — contrato OpenAPI e configuração do Orval.
 - `lib/api-client-react/` — cliente React gerado a partir do contrato.
@@ -151,6 +160,7 @@ Para iniciar superfícies específicas:
 pnpm --filter @workspace/iaschool-app run dev
 pnpm --filter @workspace/api-server run dev
 pnpm --filter @workspace/ingest-worker run dev
+pnpm --filter @workspace/face-worker run dev
 pnpm --filter @workspace/iaschool-ui run dev
 pnpm --filter @workspace/mockup-sandbox run dev
 ```
@@ -174,6 +184,11 @@ antes de compartilhar uma URL.
 - Testes do servidor: `pnpm --filter @workspace/api-server run test`.
 - Testes do worker: `pnpm --filter @workspace/ingest-worker run test` (sem
   rede, imagens sintéticas geradas pelo `sharp`).
+- Testes do `face-worker`: `pnpm --filter @workspace/face-worker run test`
+  (pytest, sem rede; o caso que carrega o `buffalo_l` é pulado quando os
+  modelos não estão na máquina). A verificação ponta a ponta contra o banco é
+  `artifacts/face-worker/scripts/live_check.py` — ela usa material de teste de
+  **adultos** (LFW), nunca foto de criança.
 - Testes de integração do app contra o banco real (`tests/*.integration.test.ts`)
   exigem `SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY`
   exportadas; `pnpm --filter @workspace/iaschool-app run test` roda tudo junto.
@@ -209,10 +224,12 @@ Tabelas atuais em `public`: `profiles`, `students`, `clubs`, `reference_posts`,
 `generation_usage`, `generation_logs`, `guardian_verification_codes`,
 `share_logs`, desde o M1 `schools`, `school_members`, `classes`, `guardians`
 e `events`, desde o M2 `photos` e `batch_jobs`, desde o M3 `photo_jobs`
-(sem policy: só `service_role` e RPCs) e desde o M4 `authorizations`,
+(sem policy: só `service_role` e RPCs), desde o M4 `authorizations`,
 `student_reference_faces` (idem, sem policy) e `student_reference_jobs`
 (a fila do rosto de referência, essa visível para a escola: não guarda vetor)
-— todas com RLS habilitada.
+e desde o M5 `photo_faces` (legível pelo membro, **menos a coluna
+`embedding`**, bloqueada por privilégio de coluna) e
+`face_recognition_settings` — todas com RLS habilitada.
 A migration do M1 (`iaschool_fase1_schools_members_classes`, referência em
 `supabase/fase1-min-schools-events.sql`) foi **aplicada em 20/09/2026**: a
 escola é o tenant, `profiles.role` é papel global (`dev`/`super_admin`/`user`)
@@ -232,7 +249,13 @@ fila `photo_jobs`, `photos.batch_id`, RPCs de progresso e view
 21/09/2026**: extensão `vector`, consentimento por escopo em `authorizations`
 (indelével: revogar é `revoked_at`), `student_reference_faces`, o bucket
 `student-refs` e a fila `student_reference_jobs`, que liga a tela ao motor
-facial. Estado em `BACKLOG.md`, M1 a M4.
+facial. As do M5 (`iaschool_fase3_photo_faces_recognition` e
+`iaschool_fase3_permanent_job_failure`, referência em
+`supabase/fase3-face-recognition.sql`) também foram **aplicadas em
+21/09/2026**: `face_recognition_settings`, `photo_faces` (com o `embedding`
+bloqueado por privilégio de coluna), `match_reference_faces`,
+`complete_recognize_job`, o bucket `face-crops` e `student_photos`.
+Estado em `BACKLOG.md`, M1 a M5.
 
 **Como alterar o schema:** exclusivamente por `apply_migration` do servidor MCP
 `supabase-iaschool` (seção abaixo). Não use o SQL Editor do painel para mudança

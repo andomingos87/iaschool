@@ -1,0 +1,8 @@
+# face-worker (spec §7.3). Versões fixadas: as mesmas do spike M0, para que os
+# números medidos lá continuem valendo aqui.
+numpy==2.2.6
+onnxruntime==1.29.0
+insightface==1.0.1
+opencv-python-headless==5.0.0.93
+pillow==12.3.0
+httpx==0.28.1

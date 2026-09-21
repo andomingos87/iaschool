@@ -1054,6 +1054,12 @@ const photos: PhotoRepository = {
     window.addEventListener(BATCH_CHANGED_EVENT, onLocal);
     return () => window.removeEventListener(BATCH_CHANGED_EVENT, onLocal);
   },
+  async listForStudent(_studentId) {
+    await delay(200);
+    // O mock não tem motor facial: nenhum rosto foi detectado, logo nenhum
+    // foi confirmado. A tela explica isso em vez de fingir uma pasta cheia.
+    return [];
+  },
   async retryFailedJobs(eventId) {
     await delay(150);
     const all = readCollection<Photo>("photos", []);

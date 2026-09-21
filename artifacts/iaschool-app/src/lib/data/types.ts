@@ -484,6 +484,24 @@ export interface StudentBiometricReadiness {
  */
 export const REFERENCE_FACES_RECOMMENDED = 2;
 
+/**
+ * Uma foto de evento na **pasta do aluno** (spec §7.6). Consulta, não cópia:
+ * uma foto com cinco crianças confirmadas aparece nas cinco pastas, com um
+ * único arquivo no Storage.
+ *
+ * Só entra aqui rosto `confirmed` — sugestão do reconhecimento não chega a
+ * download nem a envio (D6).
+ */
+export interface StudentPhoto {
+  /** `photos.id`; o mesmo campo que a galeria do evento usa para assinar. */
+  id: string;
+  eventId: string;
+  storagePath: string;
+  thumbPath?: string;
+  takenAt?: string;
+  createdAt: string;
+}
+
 /** Post estático de Instagram usado como referência de estilo. */
 export interface ReferencePost {
   id: string;

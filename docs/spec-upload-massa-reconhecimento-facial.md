@@ -593,8 +593,14 @@ recolher o consentimento outra vez.
 | `event-photos` | não | `{school_id}/{event_id}/{photo_id}.jpg` | foto processada (2560px) |
 | `event-thumbs` | não | `{school_id}/{event_id}/{photo_id}.webp` | miniatura 320px |
 | `event-originals` | não | `{school_id}/{event_id}/{photo_id}.orig` | só se `keep_originals` |
-| `face-crops` | não | `{school_id}/{event_id}/{face_id}.jpg` | recorte para a fila de revisão |
+| `face-crops` | não | `{school_id}/{event_id}/{photo_id}-{i}.jpg` | recorte para a fila de revisão |
 | `student-refs` | não | `{school_id}/{student_id}/{ref_id}.jpg` | foto de referência do aluno |
+
+> O caminho do recorte mudou no M5 (21/09/2026): era `{face_id}.jpg`, mas o
+> id do rosto só existe depois do insert, e o nome por índice é determinístico
+> — reprocessar o lote sobrescreve o mesmo objeto em vez de deixar recorte
+> órfão no bucket. O `crop_path` fica na linha de `photo_faces`, então o
+> expurgo do M6 não depende do nome.
 
 Política de todos, no mesmo padrão das `iaschool_storage_*` existentes:
 

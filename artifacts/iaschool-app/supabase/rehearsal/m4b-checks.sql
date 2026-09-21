@@ -40,7 +40,7 @@ begin
     'authenticated reivindica job do worker';
   assert not has_function_privilege(
     'authenticated',
-    'public.complete_student_reference_job(uuid,boolean,extensions.vector,real,text)',
+    'public.complete_student_reference_job(uuid,boolean,extensions.vector,real,text,boolean)',
     'execute'), 'authenticated grava embedding';
   assert has_function_privilege('service_role','public.claim_student_reference_jobs(int,int)','execute'),
     'service_role não reivindica';

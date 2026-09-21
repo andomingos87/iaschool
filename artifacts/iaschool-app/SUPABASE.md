@@ -44,6 +44,8 @@ aplicadas via MCP; as duas do M1 subiram em **20/09/2026**:
 | `20260921103854` | `iaschool_fase3_has_active_authorization_tenant_check` (M4: a função definer passa a conferir o tenant por dentro — sem isso, um autenticado sondaria o consentimento de aluno de outra escola) |
 | `20260921105854` | `iaschool_fase3_reference_face_jobs` (M4, 21/09/2026: fila `student_reference_jobs` entre a tela e o motor facial, `claim_student_reference_jobs`/`complete_student_reference_job` só para `service_role`, `retry_student_reference_job` e `delete_student_reference_face` para a tela) |
 | `20260921111313` | `iaschool_fase3_reference_job_revoked_guard` (M4: consentimento revogado entre o envio e o processamento derruba o job como `revoked`, em vez de estourar no trigger e deixá-lo preso em `leased`) |
+| `20260921113430` | `iaschool_fase3_photo_faces_recognition` (M5, 21/09/2026: `face_recognition_settings`, `photo_faces` com o `embedding` bloqueado por privilégio de coluna, trigger da D5, `match_reference_faces` (D7), `complete_recognize_job`, bucket `face-crops`, `student_photos`) |
+| `20260921114100` | `iaschool_fase3_permanent_job_failure` (M5: falha permanente nas duas filas — arquivo ilegível e retrato com dois rostos não melhoram em cinco tentativas) |
 
 ### Como alterar o schema
 
@@ -76,6 +78,7 @@ o mecanismo de aplicação. Mantenha-os fiéis ao banco.
 | [`fase2-photos-upload.sql`](./supabase/fase2-photos-upload.sql) | **M2 (upload em massa)**: `photos` com dedup por hash, `batch_jobs`, trigger que restringe o UPDATE do cliente a `deleted_at`, buckets `event-photos`/`event-thumbs`/`event-originals` com policies por escola, RPC `event_photo_counts`, Realtime em `batch_jobs`. Aplicada em 20/09/2026 |
 | [`fase2-photo-jobs-worker.sql`](./supabase/fase2-photo-jobs-worker.sql) | **M3 (fila e worker)**: `photo_jobs` (RLS sem policy, só `service_role`), `photos.batch_id` + trigger `photos_enqueue_ingest`, `batch_jobs.upload_finished_at`/`updated_at`, `claim_photo_jobs` (`for update skip locked`), RPCs `finish_batch_upload` / `complete_photo_job` / `retry_failed_photo_jobs`, view `stalled_batch_jobs`. Aplicada em 21/09/2026; ensaio em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) (`m3-checks.sql`) |
 | [`fase3-authorizations-reference-faces.sql`](./supabase/fase3-authorizations-reference-faces.sql) | **M4 (autorizações e rosto de referência)**: extensão `vector`, `authorizations` (4 escopos, sem delete, prova imutável), `student_reference_faces` (RLS sem policy), `has_active_authorization`, view `v_biometric_consent`, RPCs `list_student_reference_faces` / `student_biometric_readiness`, bucket `student-refs` (insert exige consentimento ativo), migração de `students.guardian->>'consentAt'`. Seção 8: fila `student_reference_jobs` (a referência não existe sem embedding, e o vetor é calculado fora do navegador). Aplicada em 21/09/2026; ensaio em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) (`m4-seed.sql` + `m4-checks.sql` + `m4b-checks.sql`) |
+| [`fase3-face-recognition.sql`](./supabase/fase3-face-recognition.sql) | **M5 (rostos, atribuição e pasta do aluno)**: `face_recognition_settings`, `photo_faces` (RLS por linha + privilégio de coluna escondendo `embedding`), trigger da D5, `match_reference_faces` (D7, só `service_role`), `complete_recognize_job` (grava os rostos, conta em `photos.faces_count` e move o evento para `review`), bucket `face-crops`, `student_photos`. Aplicada em 21/09/2026; ensaio em `supabase/rehearsal/m5-checks.sql` |
 | [`eca-digital.sql`](./supabase/eca-digital.sql) | `share_logs` e o modelo antigo do OTP (por aluno, superado pelo M1) |
 | [`generation-quota.sql`](./supabase/generation-quota.sql) | `generation_usage` + `consume_generation_quota()` |
 | [`generation-logs.sql`](./supabase/generation-logs.sql) | `generation_logs` + bucket privado `generation-logs` |
@@ -107,6 +110,8 @@ Todas com RLS habilitada.
 | `batch_jobs` | Lote de processamento: um por sessão de upload (`kind = 'ingest'`). `total` é contado no servidor em `finish_batch_upload`; `processed`/`failed` são incrementados pelo worker via `complete_photo_job`; `upload_finished_at` marca o fim do envio e o lote só fecha (`done`/`failed`) quando `processed + failed >= total`. `updated_at` (trigger) alimenta a view `stalled_batch_jobs`. Publicado no Realtime: o app assina por `event_id` |
 | `photo_jobs` | Fila em tabela (D2, M3): `kind` (`ingest`/`recognize`), `status` (`queued`/`leased`/`done`/`failed`), `attempts` (máx. 5), `leased_until`, `last_error`. RLS ligada e **sem políticas**: só o `ingest-worker` (`service_role`) via `claim_photo_jobs`/`complete_photo_job`, e as RPCs definer. Jobs `recognize` ficam `queued` até o `face-worker` (M5) |
 | `authorizations` | Consentimento por escopo (M4, spec §5.4): `biometric_sorting`, `delivery_whatsapp`, `internal_use`, `social_media`. Um ativo por (aluno, escopo) — índice único parcial `where revoked_at is null`. Revogar é preencher `revoked_at`: **não há policy de delete** e o privilégio também foi revogado. Pela API o cliente só muda `revoked_at`, e só de nulo para uma data (trigger `authorizations_restrict_client_update`); desrevogar é recusado, reconceder é linha nova. `evidence` guarda termo, versão e origem |
+| `photo_faces` | Rosto detectado numa foto de evento (M5, spec §5.3): `bbox` e `det_score` de **todo** rosto, `crop_path` em `face-crops`, `state` (`unassigned`/`suggested`/`confirmed`/`rejected`/`not_a_student`/`adult_or_staff`), `runner_up_*` e `reviewed_by/at`. O `embedding` é nulo para rosto sem correspondência (D5) e **não é legível por `authenticated`**: o `revoke select` + `grant select (colunas)` bloqueia a coluna, não a linha. Escrita só pelo worker (`complete_recognize_job`); confirmar é RPC do M6 |
+| `face_recognition_settings` | Linha única com `tau` (0,52), `margin` (0,10), `min_face_px` (60), `det_size_event` (1600), `det_size_reference` (640) e `neighbors` (5) — os números do spike M0. Legível por qualquer autenticado, editável **só pelo papel `dev`**: o worker relê a cada minuto, então recalibrar no piloto não exige deploy |
 | `student_reference_jobs` | Fila do rosto de referência (M4): a tela sobe o JPEG em `student-refs` e enfileira; o motor facial (`det_size` 640, spec §7.4) calcula o vetor e a linha de `student_reference_faces` nasce em `complete_student_reference_job`. Mesma forma de `photo_jobs` (lease, 5 tentativas), mas **visível para a escola** — não guarda vetor, só o caminho e o estado. A escola insere e apaga; quem muda o estado é o worker (sem policy nem privilégio de update). Enquanto o `face-worker` (M5) não existir, os jobs ficam `queued` |
 | `student_reference_faces` | Rosto de referência do aluno (M4, spec §5.3): `embedding` `vector(512)` com índice HNSW, `authorization_id` obrigatório e conferido pelo trigger (`biometric_sorting` ativo do próprio aluno — D5 no banco, não na tela), `retention_until` = fim do ano letivo corrente, sem renovação automática. RLS ligada e **sem políticas**: só `service_role` e as RPCs definer. A tela lê por `list_student_reference_faces`, que nunca devolve o vetor |
 
@@ -151,6 +156,17 @@ Pontos de RLS e retenção que importam:
   foto esperando, e a linha não guarda vetor. O consentimento é conferido duas
   vezes, ao enfileirar e ao concluir — revogado no meio, o job morre como
   `revoked` e nenhuma referência nasce.
+- Rostos detectados (M5): `photo_faces` é a única tabela do produto em que a
+  proteção é **privilégio de coluna**, não RLS. A policy diz quais linhas o
+  membro enxerga; o `grant select (…)` diz quais colunas — e `embedding` não
+  está na lista, então `select=*` e `select=embedding` são recusados pelo
+  PostgREST mesmo com token válido. Insert, update e delete não existem para
+  o cliente: quem escreve é o worker por `complete_recognize_job`, e confirmar
+  rosto é RPC do M6. A busca vetorial (`match_reference_faces`) é
+  `security definer` com o `where school_id` por dentro (D7) e executável só
+  pelo `service_role` — busca de vizinhos na mão de cliente é inferência de
+  identidade. O bucket `face-crops` não tem policy de insert: o recorte é do
+  worker; o membro só lê e apaga.
 - Fila e progresso (M3): `photo_jobs` não tem policy nenhuma. O cliente só
   toca a fila por três RPCs `security definer` que checam `is_member_of`
   por dentro: `finish_batch_upload` (dono do lote), `retry_failed_photo_jobs`

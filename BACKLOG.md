@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 21/09/2026 (**M4 concluído**, menos o embedding em si: banco — `authorizations`, `student_reference_faces`, bucket `student-refs`, extensão `vector` e a fila `student_reference_jobs` — e camada de app — toggles de consentimento na ficha do aluno, aba "Rosto de referência", indicador de prontidão na lista de alunos. O cálculo do vetor (`det_size` 640) fica com o `face-worker` do M5: a fila e as RPCs que ele vai consumir já existem e estão testadas. 140 testes unitários do app (11 novos) + 20 do worker + 90 de integração contra o banco real (13 novos) verdes; M3 com deploy na Fly preparado, não executado)
+**Atualizado em:** 21/09/2026 (**M4 e M5 concluídos**. M4: consentimento por escopo, rosto de referência e a fila que liga a tela ao motor facial. M5: `face-worker` em Python rodando de verdade contra o banco — 20 rostos detectados numa cena de teste, 3 sugeridos, 17 sem atribuição e sem vetor, evento movido para `review` —, `photo_faces` com o vetor bloqueado por privilégio de coluna, busca vetorial isolada por escola e pasta do aluno. 240 testes do app (140 unitários + 100 de integração contra o banco real) + 33 do face-worker + 20 do ingest-worker verdes; imagem do face-worker construída e testada, **nenhum worker implantado na Fly**)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -25,7 +25,7 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 | Transversal — produção e conformidade | pendências #1–#7 | ❌ nenhum item andou | depende de compra de domínio/Resend/Meta |
 | 1 — Fundação escolar | M1 (mínima) + Fase 1 completa | ✅ **M1 concluído** (20/09/2026); Fase 1 completa (CSV, papel `dev`, professor da turma) segue aberta | 2–2,5 sem (M1) |
 | 2 — Upload em massa | M2, M3 | ✅ **M2** (20/09/2026) e **M3** (21/09/2026) concluídos; deploy do `ingest-worker` na Fly preparado, **não executado** | — |
-| 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito; ✅ **M4 concluído** (21/09/2026), menos o embedding, que vai com o `face-worker` do M5; M5 e M6 a fazer | 6 sem |
+| 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito; ✅ **M4 e M5 concluídos** (21/09/2026); falta o M6 (revisão, trilha e expurgo) e o deploy dos workers | 6 sem |
 | 4 — Autorização granular + portal | — | ❌ sem spec | 2–3 sem |
 | 5 — Lote e WhatsApp | — | ❌ sem spec | 4–6 sem |
 
@@ -233,22 +233,30 @@ contrato, com implementação Supabase e mock; `use-authorizations.ts` e
 - [x] Indicador de prontidão na lista de alunos (21/09/2026): "N de M com rosto de referência · N sem consentimento · N autorizados sem foto · N aguardando processamento · N com cobertura baixa", com os dois primeiros recortes clicáveis. Junta `student_biometric_readiness(p_school)` com a contagem da fila; a coluna "Situação" da tabela passa a mostrar o estado por aluno. `ReferenceCoverageNotice` (aviso do evento, M2) passa a subtrair quem já tem referência processada
 - [~] Embedding de referência com `det_size` 640 — **o caminho está pronto, o motor não**. A fila `student_reference_jobs` liga a tela ao worker (mesma forma de `photo_jobs`: lease, 5 tentativas, `claim`/`complete` só para `service_role`), o roundtrip está testado no banco real e o consentimento é conferido duas vezes, ao enfileirar e ao concluir — revogado no meio, o job morre como `revoked` e nenhuma referência nasce. O que falta é quem calcula o vetor: InsightFace em Python, que é o `face-worker` do M5. Decisão de 21/09/2026: não duplicar esse worker no M4 nem gravar embedding de mentira para destravar tela — até o M5 as fotos ficam `queued` e a tela diz isso
 
-### M5 — face-worker, atribuição e pasta do aluno (spec §5.3, §7.3, §7.6, §11) · 2,5 semanas · **risco alto**
+### M5 — face-worker, atribuição e pasta do aluno (spec §5.3, §7.3, §7.6, §11) · 2,5 semanas · **risco alto** ✅ (21/09/2026, exceto deploy)
+
+Migrations `iaschool_fase3_photo_faces_recognition` e
+`iaschool_fase3_permanent_job_failure` aplicadas no banco real em 21/09/2026
+(referência em `supabase/fase3-face-recognition.sql`; ensaio com rollback e
+roundtrip funcional em `supabase/rehearsal/m5-checks.sql`). Worker em
+`artifacts/face-worker/`; pasta do aluno em
+`src/components/student-photo-folder.tsx`.
 
 - [x] Instalar extensão `vector` no projeto (21/09/2026, antecipada no M4: `student_reference_faces.embedding` depende dela)
-- [ ] `docker build` do `Dockerfile` de `scripts/spike-face/` — nunca foi construído (sem Docker na máquina do spike)
+- [x] `docker build` — feito em 21/09/2026, do `Dockerfile` do próprio `face-worker` (o de `scripts/spike-face/` era o esqueleto). A imagem sobe, carrega os modelos embutidos em ~1,1 s e responde `/health` 200 sem baixar nada em runtime. Conferido também que só `det_10g.onnx` e `w600k_r50.onnx` ficam na imagem: `genderage` e os dois de landmark são apagados
 - [ ] Rodar `bench_throughput.py` **na máquina alvo** da Fly antes de dimensionar; os números do spike são de Apple M4
-- [ ] `face-worker` (Python 3.12, `onnxruntime` + `insightface`, modelos embutidos, `service_role`, 1 processo por máquina)
-- [ ] Laço de **referência** no mesmo worker (`det_size` 640): `claim_student_reference_jobs` → embedding → `complete_student_reference_job`. A fila e as RPCs nasceram no M4 e estão testadas; falta o consumidor
-- [ ] Tabela `photo_faces` com `state` (`suggested`, `unassigned`, `confirmed`, `rejected`, `not_a_student` = criança de fora, `adult_or_staff` = adulto), `runner_up_*`, `reviewed_by/at`
-- [ ] `face_recognition_settings` (linha única, editável pelo super admin) com `tau`, margem, `min_face_px`
-- [ ] Busca vetorial dos 5 vizinhos **filtrada por `school_id` dentro de função `security definer`** (D7)
-- [ ] Persistir embedding só quando corresponde a aluno com `biometric_sorting` ativo; rosto sem correspondência guarda só bbox + recorte (D5)
-- [ ] **`bbox` e `det_score` de todo rosto detectado sobrevivem ao expurgo do recorte e do vetor**, inclusive `not_a_student` — é o que torna o desfoque da entrega possível (spec §9.3.1). Sem isso, a única saída na Fase 5 vira bloquear a foto inteira
-- [ ] Bucket `face-crops` para os recortes da revisão
-- [ ] `revoke select on photo_faces from authenticated` + `grant select` de colunas sem `embedding` (privilégio de coluna)
-- [ ] Pasta do aluno como consulta N:N (R4, R6), aba "Fotos" em `/alunos/:id`
-- [ ] `SUPABASE_SERVICE_ROLE_KEY` só nos workers; nunca logar embedding, recorte ou nome
+- [x] `face-worker` (Python 3.12, `onnxruntime` + `insightface`, modelos embutidos, `service_role`, 1 processo por máquina) (21/09/2026). Um motor só serve os dois `det_size`: `FaceAnalysis.prepare()` troca campos do detector sem recarregar sessão ONNX, então 1600 e 640 dividem os mesmos modelos em memória
+- [x] Laço de **referência** no mesmo worker (`det_size` 640), com prioridade sobre o reconhecimento: é ele que destrava o cadastro da escola (21/09/2026). Retrato sem rosto ou com mais de um é recusado **de vez**, não retentado — escolher o maior arriscaria matricular o rosto errado, e referência errada não erra uma foto, erra todas as daquele aluno
+- [x] Tabela `photo_faces` com `state` (`suggested`, `unassigned`, `confirmed`, `rejected`, `not_a_student`, `adult_or_staff`), `runner_up_*`, `reviewed_by/at` (21/09/2026)
+- [x] `face_recognition_settings` (linha única) com `tau`, margem, `min_face_px`, `det_size` de evento e de referência (21/09/2026). Leitura para qualquer autenticado; **escrita só do papel `dev`** (decisão #5, não "super admin" como dizia este item): mexer no limiar muda quantos rostos de criança o sistema atribui sozinho. O worker relê a linha a cada minuto — recalibrar no piloto não exige deploy. Falta a tela, que é o item "Papel `dev`" da Fase 1 completa
+- [x] Busca vetorial dos 5 vizinhos **filtrada por `school_id` dentro de função `security definer`** (D7), executável só pelo `service_role` (21/09/2026). Referência vencida não entra na comparação
+- [x] Persistir embedding só quando corresponde a aluno com `biometric_sorting` ativo; rosto sem correspondência guarda só bbox + recorte (D5) — o worker nem tenta, e o trigger recusa se tentar (21/09/2026)
+- [x] **`bbox` e `det_score` de todo rosto detectado sobrevivem ao expurgo do recorte e do vetor** (21/09/2026): as duas colunas são `not null`, e o M6 vai apagar recorte e vetor sem tocá-las
+- [x] Bucket `face-crops` para os recortes da revisão (21/09/2026). Caminho `{school_id}/{event_id}/{photo_id}-{i}.jpg` em vez do `{face_id}.jpg` da spec §6: é determinístico, então reprocessar o lote sobrescreve em vez de deixar recorte órfão. Escrita só do worker (sem policy de insert); membro lê e apaga
+- [x] `revoke select on photo_faces from authenticated` + `grant select` de colunas sem `embedding` (21/09/2026). Testado pela API: `select=embedding` e `select=*` são recusados, e o conjunto de colunas permitido volta normal
+- [x] Pasta do aluno como consulta N:N (R4, R6), aba "Fotos de eventos" em `/alunos/:id` (21/09/2026). RPC `student_photos`, só `confirmed`; foto com cinco crianças confirmadas aparece nas cinco pastas, com um arquivo só. Até a revisão do M6 existir, a aba fica vazia e explica por quê
+- [x] `SUPABASE_SERVICE_ROLE_KEY` só nos workers; nunca logar embedding, recorte ou nome (21/09/2026) — o log é JSON com id, contagem, duração e resultado, e o formatter não deixa passar nem stack trace do OpenCV, que carregaria caminho de arquivo
+- [ ] Sobras do M5: deploy na Fly (`Dockerfile` e `fly.toml` prontos, imagem construída, `fly deploy` **não executado**); medir §11.1 com o worker na mesma região; recalibrar `tau`/margem com dado de criança no piloto
 
 ### M6 — Revisão, trilha, expurgo e aceite (spec §7.5, §9.4, §12) · 2,5 semanas · risco médio
 
@@ -313,6 +321,20 @@ Ainda sem decisão:
 - **Versão desfocada: gerada a cada entrega ou cacheada?** Recomendação em aberto: gerar na entrega, a partir do original, para refletir a autorização do momento. Fase 5.
 
 ## Decisões tomadas
+
+**21/09/2026** — M5: **um processo por máquina, um job de cada vez**, sem
+concorrência interna. Não é simplificação: o spike mediu 1, 4 e 8 processos
+com a mesma vazão agregada, porque o `onnxruntime` já satura os núcleos numa
+sessão. Concorrência aqui só criaria disputa de CPU e lease vencido; escala-se
+com `fly scale count`. Decidido junto: um motor só para os dois `det_size`
+(`prepare()` troca campos do detector sem recarregar sessão); a fila de
+referência tem prioridade sobre a de reconhecimento; retrato com zero ou mais
+de um rosto é **falha permanente**, não retentativa, e o mesmo vale para
+arquivo ilegível — cinco leases de 5 minutos por foto que nunca vai processar
+travariam o lote; e o recorte da revisão vai para
+`{school_id}/{event_id}/{photo_id}-{i}.jpg`, não `{face_id}.jpg` como a spec
+§6 dizia, porque o caminho determinístico faz o reprocessamento sobrescrever
+em vez de deixar órfão no bucket.
 
 **21/09/2026** — M4: o embedding de referência **não** é reimplementado no M4.
 O vetor sai de InsightFace em Python, que é o `face-worker` do M5; duplicá-lo

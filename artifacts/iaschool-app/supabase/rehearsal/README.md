@@ -142,3 +142,29 @@ de escola de que a sessão não é membro é recusado; e
 apagar no bucket.
 
 Executado em 21/09/2026, antes e depois de aplicar: `roundtrip M4b ok`.
+
+## M5 — `fase3-face-recognition.sql`
+
+```bash
+psql "$DSN" -v ON_ERROR_STOP=1 -q -c "begin;" \
+  -f artifacts/iaschool-app/supabase/fase3-face-recognition.sql \
+  -f artifacts/iaschool-app/supabase/rehearsal/m5-checks.sql \
+  -c "rollback;"
+psql "$DSN" -Atc "select to_regclass('public.photo_faces') is null"   # t
+```
+
+O roundtrip cobre: a busca vetorial acha o aluno da própria escola e devolve
+vazio para outra (D7); referência vencida sai da comparação; embedding sem
+aluno atribuído é recusado, e com aluno sem `biometric_sorting` também (D5);
+o mesmo rosto entra **sem** o vetor, porque bbox e det_score são de todo rosto
+detectado (§9.3.1); aluno de outra escola não entra num rosto desta;
+`complete_recognize_job` grava os rostos, atualiza `faces_count`, move o
+evento de `processing` para `review` e responde `noop` na segunda chamada;
+falha permanente derruba o job na primeira tentativa; e `student_photos` só
+mostra `confirmed` e recusa aluno de outro tenant.
+
+As checagens de privilégio conferem o que a RLS **não** faz: `authenticated`
+não tem `select` na coluna `embedding`, nem insert/update/delete na tabela,
+nem execute em `match_reference_faces`.
+
+Executado em 21/09/2026: `roundtrip M5 ok`, antes e depois de aplicar.

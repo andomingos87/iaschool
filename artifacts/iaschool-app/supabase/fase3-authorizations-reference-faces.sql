@@ -565,12 +565,20 @@ grant execute on function public.claim_student_reference_jobs(int,int) to servic
 -- em vez de estourar no trigger — se estourasse, a transação voltaria, o job
 -- ficaria 'leased' até o lease vencer e o ciclo se repetiria até as 5
 -- tentativas, deixando a linha presa para sempre.
+-- `p_permanent`: retrato sem rosto, ou com dois, não melhora na quinta
+-- tentativa — a escola precisa ver a falha e mandar outra foto (M5).
+--
+-- A assinatura ganhou um parâmetro: sem o drop, o `create or replace` criaria
+-- uma SOBRECARGA e o PostgREST recusaria a chamada por ambiguidade.
+drop function if exists public.complete_student_reference_job(
+  uuid, boolean, extensions.vector, real, text);
 create or replace function public.complete_student_reference_job(
   p_job_id    uuid,
   p_ok        boolean,
   p_embedding extensions.vector(512) default null,
   p_quality   real                   default null,
-  p_error     text                   default null
+  p_error     text                   default null,
+  p_permanent boolean                default false
 ) returns text
 language plpgsql security definer set search_path = public as $$
 declare
@@ -618,7 +626,7 @@ begin
     return 'done';
   end if;
 
-  if v_job.attempts >= 5 then
+  if p_permanent or v_job.attempts >= 5 then
     update public.student_reference_jobs
        set status = 'failed', leased_until = null, last_error = v_error
      where id = p_job_id;
@@ -631,9 +639,9 @@ begin
   return 'requeued';
 end;
 $$;
-revoke all on function public.complete_student_reference_job(uuid,boolean,extensions.vector,real,text)
+revoke all on function public.complete_student_reference_job(uuid,boolean,extensions.vector,real,text,boolean)
   from public, anon, authenticated;
-grant execute on function public.complete_student_reference_job(uuid,boolean,extensions.vector,real,text)
+grant execute on function public.complete_student_reference_job(uuid,boolean,extensions.vector,real,text,boolean)
   to service_role;
 
 -- 8.3 Tela: "tentar de novo" numa referência que falhou (mesmo papel do

@@ -31,6 +31,7 @@ import type {
   StoredImage,
   Student,
   StudentBiometricReadiness,
+  StudentPhoto,
   StudentReferenceFace,
   StudentReferenceJob,
 } from "./types";
@@ -318,6 +319,12 @@ export interface PhotoRepository {
    * os jobs que estouraram as 5 tentativas. Devolve quantas fotos voltaram.
    */
   retryFailedJobs(eventId: string): Promise<number>;
+  /**
+   * Pasta do aluno (spec §7.6): as fotos em que um rosto dele foi
+   * **confirmado** na revisão, de todos os eventos. Sugestão não entra.
+   * Passa pela RPC `student_photos`, que checa `is_member_of` por dentro.
+   */
+  listForStudent(studentId: string): Promise<StudentPhoto[]>;
 }
 
 /**

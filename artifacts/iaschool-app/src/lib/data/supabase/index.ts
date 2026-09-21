@@ -55,6 +55,7 @@ import type {
   StoredImage,
   Student,
   StudentBiometricReadiness,
+  StudentPhoto,
   StudentReferenceJob,
 } from "../types";
 import {
@@ -1740,6 +1741,20 @@ export function createSupabaseDataLayer(): DataLayer {
       });
       if (error) fail("Falha ao reenfileirar as fotos", error);
       return Number(data ?? 0);
+    },
+    async listForStudent(studentId) {
+      const { data, error } = await supabase.rpc("student_photos", {
+        p_student: studentId,
+      });
+      if (error) fail("Falha ao abrir as fotos do aluno", error);
+      return ((data ?? []) as Row[]).map((r) => ({
+        id: r["photo_id"] as string,
+        eventId: r["event_id"] as string,
+        storagePath: r["storage_path"] as string,
+        thumbPath: (r["thumb_path"] as string | null) ?? undefined,
+        takenAt: (r["taken_at"] as string | null) ?? undefined,
+        createdAt: r["created_at"] as string,
+      }));
     },
   };
 

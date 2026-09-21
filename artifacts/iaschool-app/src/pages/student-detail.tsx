@@ -4,6 +4,7 @@ import {
   ArchiveRestore,
   ArrowLeft,
   Calendar,
+  FolderOpen,
   GalleryVerticalEnd,
   Images,
   Maximize2,
@@ -60,6 +61,7 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import { GuardianVerifyDialog } from "@/components/guardian-verify-dialog";
 import { StudentAuthorizationsCard } from "@/components/student-authorizations-card";
 import { StudentReferenceFaces } from "@/components/student-reference-faces";
+import { StudentPhotoFolder } from "@/components/student-photo-folder";
 import {
   useStudent,
   useMoveStudentsToTrash,
@@ -433,6 +435,9 @@ export default function StudentDetailPage() {
               <TabsTrigger value="gallery" data-testid="tab-student-gallery">
                 <Images className="size-4" /> Fotos e artes
               </TabsTrigger>
+              <TabsTrigger value="folder" data-testid="tab-student-folder">
+                <FolderOpen className="size-4" /> Fotos de eventos
+              </TabsTrigger>
               <TabsTrigger value="reference" data-testid="tab-student-reference">
                 <ScanFace className="size-4" /> Rosto de referência
               </TabsTrigger>
@@ -531,6 +536,9 @@ export default function StudentDetailPage() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+            <TabsContent value="folder">
+              <StudentPhotoFolder student={s} />
             </TabsContent>
             <TabsContent value="reference">
               <StudentReferenceFaces student={s} />

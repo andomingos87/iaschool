@@ -1,0 +1,12 @@
+{
+  "name": "@workspace/face-worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Worker Python que consome photo_jobs (kind=recognize) e student_reference_jobs: detecção SCRFD, embedding ArcFace 512-d e atribuição por limiar.",
+  "scripts": {
+    "setup": "python3.12 -m venv .venv && ./.venv/bin/pip install -q -r requirements-dev.txt",
+    "dev": "./.venv/bin/python -m face_worker",
+    "test": "./.venv/bin/python -m pytest",
+    "typecheck": "node -e \"process.stdout.write('face-worker é Python: sem typecheck de TS\\n')\""
+  }
+}

@@ -21,6 +21,21 @@ export function useEventPhotos(eventId: string | null) {
 }
 
 /**
+ * Pasta do aluno (spec §7.6): as fotos em que um rosto dele foi confirmado
+ * na revisão. Enquanto a revisão do M6 não existir, a lista fica vazia — o
+ * reconhecimento só produz sugestão, e sugestão não entra aqui (D6).
+ */
+export function useStudentPhotos(studentId: string | null) {
+  const data = getDataLayer();
+  return useQuery({
+    queryKey: qk.studentPhotos(studentId ?? ""),
+    queryFn: () => data.photos.listForStudent(studentId!),
+    enabled: Boolean(studentId),
+    staleTime: 60_000,
+  });
+}
+
+/**
  * URLs assinadas das miniaturas visíveis. `ensure` agrupa em lotes de 100 e
  * o cache vive por evento; o retorno é um getter estável por versão.
  */

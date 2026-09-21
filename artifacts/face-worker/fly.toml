@@ -1,0 +1,48 @@
+# face-worker na Fly.io (spec §11): um app por worker, escala manual.
+#
+# **Escalar com mais MÁQUINAS** (`fly scale count N`), não com mais processos:
+# o onnxruntime já satura os núcleos dentro de uma sessão, e o spike mediu 1,
+# 4 e 8 processos com a mesma vazão agregada.
+#
+# Deploy (contexto = raiz do repositório):
+#   fly deploy --config artifacts/face-worker/fly.toml \
+#              --dockerfile artifacts/face-worker/Dockerfile artifacts/face-worker
+# Segredos: SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY via `fly secrets set`.
+
+app = "iaschool-face-worker"
+primary_region = "gru"
+# Tempo para o SIGTERM terminar a foto em voo. Uma foto de 20 rostos levou
+# ~12 s desta máquina; 8 delas num lote reivindicado cabem em 180 s.
+kill_timeout = 180
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  LOG_LEVEL = "info"
+  CLAIM_BATCH = "8"
+  LEASE_SECONDS = "300"
+
+# Worker faz polling: nunca pode dormir por falta de tráfego HTTP.
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    # O motor carrega antes de o /health abrir; dá folga para o boot.
+    grace_period = "90s"
+    method = "GET"
+    path = "/health"
+
+# 2 GB: os dois modelos ONNX + a foto de 2560px decodificada em memória.
+# O `ingest-worker` cabe em 1 GB; este não.
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
