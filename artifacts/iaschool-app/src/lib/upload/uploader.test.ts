@@ -19,7 +19,7 @@ interface FakeRepo extends UploaderDeps["repo"] {
   uploads: PhotoUploadInput[];
   hashesOnServer: Set<string>;
   batches: Array<{ id: string; total: number }>;
-  finished: Array<{ id: string; total: number; failed: number; cancelled?: boolean }>;
+  finished: Array<{ id: string; total: number; cancelled?: boolean }>;
   /** Falhas a injetar por nome de arquivo: quantas vezes o upload deve estourar. */
   failTimes: Map<string, number>;
   inFlight: number;
@@ -163,7 +163,72 @@ describe("addFiles: filtro, limite e contagens", () => {
     expect(s.counts.done).toBe(3);
     expect(repo.uploads.map((u) => u.originalFilename).sort()).toEqual(["a.jpg", "b.jpg", "c.jpg"]);
     expect(repo.batches).toEqual([{ id: "batch-1", total: 3 }]);
-    expect(repo.finished).toEqual([{ id: "batch-1", total: 3, failed: 0, cancelled: false }]);
+    expect(repo.finished).toEqual([{ id: "batch-1", total: 3, cancelled: false }]);
+    // Toda foto sobe com o lote aberto: é dele que o banco enfileira o ingest.
+    expect(repo.uploads.every((u) => u.batchId === "batch-1")).toBe(true);
+  });
+});
+
+describe("metadados do original: taken_at e keep_originals", () => {
+  it("lê a data do arquivo original e manda no upload", async () => {
+    const seen: string[] = [];
+    const { uploader, repo } = build({
+      readTakenAt: async (file) => {
+        seen.push((file as File).name);
+        return "2026-03-14T18:09:26.000Z";
+      },
+    });
+    await uploader.addFiles([makeFile("a.jpg")]);
+    await settle(uploader);
+    expect(seen).toEqual(["a.jpg"]);
+    expect(repo.uploads[0]?.takenAt).toBe("2026-03-14T18:09:26.000Z");
+  });
+
+  it("sem leitor de EXIF o upload vai sem taken_at; leitor que lança não derruba o item", async () => {
+    const plain = build();
+    await plain.uploader.addFiles([makeFile("a.jpg")]);
+    await settle(plain.uploader);
+    expect(plain.repo.uploads[0]?.takenAt).toBeUndefined();
+
+    const broken = build({
+      readTakenAt: async () => {
+        throw new Error("exif corrompido");
+      },
+    });
+    await broken.uploader.addFiles([makeFile("b.jpg")]);
+    const s = await settle(broken.uploader);
+    expect(s.counts.done).toBe(1);
+    expect(broken.repo.uploads[0]?.takenAt).toBeUndefined();
+  });
+
+  it("só manda o original quando keepOriginals() é true, e manda o arquivo como veio", async () => {
+    let keep = false;
+    const { uploader, repo } = build({
+      keepOriginals: () => keep,
+      // O preparo devolve OUTRO blob: o original não pode ser este.
+      prepare: async () => ({ blob: new Blob(["jpeg-convertido"]), width: 10, height: 10 }),
+    });
+    await uploader.addFiles([makeFile("sem.jpg")]);
+    await settle(uploader);
+    expect(repo.uploads[0]?.original).toBeUndefined();
+
+    keep = true;
+    const heic = new File(["heic-bytes"], "com.heic", { type: "image/heic", lastModified: 1 });
+    await uploader.addFiles([heic]);
+    await settle(uploader);
+    const withOriginal = repo.uploads.find((u) => u.originalFilename === "com.heic")!;
+    expect(withOriginal.original).toBe(heic);
+    expect(withOriginal.blob).not.toBe(heic);
+  });
+
+  it("onUploaded dispara uma vez por foto gravada, nunca para duplicata", async () => {
+    const uploaded: string[] = [];
+    const { uploader } = build({ onUploaded: (p) => uploaded.push(p.originalFilename) });
+    await uploader.addFiles([makeFile("a.jpg", "mesmo"), makeFile("b.jpg", "mesmo"), makeFile("c.jpg")]);
+    await settle(uploader);
+    // a.jpg e b.jpg têm o mesmo conteúdo: só um deles vira foto.
+    expect(uploaded).toHaveLength(2);
+    expect(uploaded).toContain("c.jpg");
   });
 });
 
@@ -227,7 +292,8 @@ describe("concorrência e retentativas", () => {
     expect(teimoso.error).toBe("rede caiu");
     // 3 esperas do teimoso + 2 do que voltou.
     expect([...sleeps].sort((a, b) => a - b)).toEqual([1000, 1000, 4000, 4000, 16000]);
-    expect(repo.finished[0]).toMatchObject({ total: 1, failed: 1 });
+    // Falha de envio não vira foto no servidor: o total reportado é só o que subiu.
+    expect(repo.finished[0]).toMatchObject({ total: 1 });
   });
 
   it("retryFailed devolve o que falhou para a fila e abre um lote novo", async () => {

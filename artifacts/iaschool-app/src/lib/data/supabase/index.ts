@@ -345,6 +345,7 @@ function toPhoto(r: Row): Photo {
     eventId: r["event_id"] as string,
     storagePath: r["storage_path"] as string,
     thumbPath: (r["thumb_path"] as string | null) ?? undefined,
+    batchId: (r["batch_id"] as string | null) ?? undefined,
     contentHash: r["content_hash"] as string,
     originalFilename: r["original_filename"] as string,
     bytes: r["bytes"] as number,
@@ -372,6 +373,8 @@ function toBatchJob(r: Row): BatchJob {
     failed: r["failed"] as number,
     createdBy: r["created_by"] as string,
     createdAt: r["created_at"] as string,
+    uploadFinishedAt: (r["upload_finished_at"] as string | null) ?? undefined,
+    updatedAt: (r["updated_at"] as string | null) ?? undefined,
     finishedAt: (r["finished_at"] as string | null) ?? undefined,
   };
 }
@@ -379,10 +382,13 @@ function toBatchJob(r: Row): BatchJob {
 /** Buckets do evento (spec §6). */
 const EVENT_PHOTOS_BUCKET = "event-photos";
 const EVENT_THUMBS_BUCKET = "event-thumbs";
-/** URLs da galeria valem 1 h (spec §10); re-assinadas a cada listagem. */
+const EVENT_ORIGINALS_BUCKET = "event-originals";
+/** URLs da galeria valem 1 h (spec §10); a galeria reassina antes de vencer. */
 const GALLERY_URL_TTL = 3600;
 /** `createSignedUrls` em lotes de 100 caminhos (spec §10). */
 const SIGN_BATCH = 100;
+/** Teto de linhas por resposta do PostgREST (`db-max-rows`); acima disso, pagina. */
+const LIST_PAGE = 1000;
 
 function toReference(r: Row): ReferencePost {
   return {
@@ -1242,16 +1248,17 @@ export function createSupabaseDataLayer(): DataLayer {
   };
 
   const PHOTO_SELECT =
-    "id, school_id, event_id, storage_path, thumb_path, content_hash, original_filename, bytes, width, height, taken_at, status, faces_count, error, uploaded_by, created_at, deleted_at";
+    "id, school_id, event_id, batch_id, storage_path, thumb_path, content_hash, original_filename, bytes, width, height, taken_at, status, faces_count, error, uploaded_by, created_at, deleted_at";
 
-  /** Assina em lotes de 100 e devolve caminho → URL (falhas ficam de fora). */
+  /** Assina em lotes de 100 (em paralelo) e devolve caminho → URL (falhas ficam de fora). */
   async function signGallery(bucket: string, paths: string[]): Promise<Map<string, string>> {
     const map = new Map<string, string>();
-    for (let i = 0; i < paths.length; i += SIGN_BATCH) {
-      const chunk = paths.slice(i, i + SIGN_BATCH);
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .createSignedUrls(chunk, GALLERY_URL_TTL);
+    const chunks: string[][] = [];
+    for (let i = 0; i < paths.length; i += SIGN_BATCH) chunks.push(paths.slice(i, i + SIGN_BATCH));
+    const results = await Promise.all(
+      chunks.map((chunk) => supabase.storage.from(bucket).createSignedUrls(chunk, GALLERY_URL_TTL)),
+    );
+    for (const { data, error } of results) {
       if (error || !data) continue;
       for (const item of data) {
         if (item.signedUrl && item.path) map.set(item.path, item.signedUrl);
@@ -1262,25 +1269,42 @@ export function createSupabaseDataLayer(): DataLayer {
 
   const photos: PhotoRepository = {
     async list(eventId) {
-      const { data, error } = await supabase
-        .from("photos")
-        .select(PHOTO_SELECT)
-        .eq("event_id", eventId)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: true });
-      if (error) fail("Falha ao listar fotos do evento", error);
-      const list = (data ?? []).map(toPhoto);
-      // Miniatura quando o worker já gerou (M3); senão a própria foto.
-      const withThumb = list.filter((p) => p.thumbPath);
-      const withoutThumb = list.filter((p) => !p.thumbPath);
-      const [thumbs, fulls] = await Promise.all([
-        signGallery(EVENT_THUMBS_BUCKET, withThumb.map((p) => p.thumbPath!)),
-        signGallery(EVENT_PHOTOS_BUCKET, withoutThumb.map((p) => p.storagePath)),
-      ]);
-      for (const p of list) {
-        p.displayUrl = p.thumbPath ? thumbs.get(p.thumbPath) : fulls.get(p.storagePath);
+      // Sem range() o PostgREST corta em 1.000 linhas; 2.000 fotos voltariam
+      // pela metade. Ordem estável (created_at, id) para paginar sem repetir.
+      const list: Photo[] = [];
+      for (let from = 0; ; from += LIST_PAGE) {
+        const { data, error } = await supabase
+          .from("photos")
+          .select(PHOTO_SELECT)
+          .eq("event_id", eventId)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, from + LIST_PAGE - 1);
+        if (error) fail("Falha ao listar fotos do evento", error);
+        const page = data ?? [];
+        for (const r of page) list.push(toPhoto(r));
+        if (page.length < LIST_PAGE) break;
       }
       return list;
+    },
+    async signThumbUrls(items) {
+      const paths = items.filter((p) => p.thumbPath).map((p) => p.thumbPath!);
+      if (paths.length === 0) return new Map();
+      const byPath = await signGallery(EVENT_THUMBS_BUCKET, paths);
+      const out = new Map<string, string>();
+      for (const p of items) {
+        const url = p.thumbPath ? byPath.get(p.thumbPath) : undefined;
+        if (url) out.set(p.id, url);
+      }
+      return out;
+    },
+    async signPhotoUrl(photo) {
+      const { data, error } = await supabase.storage
+        .from(EVENT_PHOTOS_BUCKET)
+        .createSignedUrl(photo.storagePath, GALLERY_URL_TTL);
+      if (error || !data?.signedUrl) fail("Falha ao abrir a foto", error);
+      return data.signedUrl;
     },
     async findExistingHashes(eventId, hashes) {
       const found = new Set<string>();
@@ -1301,11 +1325,33 @@ export function createSupabaseDataLayer(): DataLayer {
       const uid = await currentUserId();
       const photoId = crypto.randomUUID();
       const path = `${input.schoolId}/${input.eventId}/${photoId}.jpg`;
+      // Spec §6: `{school_id}/{event_id}/{photo_id}.orig`, só com keep_originals.
+      const origPath = input.original ? `${input.schoolId}/${input.eventId}/${photoId}.orig` : null;
+
+      // Ordem: JPEG → original → insert. Falha em qualquer passo antes do
+      // insert desfaz o que já subiu; o chamador refaz o item nas retentativas.
+      async function cleanup(): Promise<void> {
+        await supabase.storage.from(EVENT_PHOTOS_BUCKET).remove([path]);
+        if (origPath) await supabase.storage.from(EVENT_ORIGINALS_BUCKET).remove([origPath]);
+      }
 
       const { error: upErr } = await supabase.storage
         .from(EVENT_PHOTOS_BUCKET)
         .upload(path, input.blob, { contentType: "image/jpeg", upsert: false });
       if (upErr) fail("Falha ao enviar a foto", upErr);
+
+      if (origPath && input.original) {
+        const { error: origErr } = await supabase.storage
+          .from(EVENT_ORIGINALS_BUCKET)
+          .upload(origPath, input.original, {
+            contentType: input.original.type || "application/octet-stream",
+            upsert: false,
+          });
+        if (origErr) {
+          await cleanup();
+          fail("Falha ao guardar o original da foto", origErr);
+        }
+      }
 
       const { data, error } = await supabase
         .from("photos")
@@ -1313,12 +1359,14 @@ export function createSupabaseDataLayer(): DataLayer {
           id: photoId,
           school_id: input.schoolId,
           event_id: input.eventId,
+          batch_id: input.batchId,
           storage_path: path,
           content_hash: input.contentHash,
           original_filename: input.originalFilename,
           bytes: input.blob.size,
           width: input.width ?? null,
           height: input.height ?? null,
+          taken_at: input.takenAt ?? null,
           uploaded_by: uid,
         })
         .select(PHOTO_SELECT)
@@ -1327,7 +1375,7 @@ export function createSupabaseDataLayer(): DataLayer {
         // Outro upload do mesmo arquivo chegou antes (mesma pasta em duas
         // abas, por exemplo): o arquivo que subimos é descartado e a foto
         // conta como "já enviada".
-        await supabase.storage.from(EVENT_PHOTOS_BUCKET).remove([path]);
+        await cleanup();
         if (error.code === "23505") return { outcome: "duplicate" };
         fail("Falha ao registrar a foto", error);
       }
@@ -1371,16 +1419,53 @@ export function createSupabaseDataLayer(): DataLayer {
       return toBatchJob(data);
     },
     async finishBatch(id, result) {
-      const { error } = await supabase
-        .from("batch_jobs")
-        .update({
-          total: result.total,
-          failed: result.failed,
-          status: result.cancelled ? "cancelled" : result.failed > 0 ? "failed" : "done",
-          finished_at: new Date().toISOString(),
-        })
-        .eq("id", id);
+      // O servidor conta o total real (jobs de ingest do lote), fecha o lote
+      // se o worker já terminou e move o evento para `processing`.
+      const { error } = await supabase.rpc("finish_batch_upload", {
+        p_batch_id: id,
+        p_total: result.total,
+        p_cancelled: Boolean(result.cancelled),
+      });
       if (error) fail("Falha ao fechar o lote de upload", error);
+    },
+    async latestBatch(eventId) {
+      const { data, error } = await supabase
+        .from("batch_jobs")
+        .select("*")
+        .eq("event_id", eventId)
+        .eq("kind", "ingest")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) fail("Falha ao consultar o lote do evento", error);
+      return data ? toBatchJob(data) : null;
+    },
+    onBatchChange(eventId, cb) {
+      // `batch_jobs` está na publicação supabase_realtime desde o M2; o
+      // filtro por event_id chega só o que interessa a esta tela. O RLS do
+      // Realtime usa o JWT do usuário (policy batch_jobs_select). Se o canal
+      // cair, o hook mantém um polling lento como rede de segurança.
+      const channel = supabase
+        .channel(`batch-jobs:${eventId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "batch_jobs", filter: `event_id=eq.${eventId}` },
+          (payload) => {
+            const row = payload.new as Row | null;
+            if (row && typeof row["id"] === "string") cb(toBatchJob(row));
+          },
+        )
+        .subscribe();
+      return () => {
+        void supabase.removeChannel(channel);
+      };
+    },
+    async retryFailedJobs(eventId) {
+      const { data, error } = await supabase.rpc("retry_failed_photo_jobs", {
+        p_event_id: eventId,
+      });
+      if (error) fail("Falha ao reenfileirar as fotos", error);
+      return Number(data ?? 0);
     },
   };
 

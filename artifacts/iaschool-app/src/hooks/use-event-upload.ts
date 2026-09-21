@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getDataLayer } from "@/lib/data";
-import type { SchoolEvent } from "@/lib/data";
+import type { Photo, SchoolEvent } from "@/lib/data";
 import { qk } from "@/lib/query-keys";
 import {
   createEventUploader,
@@ -9,9 +9,13 @@ import {
   createIndexedDbQueueStore,
   createMemoryQueueStore,
   prepareForUpload,
+  readTakenAt,
   type EventUploader,
   type UploadSnapshot,
 } from "@/lib/upload";
+
+/** Fotos recém-enviadas entram na galeria em lotes de 1 s, sem refazer a listagem. */
+const APPEND_FLUSH_MS = 1_000;
 
 /**
  * Um uploader por evento, vivo enquanto a tela estiver montada. Sair da tela
@@ -22,6 +26,10 @@ export function useEventUpload(event: SchoolEvent | null | undefined) {
   const qc = useQueryClient();
   const eventId = event?.id ?? null;
   const schoolId = event?.schoolId ?? null;
+
+  // A flag pode mudar com a tela aberta; o uploader lê pelo getter.
+  const keepOriginalsRef = useRef(false);
+  keepOriginalsRef.current = event?.keepOriginals ?? false;
 
   const uploaderRef = useRef<{ key: string; uploader: EventUploader; dispose: () => void } | null>(
     null,
@@ -34,11 +42,33 @@ export function useEventUpload(event: SchoolEvent | null | undefined) {
     uploaderRef.current?.dispose();
     const hash = createHashPool();
     const store = createIndexedDbQueueStore() ?? createMemoryQueueStore();
+
+    // Fotos enviadas entram na lista já carregada, agrupadas por 1 s.
+    let buffer: Photo[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushAppend = () => {
+      flushTimer = null;
+      if (buffer.length === 0) return;
+      const add = buffer;
+      buffer = [];
+      qc.setQueryData<Photo[]>(qk.photos(eventId), (old) => {
+        if (!old) return old;
+        const known = new Set(old.map((p) => p.id));
+        return [...old, ...add.filter((p) => !known.has(p.id))];
+      });
+    };
+
     const created = createEventUploader({
       eventId,
       schoolId,
       hash,
       prepare: prepareForUpload,
+      readTakenAt,
+      keepOriginals: () => keepOriginalsRef.current,
+      onUploaded: (photo) => {
+        buffer.push(photo);
+        flushTimer ??= setTimeout(flushAppend, APPEND_FLUSH_MS);
+      },
       repo: getDataLayer().photos,
       store,
     });
@@ -46,12 +76,13 @@ export function useEventUpload(event: SchoolEvent | null | undefined) {
       key,
       uploader: created,
       dispose: () => {
+        if (flushTimer) clearTimeout(flushTimer);
         created.dispose();
         hash.dispose();
       },
     };
     return created;
-  }, [eventId, schoolId]);
+  }, [eventId, schoolId, qc]);
 
   useEffect(
     () => () => {
@@ -67,24 +98,16 @@ export function useEventUpload(event: SchoolEvent | null | undefined) {
     () => null,
   );
 
-  // Quando o lote termina, a galeria e a contagem da lista precisam refletir.
+  // Quando o envio termina, galeria, lote e contagem da lista precisam refletir.
   const wasRunning = useRef(false);
   useEffect(() => {
     const running = snapshot?.running ?? false;
     if (wasRunning.current && !running && eventId) {
       void qc.invalidateQueries({ queryKey: qk.photos(eventId) });
+      void qc.invalidateQueries({ queryKey: qk.batch(eventId) });
       void qc.invalidateQueries({ queryKey: ["events"] });
     }
     wasRunning.current = running;
-  }, [snapshot?.running, eventId, qc]);
-
-  // Enquanto sobe, atualiza a galeria a cada 2 s para mostrar as fotos chegando.
-  useEffect(() => {
-    if (!snapshot?.running || !eventId) return;
-    const t = setInterval(() => {
-      void qc.invalidateQueries({ queryKey: qk.photos(eventId) });
-    }, 2_000);
-    return () => clearInterval(t);
   }, [snapshot?.running, eventId, qc]);
 
   return { uploader, snapshot };

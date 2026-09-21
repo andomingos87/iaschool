@@ -18,6 +18,8 @@ import {
   deleteTestUser,
   envReady,
   userInsert,
+  userInsertReturning,
+  userRpc,
   userSelect,
   userUpdate,
   type TestUser,
@@ -38,40 +40,6 @@ let eventA1 = "";
 let eventA2 = "";
 let eventB = "";
 const HASH = "a".repeat(64);
-
-async function userRpc(user: TestUser, fn: string, body: Record<string, unknown>) {
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
-    method: "POST",
-    headers: {
-      apikey: ANON_KEY,
-      Authorization: `Bearer ${user.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  return { status: resp.status, rows: resp.ok ? ((await resp.json()) as unknown[]) : [] };
-}
-
-/** INSERT como o usuário devolvendo a linha criada (ou null se recusado). */
-async function userInsertReturning(
-  user: TestUser,
-  table: string,
-  row: Record<string, unknown>,
-): Promise<{ status: number; row: Record<string, unknown> | null }> {
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-    method: "POST",
-    headers: {
-      apikey: ANON_KEY,
-      Authorization: `Bearer ${user.token}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify(row),
-  });
-  if (!resp.ok) return { status: resp.status, row: null };
-  const [created] = (await resp.json()) as Array<Record<string, unknown>>;
-  return { status: resp.status, row: created ?? null };
-}
 
 function photoRow(schoolId: string, eventId: string, uid: string, hash: string) {
   return {
