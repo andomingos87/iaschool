@@ -25,6 +25,8 @@ export const iaschool = {
     students: "Alunos",
     student: "Aluno",
     teachers: "Professores",
+    events: "Eventos",
+    event: "Evento",
   },
   roles: {
     dev: "Desenvolvedor",

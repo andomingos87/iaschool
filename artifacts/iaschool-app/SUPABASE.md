@@ -36,6 +36,8 @@ aplicadas via MCP; as duas do M1 subiram em **20/09/2026**:
 | `20260830154404` | `iaschool_revoke_trigger_functions_from_api` |
 | `20260920160511` | `iaschool_fase1_schools_members_classes` |
 | `20260920160829` | `iaschool_fase1_fix_function_search_path` |
+| `20260921021539` | `iaschool_fase2_photos_batch_jobs_buckets` (M2, aplicada em 20/09/2026 no horário local) |
+| `20260921023500` | `iaschool_fase2_photos_event_school_check` (M2: triggers que exigem `photos.school_id` = `events.school_id`, idem `batch_jobs`) |
 
 ### Como alterar o schema
 
@@ -65,6 +67,7 @@ o mecanismo de aplicação. Mantenha-os fiéis ao banco.
 | --- | --- |
 | [`setup.sql`](./supabase/setup.sql) | `profiles`, `students`, `clubs`, `reference_posts`, `generated_posts`, `prompt_settings`, `prompt_template_versions`, funções auxiliares de RLS, buckets e políticas de Storage |
 | [`fase1-min-schools-events.sql`](./supabase/fase1-min-schools-events.sql) | **M1 (Fase 1 mínima)**: `schools`, `school_members`, `classes`, `guardians`, `events`; papéis globais; RLS por escola; Storage por escola; OTP por responsável; aprovação criando a escola. Aplicada em 20/09/2026; ensaio com rollback em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) |
+| [`fase2-photos-upload.sql`](./supabase/fase2-photos-upload.sql) | **M2 (upload em massa)**: `photos` com dedup por hash, `batch_jobs`, trigger que restringe o UPDATE do cliente a `deleted_at`, buckets `event-photos`/`event-thumbs`/`event-originals` com policies por escola, RPC `event_photo_counts`, Realtime em `batch_jobs`. Aplicada em 20/09/2026 |
 | [`eca-digital.sql`](./supabase/eca-digital.sql) | `share_logs` e o modelo antigo do OTP (por aluno, superado pelo M1) |
 | [`generation-quota.sql`](./supabase/generation-quota.sql) | `generation_usage` + `consume_generation_quota()` |
 | [`generation-logs.sql`](./supabase/generation-logs.sql) | `generation_logs` + bucket privado `generation-logs` |
@@ -92,6 +95,8 @@ Todas com RLS habilitada.
 | `generation_logs` | Auditoria das gerações (tela `/admin/logs`). RLS ligada e **sem políticas**: só o api-server (service_role) lê e escreve |
 | `guardian_verification_codes` | OTP de verificação do responsável (ECA Digital), chaveado por `guardian_id` |
 | `share_logs` | Trilha imutável de compartilhamento (ECA Digital) |
+| `photos` | Foto de evento (M2): `storage_path` em `event-photos`, `content_hash` (SHA-256 do original) com `unique (event_id, content_hash)`, `status` do pipeline; soft delete via `deleted_at`. Pela API autenticada o UPDATE só alcança `deleted_at` (trigger `photos_restrict_client_update`); o resto é do worker (`service_role`) |
+| `batch_jobs` | Lote de processamento (M2): um por sessão de upload (`kind = 'ingest'`), com `total`/`processed`/`failed`; publicado no Realtime para o progresso do M3 |
 
 Pontos de RLS e retenção que importam:
 
@@ -110,6 +115,17 @@ Pontos de RLS e retenção que importam:
 - Buckets **privados** `students`, `clubs`, `references`, `generated` e
   `generation-logs` — imagens servidas por URLs assinadas (TTL 1 ano), nunca
   públicas.
+- Buckets do evento (M2, spec §6), também privados e com o id da escola como
+  primeiro segmento: `event-photos` (`{school_id}/{event_id}/{photo_id}.jpg`,
+  só `image/jpeg`, até 20 MB), `event-thumbs` (só `image/webp`, preenchido pelo
+  worker no M3) e `event-originals` (só quando `events.keep_originals`). A
+  galeria assina em lotes de 100 com TTL de 1 h. O membro pode apagar objeto
+  desses buckets: é o que permite desfazer um upload cujo insert em `photos`
+  perdeu a corrida da chave única.
+- `photos`: o cliente insere (com `uploaded_by = auth.uid()`) e só altera
+  `deleted_at`; qualquer outro campo enviado num UPDATE autenticado é
+  descartado pelo trigger. Hard delete só `super_admin`. A dedup é do banco:
+  `unique (event_id, content_hash)` devolve 23505 e o app conta "já enviada".
 
 ### Configuração do projeto (uma vez, no painel)
 
@@ -200,6 +216,8 @@ Observações:
 | --- | --- |
 | `AuthService` | `supabase.auth` (signInWithPassword, signOut, getSession, onAuthStateChange); papel/nome vêm de `profiles`, escolas de `my_schools()`; `setActiveSchool` guarda a escolha em localStorage |
 | `StorageService` | `supabase.storage` — buckets privados `students`, `clubs`, `references`, `generated`; paths prefixados com `{school_id}/` (uid para super_admin sem escola); URLs assinadas (TTL 1 ano) |
+| `EventRepository` | Tabela `events` + RPC `event_photo_counts(p_school)`; `declareImageRights` grava `image_rights_declared_at/by` |
+| `PhotoRepository` | `photos` + bucket `event-photos` (upload direto do navegador, uma chamada por foto; concorrência e retentativas ficam em `src/lib/upload/`), `batch_jobs` para abrir e fechar o lote |
 | Repositórios | Tabelas acima; colunas snake_case mapeadas em `src/lib/data/supabase/index.ts`; `school_id` (escola ativa, ou a do aluno no caso das artes) e `owner_id` injetados no insert. `students` embute `guardians` via `primary_guardian_id`; o responsável do domínio junta a linha de `guardians` (identidade, verificação) com o jsonb `students.guardian` (consentimento, até o M4) |
 | `SchoolBrandRepository` | Tabela `schools` (nome, logo, cores) — só leitura/edição das escolas da pessoa |
 | `GuardianVerificationService` | Edge function `send-guardian-code` (aceita `studentId` ou `guardianId`) e RPC `confirm_guardian_code(p_guardian_id, p_code)` |

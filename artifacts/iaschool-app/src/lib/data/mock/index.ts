@@ -6,10 +6,12 @@ import type {
   ApprovalRepository,
   AuthService,
   ClassRepository,
+  EventRepository,
   SchoolBrandRepository,
   DataLayer,
   GeneratedPostRepository,
   ImageGenerationService,
+  PhotoRepository,
   PromptTemplateRepository,
   GuardianVerificationService,
   ReferenceRepository,
@@ -19,8 +21,11 @@ import type {
 } from "../contract";
 import type {
   AppUser,
+  BatchJob,
+  Photo,
   SchoolBrand,
   SchoolClass,
+  SchoolEvent,
   GeneratedPost,
   PendingRegistration,
   PromptTemplateSetting,
@@ -31,7 +36,11 @@ import type {
   StoredImage,
   Student,
 } from "../types";
-import { TRASH_RETENTION_DAYS, isPlatformAdmin } from "../types";
+import {
+  EVENT_RETENTION_YEARS,
+  TRASH_RETENTION_DAYS,
+  isPlatformAdmin,
+} from "../types";
 import { MOCK_SCHOOLS, MOCK_USERS } from "./seed";
 import {
   delay,
@@ -43,6 +52,7 @@ import {
   writeValue,
 } from "./store";
 import { createOpenAIGenerationService } from "../openai-generation";
+import { localIsoDatePlusYears } from "../../format";
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -505,6 +515,191 @@ const classes: ClassRepository = {
   },
 };
 
+// ---------- Eventos e fotos (Fase 2, M2) ----------
+
+const eventsCrud = makeCrud<SchoolEvent>("events");
+
+function requireSchool(session: Session | null, explicit?: string): string {
+  const schoolId = explicit ?? session?.activeSchoolId;
+  if (!schoolId) {
+    throw new Error(
+      isPlatformAdmin(session?.user.role)
+        ? "Selecione a escola em que este registro deve ser criado."
+        : "Sua conta ainda não está vinculada a uma escola.",
+    );
+  }
+  return schoolId;
+}
+
+function requireUser(session: Session | null): string {
+  if (!session) throw new Error("Você precisa estar logado para realizar esta ação.");
+  return session.user.id;
+}
+
+const events: EventRepository = {
+  async list(schoolId) {
+    const session = currentSession();
+    return (await eventsCrud.list())
+      .filter((e) => !e.deletedAt && canSee(session, e.schoolId))
+      .filter((e) => !schoolId || e.schoolId === schoolId)
+      .sort(
+        (a, b) =>
+          b.eventDate.localeCompare(a.eventDate) ||
+          b.createdAt.localeCompare(a.createdAt),
+      );
+  },
+  async get(id) {
+    const e = await eventsCrud.get(id);
+    return e && !e.deletedAt && canSee(currentSession(), e.schoolId) ? e : null;
+  },
+  async create(input) {
+    const session = currentSession();
+    const uid = requireUser(session);
+    const schoolId = requireSchool(session, input.schoolId);
+    const now = nowIso();
+    return eventsCrud.create({
+      schoolId,
+      classId: input.classId,
+      name: input.name.trim(),
+      eventDate: input.eventDate,
+      status: "draft",
+      keepOriginals: Boolean(input.keepOriginals),
+      photoRetentionUntil:
+        input.photoRetentionUntil ?? localIsoDatePlusYears(EVENT_RETENTION_YEARS),
+      imageRightsDeclaredAt: input.declareImageRights ? now : undefined,
+      imageRightsDeclaredBy: input.declareImageRights ? uid : undefined,
+      createdBy: uid,
+    });
+  },
+  async update(id, patch) {
+    return eventsCrud.update(id, {
+      ...patch,
+      ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+    });
+  },
+  async declareImageRights(id) {
+    const uid = requireUser(currentSession());
+    return eventsCrud.update(id, {
+      imageRightsDeclaredAt: nowIso(),
+      imageRightsDeclaredBy: uid,
+    });
+  },
+  async moveToTrash(id) {
+    await eventsCrud.update(id, { deletedAt: nowIso() });
+  },
+  async photoCounts(schoolId) {
+    await delay(100);
+    const map = new Map<string, number>();
+    for (const p of readCollection<Photo>("photos", [])) {
+      if (p.deletedAt || p.schoolId !== schoolId) continue;
+      map.set(p.eventId, (map.get(p.eventId) ?? 0) + 1);
+    }
+    return map;
+  },
+};
+
+/**
+ * No mock as fotos não vão para lugar nenhum: só os metadados ficam em
+ * localStorage (5.000 data URLs estourariam a cota). O arquivo vira uma
+ * object URL em memória, válida até recarregar a página.
+ */
+const photoObjectUrls = new Map<string, string>();
+
+const photos: PhotoRepository = {
+  async list(eventId) {
+    await delay(150);
+    return readCollection<Photo>("photos", [])
+      .filter((p) => p.eventId === eventId && !p.deletedAt)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((p) => ({ ...p, displayUrl: photoObjectUrls.get(p.id) }));
+  },
+  async findExistingHashes(eventId, hashes) {
+    const wanted = new Set(hashes);
+    const found = new Set<string>();
+    for (const p of readCollection<Photo>("photos", [])) {
+      if (p.eventId === eventId && wanted.has(p.contentHash)) found.add(p.contentHash);
+    }
+    return found;
+  },
+  async upload(input) {
+    // Latência proporcional ao tamanho, para o progresso parecer real.
+    await delay(120 + Math.min(600, input.blob.size / 4000));
+    const uid = requireUser(currentSession());
+    const items = readCollection<Photo>("photos", []);
+    if (items.some((p) => p.eventId === input.eventId && p.contentHash === input.contentHash)) {
+      return { outcome: "duplicate" };
+    }
+    const id = newId();
+    const photo: Photo = {
+      id,
+      schoolId: input.schoolId,
+      eventId: input.eventId,
+      storagePath: `${input.schoolId}/${input.eventId}/${id}.jpg`,
+      contentHash: input.contentHash,
+      originalFilename: input.originalFilename,
+      bytes: input.blob.size,
+      width: input.width,
+      height: input.height,
+      status: "pending",
+      uploadedBy: uid,
+      createdAt: nowIso(),
+    };
+    items.push(photo);
+    writeCollection("photos", items);
+    photoObjectUrls.set(id, URL.createObjectURL(input.blob));
+    return { outcome: "uploaded", photo: { ...photo, displayUrl: photoObjectUrls.get(id) } };
+  },
+  async moveToTrash(ids) {
+    await delay(200);
+    const deletedAt = nowIso();
+    writeCollection(
+      "photos",
+      readCollection<Photo>("photos", []).map((p) =>
+        ids.includes(p.id) ? { ...p, deletedAt } : p,
+      ),
+    );
+  },
+  async startBatch(eventId, total) {
+    await delay(150);
+    const session = currentSession();
+    const uid = requireUser(session);
+    const event = await eventsCrud.get(eventId);
+    if (!event) throw new Error("Evento não encontrado.");
+    const batch: BatchJob = {
+      id: newId(),
+      schoolId: event.schoolId,
+      eventId,
+      kind: "ingest",
+      status: "running",
+      total,
+      processed: 0,
+      failed: 0,
+      createdBy: uid,
+      createdAt: nowIso(),
+    };
+    writeCollection("batch-jobs", [batch, ...readCollection<BatchJob>("batch-jobs", [])]);
+    if (event.status === "draft") await eventsCrud.update(eventId, { status: "uploading" });
+    return batch;
+  },
+  async finishBatch(id, result) {
+    await delay(100);
+    writeCollection(
+      "batch-jobs",
+      readCollection<BatchJob>("batch-jobs", []).map((b) =>
+        b.id === id
+          ? {
+              ...b,
+              total: result.total,
+              failed: result.failed,
+              status: result.cancelled ? "cancelled" : result.failed > 0 ? "failed" : "done",
+              finishedAt: nowIso(),
+            }
+          : b,
+      ),
+    );
+  },
+};
+
 const referencesCrud = makeCrud<ReferencePost>("references");
 const references: ReferenceRepository = {
   list: () => referencesCrud.list(),
@@ -786,6 +981,8 @@ export function createMockDataLayer(): DataLayer {
     students,
     schoolBrands,
     classes,
+    events,
+    photos,
     references,
     generatedPosts,
     promptTemplate,

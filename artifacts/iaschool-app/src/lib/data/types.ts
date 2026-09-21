@@ -228,6 +228,108 @@ export function classLabel(c: SchoolClass): string {
   return `${GRADE_LABEL[c.grade] ?? c.grade} · ${c.name}`;
 }
 
+/**
+ * Ciclo de vida do evento (`events.status`). `draft` até a primeira foto;
+ * `uploading` enquanto há lote em andamento; os demais são preenchidos pelo
+ * pipeline das Fases 2 e 3 (worker, revisão, entrega).
+ */
+export type EventStatus =
+  | "draft"
+  | "uploading"
+  | "processing"
+  | "review"
+  | "ready"
+  | "archived";
+
+export const EVENT_STATUS_LABEL: Record<EventStatus, string> = {
+  draft: "Rascunho",
+  uploading: "Recebendo fotos",
+  processing: "Processando",
+  review: "Em revisão",
+  ready: "Pronto",
+  archived: "Arquivado",
+};
+
+/** Retenção padrão das fotos do evento, em anos (spec §9.4, decidido em 18/09/2026). */
+export const EVENT_RETENTION_YEARS = 2;
+
+/**
+ * Evento escolar (`events`): a unidade de upload em massa. As fotos ficam
+ * até `photoRetentionUntil`; sem `imageRightsDeclaredAt` o upload não abre
+ * (spec §9.2) — é o registro de que a escola declara possuir autorização de
+ * uso de imagem dos alunos presentes.
+ */
+export interface SchoolEvent {
+  id: string;
+  schoolId: string;
+  /** Turma do evento, quando é de uma sala só. */
+  classId?: string;
+  name: string;
+  /** Data do evento, ISO "aaaa-mm-dd". */
+  eventDate: string;
+  status: EventStatus;
+  /** Guardar o original além da versão 2560px (custo maior — D3). */
+  keepOriginals: boolean;
+  /** ISO "aaaa-mm-dd"; padrão de 2 anos, editável por evento. */
+  photoRetentionUntil: string;
+  imageRightsDeclaredAt?: string;
+  imageRightsDeclaredBy?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+}
+
+/** Estado de processamento da foto pelo pipeline (worker, a partir do M3). */
+export type PhotoStatus = "pending" | "processing" | "processed" | "failed";
+
+/**
+ * Foto de evento (`photos`). `contentHash` é o SHA-256 do arquivo ORIGINAL,
+ * calculado antes do redimensionamento; `unique (event_id, content_hash)`
+ * no banco é o que torna o upload idempotente (R2).
+ */
+export interface Photo {
+  id: string;
+  schoolId: string;
+  eventId: string;
+  /** Caminho no bucket `event-photos`: `{school_id}/{event_id}/{photo_id}.jpg`. */
+  storagePath: string;
+  /** Caminho no bucket `event-thumbs`, preenchido pelo worker (M3). */
+  thumbPath?: string;
+  contentHash: string;
+  originalFilename: string;
+  bytes: number;
+  width?: number;
+  height?: number;
+  takenAt?: string;
+  status: PhotoStatus;
+  facesCount?: number;
+  error?: string;
+  uploadedBy: string;
+  createdAt: string;
+  deletedAt?: string;
+  /** URL assinada para exibição (miniatura quando existir, senão a foto). Preenchida ao listar. */
+  displayUrl?: string;
+}
+
+export type BatchJobKind = "ingest" | "recognize" | "reference";
+export type BatchJobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
+
+/** Lote de processamento (`batch_jobs`): um por sessão de upload no M2. */
+export interface BatchJob {
+  id: string;
+  schoolId: string;
+  eventId?: string;
+  kind: BatchJobKind;
+  status: BatchJobStatus;
+  total: number;
+  processed: number;
+  failed: number;
+  createdBy: string;
+  createdAt: string;
+  finishedAt?: string;
+}
+
 /** Post estático de Instagram usado como referência de estilo. */
 export interface ReferencePost {
   id: string;

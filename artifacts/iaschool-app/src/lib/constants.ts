@@ -18,6 +18,15 @@ export const AUX_PROMPT_PREFILL_KEY = "iaschool:aux-prompt-prefill";
 export const AUX_PROMPT_PREFILL_EVENT = "iaschool-aux-prompt-prefill";
 
 /**
+ * Enquanto as pendências de docs/pendencias-producao.md não estiverem
+ * fechadas, nenhuma foto real de criança ou adolescente entra no produto
+ * (AGENTS.md, "Regra de conformidade desta fase"). Com `true`, as telas de
+ * upload mostram o aviso de material de teste. Virar `false` é decisão de
+ * produto, junto com a liberação de produção.
+ */
+export const TEST_DATA_ONLY = true;
+
+/**
  * Único usuário autorizado a ver a tela de logs de geração (/admin/logs).
  * Além do e-mail, a rota e a API exigem papel super_admin.
  */
