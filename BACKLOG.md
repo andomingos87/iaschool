@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 21/09/2026 (M3 implementado: fila `photo_jobs` e RPCs no banco real, `ingest-worker` rodado contra o banco com fotos sintéticas, galeria virtualizada e progresso por Realtime; 129 testes unitários do app + 20 do worker + 19 de integração verdes; deploy na Fly preparado, não executado)
+**Atualizado em:** 21/09/2026 (**M4 e M5 concluídos**. M4: consentimento por escopo, rosto de referência e a fila que liga a tela ao motor facial. M5: `face-worker` em Python rodando de verdade contra o banco — 20 rostos detectados numa cena de teste, 3 sugeridos, 17 sem atribuição e sem vetor, evento movido para `review` —, `photo_faces` com o vetor bloqueado por privilégio de coluna, busca vetorial isolada por escola e pasta do aluno. 240 testes do app (140 unitários + 100 de integração contra o banco real) + 33 do face-worker + 20 do ingest-worker verdes; imagem do face-worker construída e testada, **nenhum worker implantado na Fly**)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -24,8 +24,8 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 | 0 — Descontaminação | — | ✅ concluída (30/08/2026) | — |
 | Transversal — produção e conformidade | pendências #1–#7 | ❌ nenhum item andou | depende de compra de domínio/Resend/Meta |
 | 1 — Fundação escolar | M1 (mínima) + Fase 1 completa | ✅ **M1 concluído** (20/09/2026); Fase 1 completa (CSV, papel `dev`, professor da turma) segue aberta | 2–2,5 sem (M1) |
-| 2 — Upload em massa | M2, M3 | ✅ **M2 concluído** (20/09/2026); M3 (fila, worker, galeria virtualizada) a fazer | 1,5 sem (M3) |
-| 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito, código zero | 6 sem |
+| 2 — Upload em massa | M2, M3 | ✅ **M2** (20/09/2026) e **M3** (21/09/2026) concluídos; deploy do `ingest-worker` na Fly preparado, **não executado** | — |
+| 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito; ✅ **M4 e M5 concluídos** (21/09/2026); falta o M6 (revisão, trilha e expurgo) e o deploy dos workers | 6 sem |
 | 4 — Autorização granular + portal | — | ❌ sem spec | 2–3 sem |
 | 5 — Lote e WhatsApp | — | ❌ sem spec | 4–6 sem |
 
@@ -207,33 +207,56 @@ Migrations `iaschool_fase2_photo_jobs_queue` e `iaschool_fase2_batch_progress_rp
 - [ ] Comparação com AWS Rekognition — não executada (sem credencial); virou opcional
 - [!] Acurácia em criança de 4 a 10 anos — **não pode ser medida antes do piloto** (regra de conformidade proíbe foto real). É o risco que sustenta a revisão humana obrigatória (D6)
 
-### M4 — Autorizações e rosto de referência (spec §5.3, §5.4, §7.4) · 1 semana · risco médio
+### M4 — Autorizações e rosto de referência (spec §5.3, §5.4, §7.4) · 1 semana · risco médio ✅ (21/09/2026, exceto o embedding)
 
-- [ ] Tabela `authorizations` com os **quatro** escopos da spec §5.4 (`biometric_sorting`, `delivery_whatsapp`, `internal_use`, `social_media`), `guardian_id`, `evidence` (termo, versão, data), `revoked_at`, **sem policy de delete**. Criar a tabela **não** depende do texto jurídico; `internal_use` entra desde já porque separar escopos depois exige recolher o consentimento outra vez
+Quatro migrations aplicadas no banco real em 21/09/2026
+(`iaschool_fase3_authorizations_reference_faces`,
+`iaschool_fase3_has_active_authorization_tenant_check`,
+`iaschool_fase3_reference_face_jobs` e
+`iaschool_fase3_reference_job_revoked_guard`; referência em
+`supabase/fase3-authorizations-reference-faces.sql`, ensaio com rollback,
+migração de dados semeada e roundtrip funcional em
+`supabase/rehearsal/m4-seed.sql`, `m4-checks.sql` e `m4b-checks.sql`).
+
+Camada de app: `AuthorizationRepository` e `ReferenceFaceRepository` no
+contrato, com implementação Supabase e mock; `use-authorizations.ts` e
+`use-reference-faces.ts`; `student-authorizations-card.tsx` e
+`student-reference-faces.tsx`; indicador de prontidão em `students.tsx`.
+
+- [x] Tabela `authorizations` com os **quatro** escopos da spec §5.4 (`biometric_sorting`, `delivery_whatsapp`, `internal_use`, `social_media`), `guardian_id`, `evidence` (termo, versão, data), `revoked_at`, **sem policy de delete**. Criar a tabela **não** depende do texto jurídico; `internal_use` entra desde já porque separar escopos depois exige recolher o consentimento outra vez (21/09/2026). Três travas além do que a spec pedia, todas cobertas pelo roundtrip: um índice único parcial garante um consentimento ativo por (aluno, escopo) — reconceder depois de revogar é linha nova, o histórico fica; o trigger `authorizations_check_school` recusa aluno ou responsável de outra escola; e `authorizations_restrict_client_update` congela a prova (pela API só `revoked_at` muda, e só de nulo para uma data — desrevogar dá erro). O privilégio de `delete` também foi revogado de `anon`/`authenticated`, não só a policy
 - [!] Colher consentimento real em `authorizations` — bloqueado pelo texto jurídico do termo (seção Transversal). O que trava é gravar `granted_at` com `evidence` de um responsável de verdade, não a estrutura
-- [ ] Migrar `students.guardian->>'consentAt'` para `authorizations`, mantendo o booleano como origem
-- [ ] Ficha do aluno: dois toggles, "foto para reconhecimento" → `biometric_sorting` e "envio por WhatsApp" → `delivery_whatsapp`. Cada toggle grava uma linha em `authorizations` com `evidence` (quem registrou, quando, versão do termo), nunca um booleano em `students`. Toggle marcado pela escola é declaração de que colheu, não consentimento do responsável; o OTP de WhatsApp fecha o ciclo depois
-- [ ] Tabela `student_reference_faces` (sem policy; só `service_role` e RPC) + bucket `student-refs`
-- [ ] Aba "Rosto de referência" em `/alunos/:id`: **1 foto aceita no cadastro** para não travar a matrícula, com aviso "cobertura baixa" até haver 2 frontais (o spike mediu com 2); estado do consentimento, botão de revogar; sem `biometric_sorting` ativo a tela não deixa cadastrar (decisão #8)
-- [ ] `student_reference_faces.retention_until` = **fim do ano letivo**, sem renovação automática; ao vencer, as fotos já confirmadas mantêm o `student_id` (mesma regra da revogação)
-- [ ] Indicador de prontidão na lista de alunos: "182 de 240 com referência · 58 sem consentimento", clicável para a lista de quem falta
-- [ ] Embedding de referência com `det_size` 640
+- [x] Migrar `students.guardian->>'consentAt'` para `authorizations`, mantendo o booleano como origem (21/09/2026). **Decisão de conformidade:** o carimbo legado é um booleano genérico ("autorizou o uso da imagem e dos dados"), então vira **só `internal_use`** — o escopo mais restrito que cobre o que o produto já fazia. Nenhum `biometric_sorting`, `delivery_whatsapp` ou `social_media` é inferido dele: consentimento que ninguém deu não se deduz de um booleano antigo. `evidence.source = 'students.guardian.consentAt'` marca o que é herança para a revisão jurídica. Na base real não havia linha a migrar (banco sem alunos); o caminho foi validado no ensaio com `m4-seed.sql`
+- [x] Ficha do aluno: dois toggles, "foto para reconhecimento" → `biometric_sorting` e "envio por WhatsApp" → `delivery_whatsapp` (21/09/2026). Cada toggle grava uma linha em `authorizations` com `evidence` (`source: school_declaration`, quem registrou, quando, `terms_version` **nulo** enquanto o texto jurídico não existir), nunca um booleano em `students`. O cartão diz na tela que marcar ali é a escola declarar que colheu, não o aceite do responsável, e que revogar não recupera o que já saiu. Desligar abre confirmação e carimba `revoked_at`; a linha anterior fica no histórico. `internal_use` aparece só de leitura, marcado como herança quando veio da migração do consentimento antigo
+- [x] Tabela `student_reference_faces` (sem policy; só `service_role` e RPC) + bucket `student-refs` (21/09/2026). A extensão `vector` foi instalada aqui (estava listada no M5; sem ela a coluna `embedding` não existe). O trigger `student_reference_faces_check` exige `authorization_id` de `biometric_sorting` **ativa e do próprio aluno** — a D5 passa a viver no banco, não na tela. O bucket repete a trava no Storage: o insert só passa se o aluno do 2º segmento do caminho tiver consentimento ativo. Leitura pela tela por `list_student_reference_faces`, que nunca devolve o vetor
+- [x] Aba "Rosto de referência" em `/alunos/:id` (21/09/2026): **1 foto aceita no cadastro**, com aviso "cobertura baixa" até haver 2; sem `biometric_sorting` ativo a tela não deixa cadastrar e explica que a trava é do banco, não dela (decisão #8). A foto é preparada no cliente (HEIC → JPEG, 1280px de lado maior, sem EXIF — `prepareReferencePhoto`), sobe para `student-refs` e entra na fila; a tela mostra "aguardando processamento", deixa descartar, e mostra falha com "tentar de novo". Remover uma referência processada passa por `delete_student_reference_face`, que devolve o caminho para o cliente apagar o objeto
+- [x] `student_reference_faces.retention_until` = **fim do ano letivo**, sem renovação automática (21/09/2026): default `reference_retention_default()` = 31/12 do ano corrente. O efeito de vencer (apagar a referência mantendo o `student_id` das fotos confirmadas) é o expurgo do M6 — hoje o prazo é registro, não ação: nem vencer nem revogar apagam nada sozinhos
+- [x] Indicador de prontidão na lista de alunos (21/09/2026): "N de M com rosto de referência · N sem consentimento · N autorizados sem foto · N aguardando processamento · N com cobertura baixa", com os dois primeiros recortes clicáveis. Junta `student_biometric_readiness(p_school)` com a contagem da fila; a coluna "Situação" da tabela passa a mostrar o estado por aluno. `ReferenceCoverageNotice` (aviso do evento, M2) passa a subtrair quem já tem referência processada
+- [~] Embedding de referência com `det_size` 640 — **o caminho está pronto, o motor não**. A fila `student_reference_jobs` liga a tela ao worker (mesma forma de `photo_jobs`: lease, 5 tentativas, `claim`/`complete` só para `service_role`), o roundtrip está testado no banco real e o consentimento é conferido duas vezes, ao enfileirar e ao concluir — revogado no meio, o job morre como `revoked` e nenhuma referência nasce. O que falta é quem calcula o vetor: InsightFace em Python, que é o `face-worker` do M5. Decisão de 21/09/2026: não duplicar esse worker no M4 nem gravar embedding de mentira para destravar tela — até o M5 as fotos ficam `queued` e a tela diz isso
 
-### M5 — face-worker, atribuição e pasta do aluno (spec §5.3, §7.3, §7.6, §11) · 2,5 semanas · **risco alto**
+### M5 — face-worker, atribuição e pasta do aluno (spec §5.3, §7.3, §7.6, §11) · 2,5 semanas · **risco alto** ✅ (21/09/2026, exceto deploy)
 
-- [ ] Instalar extensão `vector` no projeto (disponível 0.8.2, não instalada)
-- [ ] `docker build` do `Dockerfile` de `scripts/spike-face/` — nunca foi construído (sem Docker na máquina do spike)
+Migrations `iaschool_fase3_photo_faces_recognition` e
+`iaschool_fase3_permanent_job_failure` aplicadas no banco real em 21/09/2026
+(referência em `supabase/fase3-face-recognition.sql`; ensaio com rollback e
+roundtrip funcional em `supabase/rehearsal/m5-checks.sql`). Worker em
+`artifacts/face-worker/`; pasta do aluno em
+`src/components/student-photo-folder.tsx`.
+
+- [x] Instalar extensão `vector` no projeto (21/09/2026, antecipada no M4: `student_reference_faces.embedding` depende dela)
+- [x] `docker build` — feito em 21/09/2026, do `Dockerfile` do próprio `face-worker` (o de `scripts/spike-face/` era o esqueleto). A imagem sobe, carrega os modelos embutidos em ~1,1 s e responde `/health` 200 sem baixar nada em runtime. Conferido também que só `det_10g.onnx` e `w600k_r50.onnx` ficam na imagem: `genderage` e os dois de landmark são apagados
 - [ ] Rodar `bench_throughput.py` **na máquina alvo** da Fly antes de dimensionar; os números do spike são de Apple M4
-- [ ] `face-worker` (Python 3.12, `onnxruntime` + `insightface`, modelos embutidos, `service_role`, 1 processo por máquina)
-- [ ] Tabela `photo_faces` com `state` (`suggested`, `unassigned`, `confirmed`, `rejected`, `not_a_student` = criança de fora, `adult_or_staff` = adulto), `runner_up_*`, `reviewed_by/at`
-- [ ] `face_recognition_settings` (linha única, editável pelo super admin) com `tau`, margem, `min_face_px`
-- [ ] Busca vetorial dos 5 vizinhos **filtrada por `school_id` dentro de função `security definer`** (D7)
-- [ ] Persistir embedding só quando corresponde a aluno com `biometric_sorting` ativo; rosto sem correspondência guarda só bbox + recorte (D5)
-- [ ] **`bbox` e `det_score` de todo rosto detectado sobrevivem ao expurgo do recorte e do vetor**, inclusive `not_a_student` — é o que torna o desfoque da entrega possível (spec §9.3.1). Sem isso, a única saída na Fase 5 vira bloquear a foto inteira
-- [ ] Bucket `face-crops` para os recortes da revisão
-- [ ] `revoke select on photo_faces from authenticated` + `grant select` de colunas sem `embedding` (privilégio de coluna)
-- [ ] Pasta do aluno como consulta N:N (R4, R6), aba "Fotos" em `/alunos/:id`
-- [ ] `SUPABASE_SERVICE_ROLE_KEY` só nos workers; nunca logar embedding, recorte ou nome
+- [x] `face-worker` (Python 3.12, `onnxruntime` + `insightface`, modelos embutidos, `service_role`, 1 processo por máquina) (21/09/2026). Um motor só serve os dois `det_size`: `FaceAnalysis.prepare()` troca campos do detector sem recarregar sessão ONNX, então 1600 e 640 dividem os mesmos modelos em memória
+- [x] Laço de **referência** no mesmo worker (`det_size` 640), com prioridade sobre o reconhecimento: é ele que destrava o cadastro da escola (21/09/2026). Retrato sem rosto ou com mais de um é recusado **de vez**, não retentado — escolher o maior arriscaria matricular o rosto errado, e referência errada não erra uma foto, erra todas as daquele aluno
+- [x] Tabela `photo_faces` com `state` (`suggested`, `unassigned`, `confirmed`, `rejected`, `not_a_student`, `adult_or_staff`), `runner_up_*`, `reviewed_by/at` (21/09/2026)
+- [x] `face_recognition_settings` (linha única) com `tau`, margem, `min_face_px`, `det_size` de evento e de referência (21/09/2026). Leitura para qualquer autenticado; **escrita só do papel `dev`** (decisão #5, não "super admin" como dizia este item): mexer no limiar muda quantos rostos de criança o sistema atribui sozinho. O worker relê a linha a cada minuto — recalibrar no piloto não exige deploy. Falta a tela, que é o item "Papel `dev`" da Fase 1 completa
+- [x] Busca vetorial dos 5 vizinhos **filtrada por `school_id` dentro de função `security definer`** (D7), executável só pelo `service_role` (21/09/2026). Referência vencida não entra na comparação
+- [x] Persistir embedding só quando corresponde a aluno com `biometric_sorting` ativo; rosto sem correspondência guarda só bbox + recorte (D5) — o worker nem tenta, e o trigger recusa se tentar (21/09/2026)
+- [x] **`bbox` e `det_score` de todo rosto detectado sobrevivem ao expurgo do recorte e do vetor** (21/09/2026): as duas colunas são `not null`, e o M6 vai apagar recorte e vetor sem tocá-las
+- [x] Bucket `face-crops` para os recortes da revisão (21/09/2026). Caminho `{school_id}/{event_id}/{photo_id}-{i}.jpg` em vez do `{face_id}.jpg` da spec §6: é determinístico, então reprocessar o lote sobrescreve em vez de deixar recorte órfão. Escrita só do worker (sem policy de insert); membro lê e apaga
+- [x] `revoke select on photo_faces from authenticated` + `grant select` de colunas sem `embedding` (21/09/2026). Testado pela API: `select=embedding` e `select=*` são recusados, e o conjunto de colunas permitido volta normal
+- [x] Pasta do aluno como consulta N:N (R4, R6), aba "Fotos de eventos" em `/alunos/:id` (21/09/2026). RPC `student_photos`, só `confirmed`; foto com cinco crianças confirmadas aparece nas cinco pastas, com um arquivo só. Até a revisão do M6 existir, a aba fica vazia e explica por quê
+- [x] `SUPABASE_SERVICE_ROLE_KEY` só nos workers; nunca logar embedding, recorte ou nome (21/09/2026) — o log é JSON com id, contagem, duração e resultado, e o formatter não deixa passar nem stack trace do OpenCV, que carregaria caminho de arquivo
+- [ ] Sobras do M5: deploy na Fly (`Dockerfile` e `fly.toml` prontos, imagem construída, `fly deploy` **não executado**); medir §11.1 com o worker na mesma região; recalibrar `tau`/margem com dado de criança no piloto
 
 ### M6 — Revisão, trilha, expurgo e aceite (spec §7.5, §9.4, §12) · 2,5 semanas · risco médio
 
@@ -298,6 +321,33 @@ Ainda sem decisão:
 - **Versão desfocada: gerada a cada entrega ou cacheada?** Recomendação em aberto: gerar na entrega, a partir do original, para refletir a autorização do momento. Fase 5.
 
 ## Decisões tomadas
+
+**21/09/2026** — M5: **um processo por máquina, um job de cada vez**, sem
+concorrência interna. Não é simplificação: o spike mediu 1, 4 e 8 processos
+com a mesma vazão agregada, porque o `onnxruntime` já satura os núcleos numa
+sessão. Concorrência aqui só criaria disputa de CPU e lease vencido; escala-se
+com `fly scale count`. Decidido junto: um motor só para os dois `det_size`
+(`prepare()` troca campos do detector sem recarregar sessão); a fila de
+referência tem prioridade sobre a de reconhecimento; retrato com zero ou mais
+de um rosto é **falha permanente**, não retentativa, e o mesmo vale para
+arquivo ilegível — cinco leases de 5 minutos por foto que nunca vai processar
+travariam o lote; e o recorte da revisão vai para
+`{school_id}/{event_id}/{photo_id}-{i}.jpg`, não `{face_id}.jpg` como a spec
+§6 dizia, porque o caminho determinístico faz o reprocessamento sobrescrever
+em vez de deixar órfão no bucket.
+
+**21/09/2026** — M4: o embedding de referência **não** é reimplementado no M4.
+O vetor sai de InsightFace em Python, que é o `face-worker` do M5; duplicá-lo
+agora custaria o marco inteiro e seria jogado fora. O M4 entrega o caminho —
+fila `student_reference_jobs`, `claim`/`complete` para `service_role`, retry e
+remoção para a tela — e o M5 pluga o motor. Descartadas: gravar embedding
+sintético para a tela parecer pronta (o M5 buscaria contra vetor falso) e
+deixar a aba de referência só de leitura (não faria nada, porque
+`student_reference_faces.embedding` é `not null`). Decidido junto: o toggle da
+ficha do aluno grava `evidence.source = 'school_declaration'` com
+`terms_version` nulo, e a tela diz que isso é declaração da escola, não o
+aceite do responsável — colher o aceite de verdade continua bloqueado pelo
+texto jurídico.
 
 **21/09/2026** — M3: deploy na Fly só preparado (Dockerfile, `fly.toml`,
 roteiro), sem `fly deploy` neste marco; `taken_at` extraído no **cliente** do

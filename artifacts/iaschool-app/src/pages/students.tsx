@@ -12,6 +12,7 @@ import {
   Pencil,
   Trash2,
   Phone,
+  ScanFace,
   X,
 } from "lucide-react";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
@@ -76,12 +77,15 @@ import {
   useDeleteStudentsPermanently,
 } from "@/hooks/use-students";
 import { useAuth } from "@/hooks/use-auth";
-import type { Student } from "@/lib/data";
+import { useBiometricReadiness } from "@/hooks/use-reference-faces";
+import type { Student, StudentBiometricReadiness } from "@/lib/data";
 import { TRASH_RETENTION_DAYS, isPlatformAdmin } from "@/lib/data";
 import { ageFromIso, initials, storedToMasked } from "@/lib/format";
 
 type ViewMode = "cards" | "list";
 type DeleteMode = "trash" | "permanent";
+/** Recorte do indicador de prontidão biométrica aplicado à lista. */
+type ReadinessFilter = "no-consent" | "no-reference" | null;
 
 const VIEW_MODE_KEY = "iaschool:students-view-mode";
 
@@ -105,6 +109,8 @@ export default function StudentsPage() {
 
   const students = useStudents();
   const classLabels = useClassLabels();
+  // Cobertura biométrica da escola ativa (M4): "182 de 240 com referência".
+  const readiness = useBiometricReadiness(session?.activeSchoolId);
   const [tab, setTab] = useState<"active" | "trash">("active");
   const trashed = useTrashedStudents(tab === "trash");
   const moveToTrash = useMoveStudentsToTrash();
@@ -123,6 +129,7 @@ export default function StudentsPage() {
   // ids alvo do diálogo de exclusão (seleção em massa OU um aluno específico)
   const [deleteTargets, setDeleteTargets] = useState<string[]>([]);
   const [restoreConfirm, setRestoreConfirm] = useState(false);
+  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>(null);
 
   function changeView(next: ViewMode) {
     setView(next);
@@ -139,13 +146,43 @@ export default function StudentsPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        (s.enrollmentNumber ?? "").toLowerCase().includes(q),
-    );
-  }, [items, search]);
+    let list = items;
+    if (q) {
+      list = list.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          (s.enrollmentNumber ?? "").toLowerCase().includes(q),
+      );
+    }
+    if (readinessFilter && readiness.data) {
+      list = list.filter((s) => {
+        const r = readiness.data.get(s.id);
+        if (!r) return false;
+        return readinessFilter === "no-consent"
+          ? !r.hasConsent
+          : r.hasConsent && r.referenceCount === 0 && r.pendingCount === 0;
+      });
+    }
+    return list;
+  }, [items, search, readinessFilter, readiness.data]);
+
+  /** Totais do indicador, sobre os alunos ativos da escola atual. */
+  const readinessSummary = useMemo(() => {
+    const rows = [...(readiness.data?.values() ?? [])];
+    if (rows.length === 0) return null;
+    return {
+      total: rows.length,
+      withReference: rows.filter((r) => r.referenceCount > 0).length,
+      noConsent: rows.filter((r) => !r.hasConsent).length,
+      // Autorizado e sem nada enviado — quem tem foto na fila conta em
+      // `pending`, não aqui, senão o recorte abriria uma lista vazia.
+      noPhoto: rows.filter(
+        (r) => r.hasConsent && r.referenceCount === 0 && r.pendingCount === 0,
+      ).length,
+      pending: rows.reduce((n, r) => n + r.pendingCount, 0),
+      lowCoverage: rows.filter((r) => r.referenceCount === 1).length,
+    };
+  }, [readiness.data]);
 
   const allSelected =
     filtered.length > 0 && filtered.every((s) => selected.has(s.id));
@@ -155,6 +192,7 @@ export default function StudentsPage() {
   function changeTab(next: string) {
     setTab(next as "active" | "trash");
     setSelected(new Set());
+    setReadinessFilter(null);
   }
 
   function toggle(id: string) {
@@ -439,7 +477,7 @@ export default function StudentsPage() {
                         {daysLeft(s.deletedAt)}d restantes
                       </Badge>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <ReadinessBadge readiness={readiness.data?.get(s.id)} />
                     )}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
@@ -494,7 +532,11 @@ export default function StudentsPage() {
         <EmptyState
           icon={<Search className="size-6" />}
           title="Nenhum resultado"
-          description={`Nenhum aluno encontrado para "${search}".`}
+          description={
+            search.trim()
+              ? `Nenhum aluno encontrado para "${search}".`
+              : "Nenhum aluno neste recorte."
+          }
         />
       );
     }
@@ -562,6 +604,85 @@ export default function StudentsPage() {
           </Button>
         )}
       </div>
+
+      {tab === "active" && readinessSummary && (
+        <div
+          className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-card px-4 py-3 text-sm"
+          data-testid="bar-biometric-readiness"
+        >
+          <ScanFace className="size-4 text-primary" />
+          <span data-testid="text-readiness-with-reference">
+            <strong>{readinessSummary.withReference}</strong> de{" "}
+            {readinessSummary.total} com rosto de referência
+          </span>
+          {readinessSummary.noConsent > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <button
+                type="button"
+                className={`underline-offset-2 hover:underline ${
+                  readinessFilter === "no-consent" ? "font-semibold text-primary" : ""
+                }`}
+                onClick={() =>
+                  setReadinessFilter(
+                    readinessFilter === "no-consent" ? null : "no-consent",
+                  )
+                }
+                data-testid="button-filter-no-consent"
+              >
+                {readinessSummary.noConsent} sem consentimento
+              </button>
+            </>
+          )}
+          {readinessSummary.noPhoto > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <button
+                type="button"
+                className={`underline-offset-2 hover:underline ${
+                  readinessFilter === "no-reference" ? "font-semibold text-primary" : ""
+                }`}
+                onClick={() =>
+                  setReadinessFilter(
+                    readinessFilter === "no-reference" ? null : "no-reference",
+                  )
+                }
+                data-testid="button-filter-no-reference"
+              >
+                {readinessSummary.noPhoto} autorizado
+                {readinessSummary.noPhoto > 1 ? "s" : ""} sem foto
+              </button>
+            </>
+          )}
+          {readinessSummary.pending > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground">
+                {readinessSummary.pending} aguardando processamento
+              </span>
+            </>
+          )}
+          {readinessSummary.lowCoverage > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground">
+                {readinessSummary.lowCoverage} com cobertura baixa
+              </span>
+            </>
+          )}
+          {readinessFilter && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-7"
+              onClick={() => setReadinessFilter(null)}
+              data-testid="button-clear-readiness-filter"
+            >
+              <X className="size-3.5" /> Ver todos
+            </Button>
+          )}
+        </div>
+      )}
 
       <Tabs value={tab} onValueChange={changeTab}>
         <TabsList className="mb-4">
@@ -773,5 +894,47 @@ function StudentMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * Situação biométrica do aluno na lista (M4). "Sem consentimento" é o estado
+ * mais comum no começo: é ele que a escola precisa resolver antes de tudo.
+ */
+function ReadinessBadge({
+  readiness,
+}: {
+  readiness?: StudentBiometricReadiness;
+}) {
+  if (!readiness) return <span className="text-muted-foreground">—</span>;
+  if (!readiness.hasConsent) {
+    return (
+      <Badge variant="outline" data-testid="badge-readiness-no-consent">
+        Sem consentimento
+      </Badge>
+    );
+  }
+  if (readiness.referenceCount === 0) {
+    return readiness.pendingCount > 0 ? (
+      <Badge variant="secondary" data-testid="badge-readiness-pending">
+        Processando
+      </Badge>
+    ) : (
+      <Badge variant="outline" data-testid="badge-readiness-no-reference">
+        Sem referência
+      </Badge>
+    );
+  }
+  if (readiness.lowCoverage) {
+    return (
+      <Badge variant="secondary" data-testid="badge-readiness-low-coverage">
+        Cobertura baixa
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="secondary" data-testid="badge-readiness-ok">
+      Pronto
+    </Badge>
   );
 }

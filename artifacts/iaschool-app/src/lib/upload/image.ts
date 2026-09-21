@@ -2,7 +2,13 @@
 // de lado maior, JPEG q85 (D3). O original não é guardado por padrão.
 
 import imageCompression from "browser-image-compression";
-import { UPLOAD_JPEG_QUALITY, UPLOAD_MAX_SIDE_PX, isHeicLike } from "./constants";
+import {
+  REFERENCE_JPEG_QUALITY,
+  REFERENCE_MAX_SIDE_PX,
+  UPLOAD_JPEG_QUALITY,
+  UPLOAD_MAX_SIDE_PX,
+  isHeicLike,
+} from "./constants";
 
 export interface PreparedPhoto {
   /** JPEG pronto para o bucket `event-photos`. */
@@ -65,6 +71,26 @@ export const prepareForUpload: PreparePhoto = async (file) => {
     // Sem alvo de tamanho: uma passada só, na qualidade fixa da D3.
     maxSizeMB: Number.POSITIVE_INFINITY,
     useWebWorker: true,
+    preserveExif: false,
+  });
+  const dims = await readDimensions(blob);
+  return { blob, ...dims };
+};
+
+/**
+ * Prepara a foto de REFERÊNCIA do aluno (spec §7.4): HEIC → JPEG e 1280px de
+ * lado maior. O bucket `student-refs` só aceita `image/jpeg`, então PNG
+ * também passa por aqui.
+ */
+export const prepareReferencePhoto: PreparePhoto = async (file) => {
+  const source = isHeicLike(file) ? await convertHeicToJpeg(file) : file;
+  const blob = await imageCompression(source, {
+    maxWidthOrHeight: REFERENCE_MAX_SIDE_PX,
+    initialQuality: REFERENCE_JPEG_QUALITY,
+    fileType: "image/jpeg",
+    maxSizeMB: Number.POSITIVE_INFINITY,
+    useWebWorker: true,
+    // Sem EXIF: nada de GPS nem modelo de câmera num retrato de aluno.
     preserveExif: false,
   });
   const dims = await readDimensions(blob);

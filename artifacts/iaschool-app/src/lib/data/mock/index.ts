@@ -4,6 +4,7 @@
 
 import type {
   ApprovalRepository,
+  AuthorizationRepository,
   AuthService,
   ClassRepository,
   EventRepository,
@@ -14,6 +15,7 @@ import type {
   PhotoRepository,
   PromptTemplateRepository,
   GuardianVerificationService,
+  ReferenceFaceRepository,
   ReferenceRepository,
   ShareLogRepository,
   StorageService,
@@ -21,6 +23,8 @@ import type {
 } from "../contract";
 import type {
   AppUser,
+  Authorization,
+  AuthorizationScope,
   BatchJob,
   Photo,
   SchoolBrand,
@@ -35,10 +39,15 @@ import type {
   ShareLog,
   StoredImage,
   Student,
+  StudentBiometricReadiness,
+  StudentReferenceFace,
+  StudentReferenceJob,
 } from "../types";
 import {
   EVENT_RETENTION_YEARS,
+  REFERENCE_FACES_RECOMMENDED,
   TRASH_RETENTION_DAYS,
+  isAuthorizationActive,
   isPlatformAdmin,
 } from "../types";
 import { MOCK_SCHOOLS, MOCK_USERS } from "./seed";
@@ -403,6 +412,215 @@ const students: StudentRepository = {
       "students",
       items.filter((s) => !ids.includes(s.id)),
     );
+  },
+};
+
+
+// ---------- Autorizações e rosto de referência (Fase 3, M4) ----------
+
+/**
+ * No mock não existe motor facial nem bucket: a foto vira data URL e o job
+ * fica `queued` para sempre, exatamente como no banco real enquanto o
+ * `face-worker` (M5) não existir. Nada de embedding de mentira.
+ */
+type MockReferenceJob = StudentReferenceJob & { dataUrl: string };
+
+function readAuthorizations(): Authorization[] {
+  return readCollection<Authorization>("authorizations", []);
+}
+
+function activeAuthorization(
+  studentId: string,
+  scope: AuthorizationScope,
+): Authorization | undefined {
+  return readAuthorizations().find(
+    (a) => a.studentId === studentId && a.scope === scope && isAuthorizationActive(a),
+  );
+}
+
+const authorizations: AuthorizationRepository = {
+  async listForStudent(studentId) {
+    await delay(200);
+    const session = currentSession();
+    return readAuthorizations()
+      .filter((a) => a.studentId === studentId && canSee(session, a.schoolId))
+      .sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+  },
+
+  async grant(input) {
+    await delay(300);
+    const session = currentSession();
+    if (!session) throw new Error("Você precisa estar logado para realizar esta ação.");
+    const student = readCollection<OwnedStudent>("students", []).find(
+      (s) => s.id === input.studentId,
+    );
+    if (!student) throw new Error("Aluno não encontrado");
+    // Espelha o índice único parcial do banco: um aceite ativo por escopo.
+    if (activeAuthorization(input.studentId, input.scope)) {
+      throw new Error("Este aluno já tem uma autorização ativa para esse uso.");
+    }
+    const entry: Authorization = {
+      id: newId(),
+      schoolId: student.schoolId,
+      studentId: input.studentId,
+      scope: input.scope,
+      grantedAt: nowIso(),
+      guardianId: input.guardianId ?? student.primaryGuardianId,
+      grantedByGuardianName: student.guardian?.name,
+      guardianChannel: student.guardian?.whatsappVerifiedAt
+        ? student.guardian.whatsapp
+        : undefined,
+      evidence: {
+        source: "school_declaration",
+        registeredBy: session.user.name,
+        registeredByUserId: session.user.id,
+        termsVersion: null,
+        ...(input.evidence ?? {}),
+      },
+      createdBy: session.user.id,
+      createdAt: nowIso(),
+    };
+    writeCollection("authorizations", [entry, ...readAuthorizations()]);
+    return entry;
+  },
+
+  async revoke(id) {
+    await delay(300);
+    const items = readAuthorizations();
+    const found = items.find((a) => a.id === id);
+    if (!found) throw new Error("Autorização não encontrada");
+    // Desrevogar é recusado no banco; aqui também.
+    if (found.revokedAt) throw new Error("Esta autorização já foi revogada.");
+    const updated: Authorization = { ...found, revokedAt: nowIso() };
+    writeCollection(
+      "authorizations",
+      items.map((a) => (a.id === id ? updated : a)),
+    );
+    return updated;
+  },
+};
+
+function readReferenceFaces(): StudentReferenceFace[] {
+  return readCollection<StudentReferenceFace & { studentId: string; schoolId: string }>(
+    "reference-faces",
+    [],
+  );
+}
+
+function readReferenceJobs(): MockReferenceJob[] {
+  return readCollection<MockReferenceJob>("reference-jobs", []);
+}
+
+const referenceFaces: ReferenceFaceRepository = {
+  async list(studentId) {
+    await delay(200);
+    return readCollection<StudentReferenceFace & { studentId: string }>(
+      "reference-faces",
+      [],
+    )
+      .filter((f) => f.studentId === studentId)
+      .map(({ ...f }) => f);
+  },
+
+  async listJobs(studentId) {
+    await delay(200);
+    return readReferenceJobs()
+      .filter((j) => j.studentId === studentId && j.status !== "done")
+      .map(({ dataUrl: _dataUrl, ...j }) => j);
+  },
+
+  async enqueue(input) {
+    await delay(400);
+    const session = currentSession();
+    if (!session) throw new Error("Você precisa estar logado para realizar esta ação.");
+    // Mesma trava do trigger e da policy de Storage (D5).
+    const auth = activeAuthorization(input.studentId, "biometric_sorting");
+    if (!auth || auth.id !== input.authorizationId) {
+      throw new Error(
+        "Cadastre o rosto de referência apenas com a autorização de reconhecimento ativa.",
+      );
+    }
+    const id = newId();
+    const job: MockReferenceJob = {
+      id,
+      schoolId: input.schoolId,
+      studentId: input.studentId,
+      authorizationId: input.authorizationId,
+      storagePath: `${input.schoolId}/${input.studentId}/${id}.jpg`,
+      status: "queued",
+      attempts: 0,
+      createdAt: nowIso(),
+      dataUrl: await blobToDataUrl(input.blob),
+    };
+    writeCollection("reference-jobs", [...readReferenceJobs(), job]);
+    const { dataUrl: _dataUrl, ...plain } = job;
+    return plain;
+  },
+
+  async cancelJob(jobId) {
+    await delay(200);
+    writeCollection(
+      "reference-jobs",
+      readReferenceJobs().filter((j) => j.id !== jobId),
+    );
+  },
+
+  async retryJob(jobId) {
+    await delay(200);
+    writeCollection(
+      "reference-jobs",
+      readReferenceJobs().map((j) =>
+        j.id === jobId && j.status === "failed"
+          ? { ...j, status: "queued", attempts: 0, lastError: undefined }
+          : j,
+      ),
+    );
+  },
+
+  async remove(faceId) {
+    await delay(200);
+    writeCollection(
+      "reference-faces",
+      readReferenceFaces().filter((f) => f.id !== faceId),
+    );
+  },
+
+  async signUrl(storagePath) {
+    await delay(50);
+    const job = readReferenceJobs().find((j) => j.storagePath === storagePath);
+    if (job) return job.dataUrl;
+    const face = readCollection<StudentReferenceFace & { dataUrl?: string }>(
+      "reference-faces",
+      [],
+    ).find((f) => f.sourcePhotoPath === storagePath);
+    return face?.dataUrl ?? "";
+  },
+
+  async readiness(schoolId) {
+    await delay(200);
+    const session = currentSession();
+    const students = readCollection<OwnedStudent>("students", []).filter(
+      (s) => !s.deletedAt && s.schoolId === schoolId && canSee(session, s.schoolId),
+    );
+    const faces = readCollection<StudentReferenceFace & { studentId: string }>(
+      "reference-faces",
+      [],
+    );
+    const jobs = readReferenceJobs().filter((j) => j.status !== "done");
+    const out = new Map<string, StudentBiometricReadiness>();
+    for (const s of students) {
+      const referenceCount = faces.filter((f) => f.studentId === s.id).length;
+      out.set(s.id, {
+        studentId: s.id,
+        hasConsent: Boolean(activeAuthorization(s.id, "biometric_sorting")),
+        referenceCount,
+        lowCoverage: referenceCount < REFERENCE_FACES_RECOMMENDED,
+        pendingCount: jobs.filter((j) => j.studentId === s.id).length,
+      });
+    }
+    return out;
   },
 };
 
@@ -836,6 +1054,12 @@ const photos: PhotoRepository = {
     window.addEventListener(BATCH_CHANGED_EVENT, onLocal);
     return () => window.removeEventListener(BATCH_CHANGED_EVENT, onLocal);
   },
+  async listForStudent(_studentId) {
+    await delay(200);
+    // O mock não tem motor facial: nenhum rosto foi detectado, logo nenhum
+    // foi confirmado. A tela explica isso em vez de fingir uma pasta cheia.
+    return [];
+  },
   async retryFailedJobs(eventId) {
     await delay(150);
     const all = readCollection<Photo>("photos", []);
@@ -1147,6 +1371,8 @@ export function createMockDataLayer(): DataLayer {
     students,
     schoolBrands,
     classes,
+    authorizations,
+    referenceFaces,
     events,
     photos,
     references,
