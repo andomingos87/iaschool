@@ -339,6 +339,151 @@ export interface BatchJob {
   finishedAt?: string;
 }
 
+/**
+ * Escopos de autorização (`authorizations.scope`, spec §5.4). São quatro e
+ * fixos: separar escopos depois exige recolher o consentimento outra vez.
+ */
+export type AuthorizationScope =
+  | "biometric_sorting"
+  | "delivery_whatsapp"
+  | "internal_use"
+  | "social_media";
+
+export const AUTHORIZATION_SCOPES: readonly AuthorizationScope[] = [
+  "biometric_sorting",
+  "delivery_whatsapp",
+  "internal_use",
+  "social_media",
+] as const;
+
+export const AUTHORIZATION_SCOPE_LABEL: Record<AuthorizationScope, string> = {
+  biometric_sorting: "Foto para reconhecimento",
+  delivery_whatsapp: "Envio por WhatsApp",
+  internal_use: "Uso interno da escola",
+  social_media: "Publicação em redes sociais",
+};
+
+export const AUTHORIZATION_SCOPE_DESCRIPTION: Record<AuthorizationScope, string> = {
+  biometric_sorting:
+    "Separar as fotos do evento por rosto para montar a pasta deste aluno.",
+  delivery_whatsapp:
+    "Enviar as fotos e as artes do aluno ao WhatsApp verificado do responsável.",
+  internal_use:
+    "Usar a imagem dentro da escola: mural, portfólio pedagógico, comunicação interna.",
+  social_media:
+    "Publicar a imagem fora da escola, em perfil ou site da instituição.",
+};
+
+/**
+ * Prova do aceite (`authorizations.evidence`). Congelada no banco: pela API,
+ * uma autorização gravada só muda em `revoked_at`.
+ */
+export interface AuthorizationEvidence {
+  /**
+   * De onde veio o aceite:
+   * - `school_declaration`: a escola declara que colheu a autorização
+   *   (o toggle da ficha do aluno). Não é o responsável aceitando no produto.
+   * - `students.guardian.consentAt`: herança do booleano da Fase 0, trazida
+   *   pela migração do M4.
+   * - `guardian_portal`: aceite do próprio responsável (Fase 4, ainda não existe).
+   */
+  source?: "school_declaration" | "students.guardian.consentAt" | "guardian_portal";
+  /** Quem registrou, como aparece na UI. */
+  registeredBy?: string;
+  registeredByUserId?: string;
+  /**
+   * Versão do termo aceito. Nulo enquanto o texto jurídico não existir — é
+   * essa pendência que impede colher consentimento de responsável de verdade
+   * (`BACKLOG.md`, seção Transversal).
+   */
+  termsVersion?: string | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Consentimento por escopo (`authorizations`). Indelével: revogar é preencher
+ * `revokedAt`, e reconceder é uma linha nova — o histórico inteiro fica.
+ */
+export interface Authorization {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  scope: AuthorizationScope;
+  /** Momento do aceite. Ausente = linha registrada sem aceite: não vale nada. */
+  grantedAt?: string;
+  guardianId?: string;
+  /** Nome do responsável como estava no aceite (prova congelada). */
+  grantedByGuardianName?: string;
+  /** Canal verificado como estava no aceite. */
+  guardianChannel?: string;
+  revokedAt?: string;
+  evidence?: AuthorizationEvidence;
+  createdBy: string;
+  createdAt: string;
+}
+
+/** Autorização válida agora: aceite registrado e não revogada. */
+export function isAuthorizationActive(a: Authorization): boolean {
+  return Boolean(a.grantedAt) && !a.revokedAt;
+}
+
+/**
+ * Rosto de referência do aluno (`student_reference_faces`), como a tela o vê.
+ * O vetor biométrico **nunca** sai do banco: a RPC de leitura não o devolve.
+ */
+export interface StudentReferenceFace {
+  id: string;
+  quality?: number;
+  /** Caminho no bucket `student-refs`, para assinar a miniatura. */
+  sourcePhotoPath?: string;
+  /** Fim do ano letivo em que foi cadastrada, sem renovação automática. */
+  retentionUntil: string;
+  /** Prazo vencido. Vencer não apaga nada — o expurgo é do M6. */
+  expired: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
+export type ReferenceJobStatus = "queued" | "leased" | "done" | "failed";
+
+/**
+ * Foto de referência à espera do embedding (`student_reference_jobs`). O
+ * vetor é calculado pelo motor facial (`det_size` 640, spec §7.4), fora do
+ * navegador; até lá a foto está no bucket e o job, na fila.
+ */
+export interface StudentReferenceJob {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  authorizationId: string;
+  storagePath: string;
+  status: ReferenceJobStatus;
+  attempts: number;
+  lastError?: string;
+  createdAt: string;
+}
+
+/**
+ * Cobertura biométrica de um aluno, para o indicador da lista
+ * ("182 de 240 com referência · 58 sem consentimento").
+ */
+export interface StudentBiometricReadiness {
+  studentId: string;
+  hasConsent: boolean;
+  /** Referências já processadas (com vetor). */
+  referenceCount: number;
+  /** Menos de duas referências: aviso, nunca bloqueio (decisão #8). */
+  lowCoverage: boolean;
+  /** Fotos enviadas que ainda não viraram vetor. */
+  pendingCount: number;
+}
+
+/**
+ * Uma referência matricula; duas é o que o spike mediu (decisão #8,
+ * 16/09/2026). Entre uma e duas, a tela avisa "cobertura baixa".
+ */
+export const REFERENCE_FACES_RECOMMENDED = 2;
+
 /** Post estático de Instagram usado como referência de estilo. */
 export interface ReferencePost {
   id: string;

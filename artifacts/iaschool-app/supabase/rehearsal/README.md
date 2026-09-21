@@ -117,3 +117,28 @@ psql "$DSN" -v ON_ERROR_STOP=1 -q -c "begin;" \
 
 Executado em 21/09/2026: `migração legada ok` e `roundtrip M4 ok`, antes e
 depois de aplicar.
+
+## M4b — fila do rosto de referência (seção 8 do mesmo arquivo)
+
+`iaschool_fase3_reference_face_jobs` acrescenta `student_reference_jobs` e as
+RPCs de fila. Mesmo roteiro, com o arquivo de checks próprio:
+
+```bash
+psql "$DSN" -v ON_ERROR_STOP=1 -q -c "begin;" \
+  -f artifacts/iaschool-app/supabase/fase3-authorizations-reference-faces.sql \
+  -f artifacts/iaschool-app/supabase/rehearsal/m4b-checks.sql \
+  -c "rollback;"
+psql "$DSN" -Atc "select to_regclass('public.student_reference_jobs') is null"   # t
+```
+
+O roundtrip cobre: enfileirar sem `biometric_sorting` ativo é recusado; job com
+autorização de outro aluno é recusado; `claim` dá lease e conta a tentativa, e
+não reivindica duas vezes; concluir sem embedding é erro (a referência não
+existe sem vetor); a conclusão boa cria a linha em `student_reference_faces`
+com o caminho e a autorização vindos do job; concluir de novo é `noop`; cinco
+falhas derrubam o job e `retry_student_reference_job` zera as tentativas; retry
+de escola de que a sessão não é membro é recusado; e
+`delete_student_reference_face` devolve o caminho do objeto para o cliente
+apagar no bucket.
+
+Executado em 21/09/2026, antes e depois de aplicar: `roundtrip M4b ok`.

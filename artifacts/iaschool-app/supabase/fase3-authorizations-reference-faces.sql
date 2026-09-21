@@ -1,6 +1,8 @@
 -- ------------------------------------------------------------
 -- IAschool — Fase 3, M4: autorizações por escopo e rosto de referência
--- Migration: iaschool_fase3_authorizations_reference_faces
+-- Migrations: iaschool_fase3_authorizations_reference_faces (seções 1–7),
+--             iaschool_fase3_reference_face_jobs (seção 8),
+--             iaschool_fase3_reference_job_revoked_guard (revisão da 8.2)
 --
 -- Spec: docs/spec-upload-massa-reconhecimento-facial.md §5.3, §5.4, §6, §7.4, §8.
 -- Backlog: BACKLOG.md → Fase 3 → M4.
@@ -21,6 +23,9 @@
 --   5. RPCs de leitura para a tela, sem nunca expor `embedding`.
 --   6. Bucket `student-refs` + policies; o insert exige consentimento ativo.
 --   7. Migração de `students.guardian->>'consentAt'` para `authorizations`.
+--   8. `student_reference_jobs` — a fila entre a tela e o motor facial: a
+--      referência não existe sem embedding, e quem calcula o vetor roda fora
+--      do navegador. Mesma forma de `photo_jobs` (D2), mas por aluno.
 --
 -- Não entra: `photo_faces` e a busca vetorial (M5); `biometric_events` e
 -- `purge_expired_biometrics()` (M6) — até lá, revogar e vencer a retenção
@@ -416,3 +421,270 @@ select s.school_id,
         and a.scope = 'internal_use'
         and a.revoked_at is null
    );
+
+-- ============================================================
+-- 8. Fila do rosto de referência (spec §7.4)
+-- Migration: iaschool_fase3_reference_face_jobs
+-- ============================================================
+
+-- `student_reference_faces.embedding` é `not null`: a tela não consegue
+-- gravar a referência sozinha, porque quem calcula o vetor é o motor facial
+-- (InsightFace, `det_size` 640 — spec §7.4), que roda fora do navegador.
+-- Esta fila é o caminho entre os dois: a tela sobe o JPEG em `student-refs`
+-- e enfileira; o worker consome, calcula e grava a linha.
+--
+-- Estrutura igual à de `photo_jobs` (D2: fila em tabela, `FOR UPDATE SKIP
+-- LOCKED`, 5 tentativas), com duas diferenças: a fila é por ALUNO, não por
+-- foto de evento — `photo_jobs.photo_id` referencia `photos`, que uma foto de
+-- referência não é —, e a linha aqui é visível para a escola, porque não
+-- guarda vetor nenhum: só o caminho do arquivo e o estado.
+--
+-- Enquanto o `face-worker` não existir (M5), o job fica `queued` e a tela diz
+-- "aguardando processamento". Nada de embedding falso para destravar tela.
+
+create table if not exists public.student_reference_jobs (
+  id                uuid primary key default gen_random_uuid(),
+  school_id         uuid not null references public.schools (id) on delete cascade,
+  student_id        uuid not null references public.students (id) on delete cascade,
+  -- A autorização sob a qual a foto foi colhida; é ela que o worker copia
+  -- para `student_reference_faces.authorization_id`.
+  authorization_id  uuid not null references public.authorizations (id),
+  -- `{school_id}/{student_id}/{job_id}.jpg` no bucket `student-refs`.
+  storage_path      text not null unique,
+  status            text not null default 'queued'
+                    check (status in ('queued','leased','done','failed')),
+  attempts          int not null default 0,
+  leased_until      timestamptz,
+  last_error        text,
+  reference_face_id uuid references public.student_reference_faces (id) on delete set null,
+  created_by        uuid not null references auth.users (id),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+create index if not exists srj_claim_idx
+  on public.student_reference_jobs (status, id) where status in ('queued','leased');
+create index if not exists srj_student_idx
+  on public.student_reference_jobs (school_id, student_id);
+
+drop trigger if exists student_reference_jobs_touch on public.student_reference_jobs;
+create trigger student_reference_jobs_touch
+  before update on public.student_reference_jobs
+  for each row execute function public.touch_updated_at();
+
+-- Mesma trava da tabela de referências (D5): sem `biometric_sorting` ativa do
+-- próprio aluno não entra job. Sem isso, revogar o consentimento deixaria um
+-- job na fila que viraria embedding depois.
+create or replace function public.student_reference_jobs_check()
+returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  v_student_school uuid;
+  v_auth           public.authorizations%rowtype;
+begin
+  select school_id into v_student_school from public.students where id = new.student_id;
+  if v_student_school is null or v_student_school <> new.school_id then
+    raise exception 'reference job school_id must match student school_id'
+      using errcode = '23514';
+  end if;
+
+  select * into v_auth from public.authorizations where id = new.authorization_id;
+  if v_auth.id is null
+     or v_auth.student_id <> new.student_id
+     or v_auth.scope <> 'biometric_sorting'
+     or v_auth.granted_at is null
+     or v_auth.revoked_at is not null then
+    raise exception 'reference job requires an active biometric_sorting authorization for the student'
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.student_reference_jobs_check() from public, anon, authenticated;
+
+drop trigger if exists student_reference_jobs_check on public.student_reference_jobs;
+create trigger student_reference_jobs_check
+  before insert on public.student_reference_jobs
+  for each row execute function public.student_reference_jobs_check();
+
+alter table public.student_reference_jobs enable row level security;
+
+drop policy if exists "student_reference_jobs_select" on public.student_reference_jobs;
+create policy "student_reference_jobs_select" on public.student_reference_jobs
+  for select to authenticated
+  using (public.is_member_of(school_id) or public.is_super_admin());
+
+drop policy if exists "student_reference_jobs_insert" on public.student_reference_jobs;
+create policy "student_reference_jobs_insert" on public.student_reference_jobs
+  for insert to authenticated
+  with check (
+    (public.is_member_of(school_id) and created_by = auth.uid())
+    or public.is_super_admin()
+  );
+
+-- Desistir de uma referência que ainda não virou vetor é apagar a linha; o
+-- estado do job é do worker, então não há policy de update.
+drop policy if exists "student_reference_jobs_delete" on public.student_reference_jobs;
+create policy "student_reference_jobs_delete" on public.student_reference_jobs
+  for delete to authenticated
+  using (public.is_member_of(school_id) or public.is_super_admin());
+
+-- A fila é da escola logada: `anon` não tem nada aqui, e nem `authenticated`
+-- muda estado (o grant default do Supabase dá tudo para os dois).
+revoke all on table public.student_reference_jobs from anon;
+revoke update on table public.student_reference_jobs from authenticated;
+
+-- 8.1 Worker: reivindicar
+create or replace function public.claim_student_reference_jobs(
+  p_limit int, p_lease_seconds int
+) returns setof public.student_reference_jobs
+language sql security definer set search_path = public as $$
+  with c as (
+    select id from public.student_reference_jobs
+    where (status = 'queued' or (status = 'leased' and leased_until < now()))
+      and attempts < 5
+    order by id
+    limit p_limit
+    for update skip locked
+  )
+  update public.student_reference_jobs j
+     set status = 'leased',
+         attempts = j.attempts + 1,
+         leased_until = now() + make_interval(secs => p_lease_seconds)
+    from c where j.id = c.id
+  returning j.*;
+$$;
+revoke all on function public.claim_student_reference_jobs(int,int) from public, anon, authenticated;
+grant execute on function public.claim_student_reference_jobs(int,int) to service_role;
+
+-- 8.2 Worker: concluir.
+-- Devolve 'done' | 'failed' | 'requeued' | 'revoked' | 'noop' | 'missing'.
+--
+-- É aqui que a linha de `student_reference_faces` nasce. O consentimento é
+-- conferido de novo agora, e não só no enfileiramento: entre uma coisa e
+-- outra a escola pode ter revogado. Nesse caso o job morre como 'revoked'
+-- em vez de estourar no trigger — se estourasse, a transação voltaria, o job
+-- ficaria 'leased' até o lease vencer e o ciclo se repetiria até as 5
+-- tentativas, deixando a linha presa para sempre.
+create or replace function public.complete_student_reference_job(
+  p_job_id    uuid,
+  p_ok        boolean,
+  p_embedding extensions.vector(512) default null,
+  p_quality   real                   default null,
+  p_error     text                   default null
+) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_job   public.student_reference_jobs%rowtype;
+  v_error text := left(p_error, 2000);
+  v_face  uuid;
+begin
+  select * into v_job from public.student_reference_jobs where id = p_job_id for update;
+  if not found then
+    return 'missing';
+  end if;
+  if v_job.status <> 'leased' then
+    return 'noop';
+  end if;
+
+  if p_ok then
+    if p_embedding is null then
+      raise exception 'embedding is required when the job succeeds' using errcode = '22023';
+    end if;
+    if not exists (
+      select 1 from public.authorizations a
+       where a.id = v_job.authorization_id
+         and a.student_id = v_job.student_id
+         and a.scope = 'biometric_sorting'
+         and a.granted_at is not null
+         and a.revoked_at is null
+    ) then
+      update public.student_reference_jobs
+         set status = 'failed', leased_until = null,
+             last_error = 'consentimento de reconhecimento revogado antes do processamento'
+       where id = p_job_id;
+      return 'revoked';
+    end if;
+    insert into public.student_reference_faces (
+      school_id, student_id, embedding, source_photo_path, quality,
+      authorization_id, created_by
+    ) values (
+      v_job.school_id, v_job.student_id, p_embedding, v_job.storage_path, p_quality,
+      v_job.authorization_id, v_job.created_by
+    ) returning id into v_face;
+    update public.student_reference_jobs
+       set status = 'done', leased_until = null, last_error = null,
+           reference_face_id = v_face
+     where id = p_job_id;
+    return 'done';
+  end if;
+
+  if v_job.attempts >= 5 then
+    update public.student_reference_jobs
+       set status = 'failed', leased_until = null, last_error = v_error
+     where id = p_job_id;
+    return 'failed';
+  end if;
+
+  update public.student_reference_jobs
+     set status = 'queued', leased_until = null, last_error = v_error
+   where id = p_job_id;
+  return 'requeued';
+end;
+$$;
+revoke all on function public.complete_student_reference_job(uuid,boolean,extensions.vector,real,text)
+  from public, anon, authenticated;
+grant execute on function public.complete_student_reference_job(uuid,boolean,extensions.vector,real,text)
+  to service_role;
+
+-- 8.3 Tela: "tentar de novo" numa referência que falhou (mesmo papel do
+-- `retry_failed_photo_jobs` do M3). Zera as tentativas, não cria linha nova.
+create or replace function public.retry_student_reference_job(p_job_id uuid)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+declare
+  v_job public.student_reference_jobs%rowtype;
+begin
+  select * into v_job from public.student_reference_jobs where id = p_job_id;
+  if not found then
+    return false;
+  end if;
+  if not (public.is_member_of(v_job.school_id) or public.is_super_admin()) then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  if v_job.status <> 'failed' then
+    return false;
+  end if;
+  update public.student_reference_jobs
+     set status = 'queued', attempts = 0, leased_until = null, last_error = null
+   where id = p_job_id;
+  return true;
+end;
+$$;
+revoke all on function public.retry_student_reference_job(uuid) from public, anon;
+grant execute on function public.retry_student_reference_job(uuid) to authenticated, service_role;
+
+-- 8.4 Tela: remover uma referência já processada. `student_reference_faces`
+-- não tem policy, então a exclusão passa por aqui. Devolve o caminho do
+-- arquivo para o cliente apagar o objeto no bucket.
+--
+-- Isto NÃO é o expurgo do M6: apagar uma referência a pedido da escola é
+-- outra coisa, e não mexe em foto de evento nem em atribuição confirmada.
+create or replace function public.delete_student_reference_face(p_face_id uuid)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_face public.student_reference_faces%rowtype;
+begin
+  select * into v_face from public.student_reference_faces where id = p_face_id;
+  if not found then
+    return null;
+  end if;
+  if not (public.is_member_of(v_face.school_id) or public.is_super_admin()) then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  delete from public.student_reference_faces where id = p_face_id;
+  return v_face.source_photo_path;
+end;
+$$;
+revoke all on function public.delete_student_reference_face(uuid) from public, anon;
+grant execute on function public.delete_student_reference_face(uuid) to authenticated;

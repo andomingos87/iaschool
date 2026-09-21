@@ -12,6 +12,16 @@ export const MAX_FILES_PER_BATCH = 5_000;
 export const UPLOAD_MAX_SIDE_PX = 2_560;
 /** Qualidade JPEG da foto enviada (D3). */
 export const UPLOAD_JPEG_QUALITY = 0.85;
+/**
+ * Lado maior da foto de REFERÊNCIA do aluno (spec §7.4). Menor que a do
+ * evento de propósito: é um retrato, e ampliar retrato põe o rosto acima da
+ * maior âncora do SCRFD — o spike perdeu 14 de 15 retratos a 1024. O bucket
+ * `student-refs` também aceita no máximo 10 MB por arquivo.
+ */
+export const REFERENCE_MAX_SIDE_PX = 1_280;
+/** Qualidade JPEG da foto de referência: mais alta que a do evento, é uma só. */
+export const REFERENCE_JPEG_QUALITY = 0.92;
+
 /** Workers de hash em paralelo (o gargalo é o disco, não a CPU). */
 export const HASH_WORKERS = 2;
 

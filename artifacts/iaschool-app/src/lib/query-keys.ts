@@ -13,6 +13,11 @@ export const qk = {
     ["events", "photo-counts", schoolId ?? "none"] as const,
   photos: (eventId: string) => ["photos", eventId] as const,
   batch: (eventId: string) => ["batch-jobs", eventId] as const,
+  authorizations: (studentId: string) => ["authorizations", studentId] as const,
+  referenceFaces: (studentId: string) => ["reference-faces", studentId] as const,
+  referenceJobs: (studentId: string) => ["reference-faces", "jobs", studentId] as const,
+  biometricReadiness: (schoolId?: string) =>
+    ["reference-faces", "readiness", schoolId ?? "none"] as const,
   references: ["references"] as const,
   generatedPosts: ["generated-posts"] as const,
   generatedPostsTrash: ["generated-posts", "trash"] as const,

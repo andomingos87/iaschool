@@ -10,6 +10,9 @@
 
 import type {
   AppUser,
+  Authorization,
+  AuthorizationEvidence,
+  AuthorizationScope,
   BatchJob,
   GeneratedPost,
   Photo,
@@ -27,6 +30,9 @@ import type {
   SignUpInput,
   StoredImage,
   Student,
+  StudentBiometricReadiness,
+  StudentReferenceFace,
+  StudentReferenceJob,
 } from "./types";
 
 export interface AuthService {
@@ -314,6 +320,79 @@ export interface PhotoRepository {
   retryFailedJobs(eventId: string): Promise<number>;
 }
 
+/**
+ * Consentimento por escopo (`authorizations`, spec §5.4).
+ *
+ * Não há `update` nem `delete`: a prova é congelada no banco. Conceder é
+ * linha nova, revogar é carimbar `revokedAt`, e reconceder depois de revogar
+ * é outra linha — o histórico inteiro fica.
+ */
+export interface AuthorizationRepository {
+  /** Histórico completo do aluno, mais recente primeiro (inclui revogadas). */
+  listForStudent(studentId: string): Promise<Authorization[]>;
+  /**
+   * Registra um aceite com `grantedAt` = agora.
+   *
+   * Marcado pela escola, o toggle é **declaração de que a autorização foi
+   * colhida**, não o consentimento do responsável: por isso a evidência
+   * nasce com `source: "school_declaration"` e `termsVersion` nulo — o termo
+   * versionado depende do texto jurídico (`BACKLOG.md`, Transversal).
+   */
+  grant(input: {
+    studentId: string;
+    scope: AuthorizationScope;
+    /** Responsável a quem o aceite é atribuído; ausente usa o do aluno. */
+    guardianId?: string;
+    evidence?: AuthorizationEvidence;
+  }): Promise<Authorization>;
+  /** Carimba `revokedAt`. Desrevogar é recusado pelo banco. */
+  revoke(id: string): Promise<Authorization>;
+}
+
+/** Foto de referência escolhida na tela, já preparada para o bucket. */
+export interface ReferenceFaceInput {
+  studentId: string;
+  schoolId: string;
+  /** Autorização `biometric_sorting` ativa sob a qual a foto é colhida. */
+  authorizationId: string;
+  /** JPEG preparado no cliente (`prepareReferencePhoto`). */
+  blob: Blob;
+}
+
+/**
+ * Rosto de referência do aluno (`student_reference_faces` + a fila
+ * `student_reference_jobs`).
+ *
+ * A tabela de rostos não tem policy: o vetor biométrico não sai por consulta
+ * de cliente. Tudo aqui passa por RPC `security definer` ou pela fila, que
+ * guarda só o caminho do arquivo.
+ */
+export interface ReferenceFaceRepository {
+  /** Referências já processadas do aluno (sem o vetor, nunca). */
+  list(studentId: string): Promise<StudentReferenceFace[]>;
+  /** Fotos enviadas que ainda não viraram vetor, e as que falharam. */
+  listJobs(studentId: string): Promise<StudentReferenceJob[]>;
+  /**
+   * Sobe o JPEG para `student-refs` e enfileira o job que gera o embedding
+   * (`det_size` 640, spec §7.4). Sem `biometric_sorting` ativa, o Storage e o
+   * banco recusam — a trava não é da tela.
+   */
+  enqueue(input: ReferenceFaceInput): Promise<StudentReferenceJob>;
+  /** Desiste de uma foto ainda na fila: apaga o job e o objeto no bucket. */
+  cancelJob(jobId: string): Promise<void>;
+  /** Reenfileira um job que falhou, zerando as tentativas. */
+  retryJob(jobId: string): Promise<void>;
+  /** Remove uma referência processada (RPC) e o arquivo no bucket. */
+  remove(faceId: string): Promise<void>;
+  /** URL assinada da foto de referência, para a miniatura da tela. */
+  signUrl(storagePath: string): Promise<string>;
+  /**
+   * Cobertura biométrica da escola, por aluno ativo. Junta a RPC
+   * `student_biometric_readiness` com a contagem da fila.
+   */
+  readiness(schoolId: string): Promise<Map<string, StudentBiometricReadiness>>;
+}
+
 export interface ReferenceRepository {
   list(): Promise<ReferencePost[]>;
   create(input: Omit<ReferencePost, "id" | "createdAt">): Promise<ReferencePost>;
@@ -417,6 +496,8 @@ export interface DataLayer {
   students: StudentRepository;
   schoolBrands: SchoolBrandRepository;
   classes: ClassRepository;
+  authorizations: AuthorizationRepository;
+  referenceFaces: ReferenceFaceRepository;
   events: EventRepository;
   photos: PhotoRepository;
   references: ReferenceRepository;

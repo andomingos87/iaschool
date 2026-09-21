@@ -10,6 +10,7 @@ import {
   Pencil,
   Phone,
   School,
+  ScanFace,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
@@ -43,6 +44,12 @@ import {
   RadioGroup,
   RadioGroupItem,
 } from "@workspace/iaschool-ui/components/ui/radio-group";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@workspace/iaschool-ui/components/ui/tabs";
 import { Label } from "@workspace/iaschool-ui/components/ui/label";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { PageHeader } from "@/components/app-shell";
@@ -51,6 +58,8 @@ import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { StudentFormDialog } from "@/components/student-form-dialog";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { GuardianVerifyDialog } from "@/components/guardian-verify-dialog";
+import { StudentAuthorizationsCard } from "@/components/student-authorizations-card";
+import { StudentReferenceFaces } from "@/components/student-reference-faces";
 import {
   useStudent,
   useMoveStudentsToTrash,
@@ -286,226 +295,247 @@ export default function StudentDetailPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Dados do aluno */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-base">Dados</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <p className="flex items-center gap-2 text-muted-foreground">
-              <Phone className="size-4" />
-              <span
-                className="text-foreground"
-                data-testid="text-student-whatsapp"
-              >
-                {storedToMasked(s.whatsapp)}
-              </span>
-            </p>
-            {s.birthDate && (
+        {/* Dados do aluno e autorizações */}
+        <div className="space-y-6">
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="text-base">Dados</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
               <p className="flex items-center gap-2 text-muted-foreground">
-                <Calendar className="size-4" />
-                <span className="text-foreground">
-                  {isoToBrDate(s.birthDate)}
-                  {age !== null ? ` (${age} anos)` : ""}
+                <Phone className="size-4" />
+                <span
+                  className="text-foreground"
+                  data-testid="text-student-whatsapp"
+                >
+                  {storedToMasked(s.whatsapp)}
                 </span>
               </p>
-            )}
-            <div className="border-t border-border pt-3">
-              <p className="mb-1 flex items-center gap-2 text-muted-foreground">
-                <School className="size-4" /> Escola
-              </p>
-              <p data-testid="text-student-school-brand">
-                {schoolBrand?.name ?? (
-                  <span className="text-muted-foreground">Sem escola</span>
-                )}
-              </p>
-            </div>
-            {/* Responsável legal — exigido para menores de 18 anos
-                (Lei nº 15.211/2025, arts. 7º, § 2º e 24). */}
-            {requiresGuardianConsent(s.birthDate) && (
-              <div
-                className="border-t border-border pt-3"
-                data-testid="section-detail-guardian"
-              >
-                <p className="mb-1 flex items-center gap-2 text-muted-foreground">
-                  <ShieldCheck className="size-4" /> Responsável legal
+              {s.birthDate && (
+                <p className="flex items-center gap-2 text-muted-foreground">
+                  <Calendar className="size-4" />
+                  <span className="text-foreground">
+                    {isoToBrDate(s.birthDate)}
+                    {age !== null ? ` (${age} anos)` : ""}
+                  </span>
                 </p>
-                {s.guardian?.name ? (
-                  <div className="space-y-1">
-                    <p data-testid="text-guardian-name">
-                      {s.guardian.name}
-                      {s.guardian.relationship && (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          ({s.guardian.relationship})
-                        </span>
-                      )}
-                    </p>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      {storedToMasked(s.guardian.whatsapp)}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <Badge
-                        variant={s.guardian.consentAt ? "secondary" : "destructive"}
-                        data-testid="badge-guardian-consent"
-                      >
-                        {s.guardian.consentAt
-                          ? "Autorização registrada"
-                          : "Sem autorização"}
-                      </Badge>
-                      <Badge
-                        variant={
-                          s.guardian.whatsappVerifiedAt ? "secondary" : "destructive"
-                        }
-                        data-testid="badge-guardian-verified"
-                      >
-                        {s.guardian.whatsappVerifiedAt
-                          ? "WhatsApp verificado"
-                          : "WhatsApp não verificado"}
-                      </Badge>
-                    </div>
-                    {!s.guardian.whatsappVerifiedAt && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="mt-2"
-                        onClick={() => setGuardianDialogOpen(true)}
-                        data-testid="button-verify-guardian"
-                      >
-                        <ShieldCheck className="size-4" /> Verificar WhatsApp
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <p className="flex items-start gap-2 text-destructive">
-                    <ShieldAlert className="mt-0.5 size-4 shrink-0" />
-                    <span className="text-xs">
-                      Aluno menor de 18 anos sem responsável cadastrado. A
-                      geração de imagens está bloqueada até que o cadastro seja
-                      completado.
-                    </span>
-                  </p>
-                )}
-              </div>
-            )}
-            <div className="border-t border-border pt-3">
-              <p className="mb-1 text-muted-foreground">Turma</p>
-              <p data-testid="text-student-class">
-                {(s.classId && classLabels.get(s.classId)) || (
-                  <span className="text-muted-foreground">Sem turma</span>
-                )}
-              </p>
-            </div>
-            {s.enrollmentNumber && (
-              <div className="border-t border-border pt-3">
-                <p className="mb-1 text-muted-foreground">Matrícula</p>
-                <p data-testid="text-student-enrollment">{s.enrollmentNumber}</p>
-              </div>
-            )}
-            {s.notes && (
-              <div className="border-t border-border pt-3">
-                <p className="mb-1 text-muted-foreground">Observações</p>
-                <p className="whitespace-pre-wrap">{s.notes}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Galerias */}
-        <div className="space-y-6 lg:col-span-2">
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Images className="size-4 text-primary" /> Fotos cadastradas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {s.photos.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Nenhuma foto cadastrada. Edite o aluno para adicionar fotos.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-3">
-                  {s.photos.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setZoom(p.url)}
-                      className="group relative size-24 overflow-hidden rounded-md border border-border"
-                      data-testid={`photo-student-${p.id}`}
-                    >
-                      <img
-                        src={p.url}
-                        alt={`Foto de ${s.name}`}
-                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                        loading="lazy"
-                      />
-                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/60 opacity-0 transition-opacity group-hover:opacity-100">
-                        <Maximize2 className="size-4" />
-                      </span>
-                    </button>
-                  ))}
-                </div>
               )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <GalleryVerticalEnd className="size-4 text-primary" /> Imagens
-                geradas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {posts.isError ? (
-                <ErrorState onRetry={() => posts.refetch()} />
-              ) : posts.isLoading ? (
-                <CardsSkeleton count={2} />
-              ) : studentPosts.length === 0 ? (
-                <div className="flex flex-col items-start gap-3">
-                  <p className="text-sm text-muted-foreground">
-                    Nenhuma arte gerada para este aluno.
+              <div className="border-t border-border pt-3">
+                <p className="mb-1 flex items-center gap-2 text-muted-foreground">
+                  <School className="size-4" /> Escola
+                </p>
+                <p data-testid="text-student-school-brand">
+                  {schoolBrand?.name ?? (
+                    <span className="text-muted-foreground">Sem escola</span>
+                  )}
+                </p>
+              </div>
+              {/* Responsável legal — exigido para menores de 18 anos
+                  (Lei nº 15.211/2025, arts. 7º, § 2º e 24). */}
+              {requiresGuardianConsent(s.birthDate) && (
+                <div
+                  className="border-t border-border pt-3"
+                  data-testid="section-detail-guardian"
+                >
+                  <p className="mb-1 flex items-center gap-2 text-muted-foreground">
+                    <ShieldCheck className="size-4" /> Responsável legal
                   </p>
-                  {!isInTrash && (
-                    <Link href={`/gerar?aluno=${s.id}`}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        data-testid="button-generate-first-post"
-                      >
-                        <Sparkles className="size-4" /> Gerar o primeiro post
-                      </Button>
-                    </Link>
+                  {s.guardian?.name ? (
+                    <div className="space-y-1">
+                      <p data-testid="text-guardian-name">
+                        {s.guardian.name}
+                        {s.guardian.relationship && (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            ({s.guardian.relationship})
+                          </span>
+                        )}
+                      </p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {storedToMasked(s.guardian.whatsapp)}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <Badge
+                          variant={s.guardian.consentAt ? "secondary" : "destructive"}
+                          data-testid="badge-guardian-consent"
+                        >
+                          {s.guardian.consentAt
+                            ? "Autorização registrada"
+                            : "Sem autorização"}
+                        </Badge>
+                        <Badge
+                          variant={
+                            s.guardian.whatsappVerifiedAt ? "secondary" : "destructive"
+                          }
+                          data-testid="badge-guardian-verified"
+                        >
+                          {s.guardian.whatsappVerifiedAt
+                            ? "WhatsApp verificado"
+                            : "WhatsApp não verificado"}
+                        </Badge>
+                      </div>
+                      {!s.guardian.whatsappVerifiedAt && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-2"
+                          onClick={() => setGuardianDialogOpen(true)}
+                          data-testid="button-verify-guardian"
+                        >
+                          <ShieldCheck className="size-4" /> Verificar WhatsApp
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="flex items-start gap-2 text-destructive">
+                      <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+                      <span className="text-xs">
+                        Aluno menor de 18 anos sem responsável cadastrado. A
+                        geração de imagens está bloqueada até que o cadastro seja
+                        completado.
+                      </span>
+                    </p>
                   )}
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  {studentPosts.map((post) => (
-                    <button
-                      key={post.id}
-                      type="button"
-                      onClick={() => setZoom(post.imageUrl)}
-                      className="group overflow-hidden rounded-lg border border-border bg-muted text-left"
-                      data-testid={`card-student-post-${post.id}`}
-                    >
-                      <div className="aspect-square overflow-hidden">
-                        <img
-                          src={post.imageUrl}
-                          alt={`Post de ${s.name}`}
-                          className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                          loading="lazy"
-                        />
-                      </div>
-                      <p className="p-2 text-xs text-muted-foreground">
-                        {formatDateTime(post.createdAt)}
-                      </p>
-                    </button>
-                  ))}
+              )}
+              <div className="border-t border-border pt-3">
+                <p className="mb-1 text-muted-foreground">Turma</p>
+                <p data-testid="text-student-class">
+                  {(s.classId && classLabels.get(s.classId)) || (
+                    <span className="text-muted-foreground">Sem turma</span>
+                  )}
+                </p>
+              </div>
+              {s.enrollmentNumber && (
+                <div className="border-t border-border pt-3">
+                  <p className="mb-1 text-muted-foreground">Matrícula</p>
+                  <p data-testid="text-student-enrollment">{s.enrollmentNumber}</p>
+                </div>
+              )}
+              {s.notes && (
+                <div className="border-t border-border pt-3">
+                  <p className="mb-1 text-muted-foreground">Observações</p>
+                  <p className="whitespace-pre-wrap">{s.notes}</p>
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {/* Consentimento por escopo (M4): grava em `authorizations`, uma
+              linha por escopo, com a evidência de quem registrou. */}
+          {!isInTrash && <StudentAuthorizationsCard student={s} />}
+        </div>
+
+        {/* Galerias e rosto de referência */}
+        <div className="lg:col-span-2">
+          <Tabs defaultValue="gallery">
+            <TabsList className="mb-4">
+              <TabsTrigger value="gallery" data-testid="tab-student-gallery">
+                <Images className="size-4" /> Fotos e artes
+              </TabsTrigger>
+              <TabsTrigger value="reference" data-testid="tab-student-reference">
+                <ScanFace className="size-4" /> Rosto de referência
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="gallery" className="space-y-6">
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Images className="size-4 text-primary" /> Fotos cadastradas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {s.photos.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Nenhuma foto cadastrada. Edite o aluno para adicionar fotos.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-3">
+                      {s.photos.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setZoom(p.url)}
+                          className="group relative size-24 overflow-hidden rounded-md border border-border"
+                          data-testid={`photo-student-${p.id}`}
+                        >
+                          <img
+                            src={p.url}
+                            alt={`Foto de ${s.name}`}
+                            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                            loading="lazy"
+                          />
+                          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/60 opacity-0 transition-opacity group-hover:opacity-100">
+                            <Maximize2 className="size-4" />
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <GalleryVerticalEnd className="size-4 text-primary" /> Imagens
+                    geradas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {posts.isError ? (
+                    <ErrorState onRetry={() => posts.refetch()} />
+                  ) : posts.isLoading ? (
+                    <CardsSkeleton count={2} />
+                  ) : studentPosts.length === 0 ? (
+                    <div className="flex flex-col items-start gap-3">
+                      <p className="text-sm text-muted-foreground">
+                        Nenhuma arte gerada para este aluno.
+                      </p>
+                      {!isInTrash && (
+                        <Link href={`/gerar?aluno=${s.id}`}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid="button-generate-first-post"
+                          >
+                            <Sparkles className="size-4" /> Gerar o primeiro post
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                      {studentPosts.map((post) => (
+                        <button
+                          key={post.id}
+                          type="button"
+                          onClick={() => setZoom(post.imageUrl)}
+                          className="group overflow-hidden rounded-lg border border-border bg-muted text-left"
+                          data-testid={`card-student-post-${post.id}`}
+                        >
+                          <div className="aspect-square overflow-hidden">
+                            <img
+                              src={post.imageUrl}
+                              alt={`Post de ${s.name}`}
+                              className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                              loading="lazy"
+                            />
+                          </div>
+                          <p className="p-2 text-xs text-muted-foreground">
+                            {formatDateTime(post.createdAt)}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="reference">
+              <StudentReferenceFaces student={s} />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 

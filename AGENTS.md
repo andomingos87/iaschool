@@ -31,7 +31,7 @@ alvo e o roadmap por fases.
 | 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
 | 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ✅ M1 concluído (20/09/2026): migration aplicada, OTP por responsável, telas de cadastro da escola e de turmas. Fase 1 completa (CSV, papel `dev`) segue aberta |
 | 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ✅ M2 (20/09/2026) e M3 (21/09/2026) concluídos: `photos`, `batch_jobs`, buckets, upload em massa no cliente; fila `photo_jobs`, `ingest-worker` (miniaturas WebP, `/health`), galeria virtualizada e progresso por Realtime. Deploy do worker na Fly preparado, **não executado** |
-| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); **M4 em andamento** (`authorizations`, rosto de referência); M5 e M6 a fazer |
+| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); ✅ **M4 concluído** (21/09/2026): `authorizations` com os 4 escopos, toggles na ficha do aluno, aba de rosto de referência, indicador de prontidão e a fila `student_reference_jobs`. O cálculo do embedding (`det_size` 640) vai com o `face-worker` do M5; M5 e M6 a fazer |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
 | 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
 
@@ -46,10 +46,13 @@ eventos (`/eventos`), upload em massa no cliente com dedup por hash e retomada,
 tabela `photos` e buckets por escola — e o M3 — fila `photo_jobs`,
 `artifacts/ingest-worker/` (Node 24 + `sharp`: dimensões, miniatura WebP
 320px, `/health`), galeria virtualizada e progresso por Realtime em
-`batch_jobs`. O que ainda **não existe**: worker rodando na Fly (só
-Dockerfile/`fly.toml`/roteiro), reconhecimento facial (os jobs `recognize`
-ficam na fila sem consumidor até o M5; o evento para em `processing`) e envio
-em lote.
+`batch_jobs` — e o M4: consentimento por escopo (`authorizations`) com os dois
+toggles na ficha do aluno, aba "Rosto de referência" que sobe a foto para
+`student-refs` e a enfileira, e o indicador de prontidão na lista de alunos.
+O que ainda **não existe**: worker rodando na Fly (só
+Dockerfile/`fly.toml`/roteiro), o motor de reconhecimento facial (os jobs
+`recognize` e os de rosto de referência ficam na fila sem consumidor até o M5;
+o evento para em `processing`) e envio em lote.
 
 Ao trabalhar aqui, diferencie sempre protótipo, código local, integração
 configurada e evidência de produção.
@@ -206,8 +209,10 @@ Tabelas atuais em `public`: `profiles`, `students`, `clubs`, `reference_posts`,
 `generation_usage`, `generation_logs`, `guardian_verification_codes`,
 `share_logs`, desde o M1 `schools`, `school_members`, `classes`, `guardians`
 e `events`, desde o M2 `photos` e `batch_jobs`, desde o M3 `photo_jobs`
-(sem policy: só `service_role` e RPCs) e desde o M4 `authorizations` e
-`student_reference_faces` (idem, sem policy) — todas com RLS habilitada.
+(sem policy: só `service_role` e RPCs) e desde o M4 `authorizations`,
+`student_reference_faces` (idem, sem policy) e `student_reference_jobs`
+(a fila do rosto de referência, essa visível para a escola: não guarda vetor)
+— todas com RLS habilitada.
 A migration do M1 (`iaschool_fase1_schools_members_classes`, referência em
 `supabase/fase1-min-schools-events.sql`) foi **aplicada em 20/09/2026**: a
 escola é o tenant, `profiles.role` é papel global (`dev`/`super_admin`/`user`)
@@ -219,12 +224,15 @@ com `unique (event_id, content_hash)`, `batch_jobs`, buckets `event-photos`,
 e `iaschool_fase2_batch_progress_rpcs`, referência em
 `supabase/fase2-photo-jobs-worker.sql`) foram **aplicadas em 21/09/2026**:
 fila `photo_jobs`, `photos.batch_id`, RPCs de progresso e view
-`stalled_batch_jobs`. As do M4 (`iaschool_fase3_authorizations_reference_faces`
-e `iaschool_fase3_has_active_authorization_tenant_check`, referência em
+`stalled_batch_jobs`. As do M4 (`iaschool_fase3_authorizations_reference_faces`,
+`iaschool_fase3_has_active_authorization_tenant_check`,
+`iaschool_fase3_reference_face_jobs` e
+`iaschool_fase3_reference_job_revoked_guard`, referência em
 `supabase/fase3-authorizations-reference-faces.sql`) foram **aplicadas em
 21/09/2026**: extensão `vector`, consentimento por escopo em `authorizations`
-(indelével: revogar é `revoked_at`), `student_reference_faces` e o bucket
-`student-refs`. Estado em `BACKLOG.md`, M1 a M4.
+(indelével: revogar é `revoked_at`), `student_reference_faces`, o bucket
+`student-refs` e a fila `student_reference_jobs`, que liga a tela ao motor
+facial. Estado em `BACKLOG.md`, M1 a M4.
 
 **Como alterar o schema:** exclusivamente por `apply_migration` do servidor MCP
 `supabase-iaschool` (seção abaixo). Não use o SQL Editor do painel para mudança

@@ -11,6 +11,7 @@ import {
 } from "@supabase/supabase-js";
 import type {
   ApprovalRepository,
+  AuthorizationRepository,
   AuthService,
   ClassRepository,
   EventRepository,
@@ -20,6 +21,7 @@ import type {
   GuardianVerificationService,
   PhotoRepository,
   PromptTemplateRepository,
+  ReferenceFaceRepository,
   ReferenceRepository,
   SchoolEventPatch,
   ShareLogRepository,
@@ -28,6 +30,9 @@ import type {
 } from "../contract";
 import type {
   AppUser,
+  Authorization,
+  AuthorizationEvidence,
+  AuthorizationScope,
   BatchJob,
   EventStatus,
   Grade,
@@ -49,6 +54,8 @@ import type {
   ShareLog,
   StoredImage,
   Student,
+  StudentBiometricReadiness,
+  StudentReferenceJob,
 } from "../types";
 import {
   EVENT_RETENTION_YEARS,
@@ -1157,6 +1164,273 @@ export function createSupabaseDataLayer(): DataLayer {
     },
   };
 
+
+  // ---------- Autorizações e rosto de referência (Fase 3, M4) ----------
+
+  const STUDENT_REFS_BUCKET = "student-refs";
+
+  function toAuthorization(r: Row): Authorization {
+    return {
+      id: r["id"] as string,
+      schoolId: r["school_id"] as string,
+      studentId: r["student_id"] as string,
+      scope: r["scope"] as AuthorizationScope,
+      grantedAt: (r["granted_at"] as string | null) ?? undefined,
+      guardianId: (r["guardian_id"] as string | null) ?? undefined,
+      grantedByGuardianName:
+        (r["granted_by_guardian_name"] as string | null) ?? undefined,
+      guardianChannel: (r["guardian_channel"] as string | null) ?? undefined,
+      revokedAt: (r["revoked_at"] as string | null) ?? undefined,
+      evidence: (r["evidence"] as AuthorizationEvidence | null) ?? undefined,
+      createdBy: r["created_by"] as string,
+      createdAt: r["created_at"] as string,
+    };
+  }
+
+  function toReferenceJob(r: Row): StudentReferenceJob {
+    return {
+      id: r["id"] as string,
+      schoolId: r["school_id"] as string,
+      studentId: r["student_id"] as string,
+      authorizationId: r["authorization_id"] as string,
+      storagePath: r["storage_path"] as string,
+      status: r["status"] as StudentReferenceJob["status"],
+      attempts: Number(r["attempts"] ?? 0),
+      lastError: (r["last_error"] as string | null) ?? undefined,
+      createdAt: r["created_at"] as string,
+    };
+  }
+
+  const authorizations: AuthorizationRepository = {
+    async listForStudent(studentId) {
+      const { data, error } = await supabase
+        .from("authorizations")
+        .select("*")
+        .eq("student_id", studentId)
+        .order("created_at", { ascending: false });
+      if (error) fail("Falha ao listar autorizações do aluno", error);
+      return (data ?? []).map(toAuthorization);
+    },
+
+    async grant(input) {
+      const session = await currentSession();
+      const { data: student, error: sErr } = await supabase
+        .from("students")
+        .select("school_id, primary_guardian_id, guardian")
+        .eq("id", input.studentId)
+        .single();
+      if (sErr) fail("Falha ao localizar o aluno da autorização", sErr);
+
+      const guardianId =
+        input.guardianId ?? (student.primary_guardian_id as string | null) ?? null;
+      // O canal e o nome ficam desnormalizados como prova congelada: mesmo
+      // que o cadastro do responsável mude depois, o aceite fica como estava.
+      let guardianName: string | null = null;
+      let guardianChannel: string | null = null;
+      if (guardianId) {
+        const { data: g } = await supabase
+          .from("guardians")
+          .select("name, whatsapp, whatsapp_verified_at")
+          .eq("id", guardianId)
+          .maybeSingle();
+        if (g) {
+          guardianName = (g.name as string | null) ?? null;
+          guardianChannel = g.whatsapp_verified_at ? (g.whatsapp as string) : null;
+        }
+      }
+      guardianName ??=
+        ((student.guardian as Guardian | null)?.name ?? null) || null;
+
+      const evidence: AuthorizationEvidence = {
+        source: "school_declaration",
+        registeredBy: session.user.name,
+        registeredByUserId: session.user.id,
+        // O termo versionado depende do texto jurídico (BACKLOG, Transversal).
+        termsVersion: null,
+        ...(input.evidence ?? {}),
+      };
+
+      const { data, error } = await supabase
+        .from("authorizations")
+        .insert({
+          school_id: student.school_id,
+          student_id: input.studentId,
+          scope: input.scope,
+          granted_at: new Date().toISOString(),
+          guardian_id: guardianId,
+          granted_by_guardian_name: guardianName,
+          guardian_channel: guardianChannel,
+          evidence,
+          created_by: session.user.id,
+        })
+        .select("*")
+        .single();
+      if (error) {
+        // Índice único parcial: já existe um aceite ativo deste escopo.
+        if (error.code === "23505") {
+          throw new Error(
+            "Este aluno já tem uma autorização ativa para esse uso.",
+          );
+        }
+        fail("Falha ao registrar a autorização", error);
+      }
+      return toAuthorization(data);
+    },
+
+    async revoke(id) {
+      const { data, error } = await supabase
+        .from("authorizations")
+        .update({ revoked_at: new Date().toISOString() })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) fail("Falha ao revogar a autorização", error);
+      return toAuthorization(data);
+    },
+  };
+
+  const referenceFaces: ReferenceFaceRepository = {
+    async list(studentId) {
+      // RPC, não select: `student_reference_faces` não tem policy — o vetor
+      // biométrico não sai por consulta de cliente nem com token válido.
+      const { data, error } = await supabase.rpc("list_student_reference_faces", {
+        p_student: studentId,
+      });
+      if (error) fail("Falha ao listar os rostos de referência", error);
+      return ((data ?? []) as Row[]).map((r) => ({
+        id: r["id"] as string,
+        quality: (r["quality"] as number | null) ?? undefined,
+        sourcePhotoPath: (r["source_photo_path"] as string | null) ?? undefined,
+        retentionUntil: r["retention_until"] as string,
+        expired: Boolean(r["expired"]),
+        createdBy: r["created_by"] as string,
+        createdAt: r["created_at"] as string,
+      }));
+    },
+
+    async listJobs(studentId) {
+      const { data, error } = await supabase
+        .from("student_reference_jobs")
+        .select("*")
+        .eq("student_id", studentId)
+        .neq("status", "done")
+        .order("created_at", { ascending: true });
+      if (error) fail("Falha ao consultar a fila de referências", error);
+      return (data ?? []).map(toReferenceJob);
+    },
+
+    async enqueue(input) {
+      const uid = await currentUserId();
+      const jobId = crypto.randomUUID();
+      // Spec §6: `{school_id}/{student_id}/{ref_id}.jpg`. O 1º segmento dá o
+      // tenant à policy; o 2º diz de quem é o rosto — e é por ele que o
+      // Storage confere o consentimento antes de aceitar o arquivo.
+      const path = `${input.schoolId}/${input.studentId}/${jobId}.jpg`;
+
+      const { error: upErr } = await supabase.storage
+        .from(STUDENT_REFS_BUCKET)
+        .upload(path, input.blob, { contentType: "image/jpeg", upsert: false });
+      if (upErr) fail("Falha ao enviar a foto de referência", upErr);
+
+      const { data, error } = await supabase
+        .from("student_reference_jobs")
+        .insert({
+          id: jobId,
+          school_id: input.schoolId,
+          student_id: input.studentId,
+          authorization_id: input.authorizationId,
+          storage_path: path,
+          created_by: uid,
+        })
+        .select("*")
+        .single();
+      if (error) {
+        // O arquivo não fica órfão no bucket se a fila recusar.
+        await supabase.storage.from(STUDENT_REFS_BUCKET).remove([path]);
+        fail("Falha ao enfileirar a foto de referência", error);
+      }
+      return toReferenceJob(data);
+    },
+
+    async cancelJob(jobId) {
+      const { data: job, error: jErr } = await supabase
+        .from("student_reference_jobs")
+        .select("storage_path")
+        .eq("id", jobId)
+        .maybeSingle();
+      if (jErr) fail("Falha ao localizar a foto de referência", jErr);
+      const { error } = await supabase
+        .from("student_reference_jobs")
+        .delete()
+        .eq("id", jobId);
+      if (error) fail("Falha ao descartar a foto de referência", error);
+      if (job?.storage_path) {
+        await supabase.storage
+          .from(STUDENT_REFS_BUCKET)
+          .remove([job.storage_path as string]);
+      }
+    },
+
+    async retryJob(jobId) {
+      const { error } = await supabase.rpc("retry_student_reference_job", {
+        p_job_id: jobId,
+      });
+      if (error) fail("Falha ao reenfileirar a foto de referência", error);
+    },
+
+    async remove(faceId) {
+      const { data, error } = await supabase.rpc("delete_student_reference_face", {
+        p_face_id: faceId,
+      });
+      if (error) fail("Falha ao remover o rosto de referência", error);
+      // A RPC devolve o caminho do objeto: o arquivo sai junto com a linha.
+      if (typeof data === "string" && data) {
+        await supabase.storage.from(STUDENT_REFS_BUCKET).remove([data]);
+      }
+    },
+
+    async signUrl(storagePath) {
+      const { data, error } = await supabase.storage
+        .from(STUDENT_REFS_BUCKET)
+        .createSignedUrl(storagePath, GALLERY_URL_TTL);
+      if (error || !data?.signedUrl) fail("Falha ao abrir a foto de referência", error);
+      return data.signedUrl;
+    },
+
+    async readiness(schoolId) {
+      const [readinessRes, jobsRes] = await Promise.all([
+        supabase.rpc("student_biometric_readiness", { p_school: schoolId }),
+        supabase
+          .from("student_reference_jobs")
+          .select("student_id")
+          .eq("school_id", schoolId)
+          .neq("status", "done"),
+      ]);
+      if (readinessRes.error) {
+        fail("Falha ao consultar a cobertura biométrica", readinessRes.error);
+      }
+      if (jobsRes.error) fail("Falha ao consultar a fila de referências", jobsRes.error);
+
+      const pending = new Map<string, number>();
+      for (const r of jobsRes.data ?? []) {
+        const id = r.student_id as string;
+        pending.set(id, (pending.get(id) ?? 0) + 1);
+      }
+      const out = new Map<string, StudentBiometricReadiness>();
+      for (const r of (readinessRes.data ?? []) as Row[]) {
+        const studentId = r["student_id"] as string;
+        out.set(studentId, {
+          studentId,
+          hasConsent: Boolean(r["has_consent"]),
+          referenceCount: Number(r["reference_count"] ?? 0),
+          lowCoverage: Boolean(r["low_coverage"]),
+          pendingCount: pending.get(studentId) ?? 0,
+        });
+      }
+      return out;
+    },
+  };
+
   // ---------- Eventos e fotos (Fase 2, M2) ----------
 
   const EVENT_SELECT =
@@ -1900,6 +2174,8 @@ export function createSupabaseDataLayer(): DataLayer {
     students,
     schoolBrands,
     classes,
+    authorizations,
+    referenceFaces,
     events,
     photos,
     references,
