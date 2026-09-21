@@ -31,7 +31,7 @@ alvo e o roadmap por fases.
 | 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
 | 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ✅ M1 concluído (20/09/2026): migration aplicada, OTP por responsável, telas de cadastro da escola e de turmas. Fase 1 completa (CSV, papel `dev`) segue aberta |
 | 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ✅ M2 (20/09/2026) e M3 (21/09/2026) concluídos: `photos`, `batch_jobs`, buckets, upload em massa no cliente; fila `photo_jobs`, `ingest-worker` (miniaturas WebP, `/health`), galeria virtualizada e progresso por Realtime. Deploy do worker na Fly preparado, **não executado** |
-| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | ❌ |
+| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); **M4 em andamento** (`authorizations`, rosto de referência); M5 e M6 a fazer |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
 | 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
 

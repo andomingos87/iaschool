@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 21/09/2026 (M3 implementado: fila `photo_jobs` e RPCs no banco real, `ingest-worker` rodado contra o banco com fotos sintéticas, galeria virtualizada e progresso por Realtime; 129 testes unitários do app + 20 do worker + 19 de integração verdes; deploy na Fly preparado, não executado)
+**Atualizado em:** 21/09/2026 (M4 iniciado na branch `feat/m4-autorizacoes-rosto-referencia`; M3 implementado: fila `photo_jobs` e RPCs no banco real, `ingest-worker` rodado contra o banco com fotos sintéticas, galeria virtualizada e progresso por Realtime; 129 testes unitários do app + 20 do worker + 19 de integração verdes; deploy na Fly preparado, não executado)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -24,8 +24,8 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 | 0 — Descontaminação | — | ✅ concluída (30/08/2026) | — |
 | Transversal — produção e conformidade | pendências #1–#7 | ❌ nenhum item andou | depende de compra de domínio/Resend/Meta |
 | 1 — Fundação escolar | M1 (mínima) + Fase 1 completa | ✅ **M1 concluído** (20/09/2026); Fase 1 completa (CSV, papel `dev`, professor da turma) segue aberta | 2–2,5 sem (M1) |
-| 2 — Upload em massa | M2, M3 | ✅ **M2 concluído** (20/09/2026); M3 (fila, worker, galeria virtualizada) a fazer | 1,5 sem (M3) |
-| 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito, código zero | 6 sem |
+| 2 — Upload em massa | M2, M3 | ✅ **M2** (20/09/2026) e **M3** (21/09/2026) concluídos; deploy do `ingest-worker` na Fly preparado, **não executado** | — |
+| 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito; **M4 em andamento** (21/09/2026), M5 e M6 a fazer | 6 sem |
 | 4 — Autorização granular + portal | — | ❌ sem spec | 2–3 sem |
 | 5 — Lote e WhatsApp | — | ❌ sem spec | 4–6 sem |
 
