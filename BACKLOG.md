@@ -51,7 +51,7 @@ Detalhe completo no Anexo A da pivotagem. Typecheck, build e 84 testes unitário
 - [x] Edge function `send-guardian-code` em modo simulação, com 7 testes de integração em `tests/guardian-verification.integration.test.ts` (30/08/2026)
 - [x] Docs: `pivotagem-iaschool.md`, `pendencias-producao.md`, `diagnostico-geracao-imagens.md`, `AGENTS.md`, `SUPABASE.md` (30/08/2026)
 
-**Deixado de propósito** (não são pendências, são decisões): `fly.toml` com `app = "iasport-image-api-r9"`, `LOGS_ADMIN_EMAIL` antigo, variáveis `IASPORT_TEST_*` locais, tabela `clubs` no banco (vai para a Fase 1). `supabase/pivot-fase0.sql` só serve para bases legadas; o banco atual nasceu limpo.
+**Deixado de propósito** (não são pendências, são decisões): projeto Vercel `iaschool-api-server` (root `artifacts/api-server`) com deploy por Git **desligado** via `artifacts/api-server/vercel.json` em 26/09/2026 — o api-server é Express e pertence à Fly, nunca buildou na Vercel (check vermelho desde o primeiro commit); apagar o projeto no painel da Vercel quando der, `fly.toml` com `app = "iasport-image-api-r9"`, `LOGS_ADMIN_EMAIL` antigo, variáveis `IASPORT_TEST_*` locais, tabela `clubs` no banco (vai para a Fase 1). `supabase/pivot-fase0.sql` só serve para bases legadas; o banco atual nasceu limpo.
 
 ### Higiene pendente da Fase 0
 
