@@ -211,6 +211,9 @@ describe("student_photos", () => {
       det_score: 0.9,
       student_id: other,
       state: "confirmed",
+      // Desde o M6 o banco recusa `confirmed` sem revisor (D6/R7).
+      reviewed_by: schoolA.id,
+      reviewed_at: new Date().toISOString(),
     });
     // Duas linhas em `photo_faces`, uma foto em cada pasta.
     const mine = await userRpc(schoolA, "student_photos", { p_student: studentA });
@@ -234,6 +237,8 @@ describe("student_photos", () => {
       det_score: 0.9,
       student_id: studentA,
       state: "confirmed",
+      reviewed_by: schoolA.id,
+      reviewed_at: new Date().toISOString(),
     });
     const before = await userRpc(schoolA, "student_photos", { p_student: studentA });
     expect(before.rows).toHaveLength(2);

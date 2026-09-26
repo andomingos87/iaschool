@@ -15,7 +15,11 @@ import type {
   AuthorizationScope,
   BatchJob,
   GeneratedPost,
+  FaceCandidate,
+  FaceRejectState,
   Photo,
+  ReviewCounts,
+  ReviewFace,
   SchoolEvent,
   GenerationDetails,
   GenerationRequest,
@@ -290,6 +294,12 @@ export interface PhotoRepository {
   ): Promise<Map<string, string>>;
   /** URL assinada da foto 2560px em `event-photos`, para o lightbox. */
   signPhotoUrl(photo: Pick<Photo, "storagePath">): Promise<string>;
+  /**
+   * URLs assinadas das fotos 2560px, em lotes de 100. Usada pelo ZIP da
+   * pasta do aluno, que baixa N arquivos e não pode fazer N chamadas de
+   * assinatura. Devolve `storagePath` → URL.
+   */
+  signPhotoUrls(paths: readonly string[]): Promise<Map<string, string>>;
   /** Dos hashes dados, quais já existem no evento (evita subir bytes à toa). */
   findExistingHashes(eventId: string, hashes: string[]): Promise<Set<string>>;
   /**
@@ -400,6 +410,50 @@ export interface ReferenceFaceRepository {
   readiness(schoolId: string): Promise<Map<string, StudentBiometricReadiness>>;
 }
 
+/**
+ * Revisão dos rostos do evento (spec §7.5, M6).
+ *
+ * Tudo aqui passa por RPC `security definer`: `photo_faces` não aceita
+ * escrita de cliente. As RPCs checam `is_member_of` e o consentimento
+ * `biometric_sorting` do aluno por dentro — a tela não é a trava.
+ */
+export interface FaceReviewRepository {
+  /**
+   * Rostos do evento nos estados pedidos (padrão: os pendentes). Pagina
+   * internamente: um evento de 2.000 fotos tem ~6.000 rostos e o PostgREST
+   * corta em 1.000 linhas.
+   */
+  listForEvent(eventId: string, states?: PhotoFaceStateFilter): Promise<ReviewFace[]>;
+  /** Contadores por estado, para o cabeçalho da tela e o selo do evento. */
+  counts(eventId: string): Promise<ReviewCounts>;
+  /** Os candidatos mais prováveis para um rosto (fila individual). */
+  candidates(faceId: string): Promise<FaceCandidate[]>;
+  /**
+   * Confirma um rosto. Sem `studentId`, confirma o aluno sugerido; com ele,
+   * corrige para outro. Devolve quantas linhas mudaram (0 = já estava).
+   */
+  confirm(faceId: string, studentId?: string): Promise<number>;
+  /**
+   * Confirmação em lote por aluno (§7.5): **em transação**, com as mesmas
+   * checagens de `confirm`. Uma face reprovada não confirma nenhuma, e o
+   * conjunto inteiro vira uma linha só na trilha.
+   */
+  confirmBulk(faceIds: readonly string[], studentId: string): Promise<number>;
+  /**
+   * Ignorar (`rejected`), criança de fora (`not_a_student`) ou adulto/equipe
+   * (`adult_or_staff`). Os dois últimos apagam recorte e vetor na hora e
+   * mantêm `bbox`/`det_score`, que é o que a entrega precisa para desfocar.
+   */
+  reject(faceId: string, state: FaceRejectState, reason?: string): Promise<void>;
+  /** URLs assinadas dos recortes em `face-crops`, em lotes. `faceId` → URL. */
+  signCropUrls(
+    faces: ReadonlyArray<Pick<ReviewFace, "id" | "cropPath">>,
+  ): Promise<Map<string, string>>;
+}
+
+/** Estados pedidos a `listForEvent`; ausente = os dois pendentes. */
+export type PhotoFaceStateFilter = ReadonlyArray<ReviewFace["state"]>;
+
 export interface ReferenceRepository {
   list(): Promise<ReferencePost[]>;
   create(input: Omit<ReferencePost, "id" | "createdAt">): Promise<ReferencePost>;
@@ -507,6 +561,7 @@ export interface DataLayer {
   referenceFaces: ReferenceFaceRepository;
   events: EventRepository;
   photos: PhotoRepository;
+  faceReview: FaceReviewRepository;
   references: ReferenceRepository;
   generatedPosts: GeneratedPostRepository;
   promptTemplate: PromptTemplateRepository;

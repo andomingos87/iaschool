@@ -14,6 +14,22 @@
       ],
       "port": 5174,
       "autoPort": true
+    },
+    {
+      "name": "iaschool-app-demo",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "BASE_PATH=/",
+        "VITE_SUPABASE_URL=",
+        "VITE_SUPABASE_ANON_KEY=",
+        "pnpm",
+        "--filter",
+        "@workspace/iaschool-app",
+        "run",
+        "dev"
+      ],
+      "port": 5175,
+      "autoPort": true
     }
   ]
 }

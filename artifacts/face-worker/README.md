@@ -67,11 +67,24 @@ referência), 17 `unassigned` sem vetor, evento movido para `review`.
 
 ## Deploy
 
+Implantado em 26/09/2026: app `iaschool-face-worker`, org `personal`, região
+`gru`, uma máquina `shared-cpu-2x` 2 GB, check em `/health` passando; os dois
+modelos carregaram em ~13 s na máquina da Fly (12,5 s de `motor carregado`).
+Painel: <https://fly.io/apps/iaschool-face-worker/monitoring>.
+
+Contexto de build = esta pasta. Rode **de dentro dela**: passar
+`artifacts/face-worker` como contexto faz o flyctl mudar de pasta antes de
+resolver `--config`, e ele não acha o `fly.toml`.
+
 ```bash
-fly deploy --config artifacts/face-worker/fly.toml \
-           --dockerfile artifacts/face-worker/Dockerfile artifacts/face-worker
+cd artifacts/face-worker
 fly secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... -a iaschool-face-worker
+fly deploy --config fly.toml --dockerfile Dockerfile --remote-only --ha=false .
 ```
+
+`--ha=false` porque a escala é manual (uma máquina no primeiro deploy; sem a
+flag o flyctl cria duas). `--remote-only` porque o Docker local não precisa
+estar ligado.
 
 Escale com `fly scale count N`, **não** com mais processos por máquina: o
 `onnxruntime` já usa todos os núcleos dentro de uma sessão, e o spike mediu 1,

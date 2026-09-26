@@ -46,6 +46,11 @@ aplicadas via MCP; as duas do M1 subiram em **20/09/2026**:
 | `20260921111313` | `iaschool_fase3_reference_job_revoked_guard` (M4: consentimento revogado entre o envio e o processamento derruba o job como `revoked`, em vez de estourar no trigger e deixá-lo preso em `leased`) |
 | `20260921113430` | `iaschool_fase3_photo_faces_recognition` (M5, 21/09/2026: `face_recognition_settings`, `photo_faces` com o `embedding` bloqueado por privilégio de coluna, trigger da D5, `match_reference_faces` (D7), `complete_recognize_job`, bucket `face-crops`, `student_photos`) |
 | `20260921114100` | `iaschool_fase3_permanent_job_failure` (M5: falha permanente nas duas filas — arquivo ilegível e retrato com dois rostos não melhoram em cinco tentativas) |
+| `20260921131238` | `iaschool_fase3_biometric_events` (M6, 21/09/2026: `bulk_min_sim`/`bulk_min_margin` nos limiares, trilha `biometric_events` append-only com `student_ref`, triggers de auditoria em `authorizations` e `student_reference_faces`) |
+| `20260921131253` | `iaschool_fase3_storage_purge_queue` (M6: `storage_purge_queue` + `claim`/`complete` só para `service_role`, e o CHECK que impede `photo_faces.state = 'confirmed'` sem `reviewed_by`/`reviewed_at`) |
+| `20260921131333` | `iaschool_fase3_review_rpcs` (M6: `event_review_faces`, `event_review_counts`, `face_candidates`, `confirm_face`, `confirm_faces_bulk`, `reject_face`, `settle_event_review`) |
+| `20260921131357` | `iaschool_fase3_purge_expired_biometrics` (M6: `purge_student_biometrics`, `purge_expired_biometrics` e a reescrita de `purge_expired_student_trash`, que apagava o aluno sem tocar na biometria dele) |
+| `20260921131403` | `iaschool_fase3_purge_cron` (M6: extensão `pg_cron` e o agendamento diário `iaschool-purge-biometrics`, 03:20 UTC) |
 
 ### Como alterar o schema
 
@@ -79,6 +84,7 @@ o mecanismo de aplicação. Mantenha-os fiéis ao banco.
 | [`fase2-photo-jobs-worker.sql`](./supabase/fase2-photo-jobs-worker.sql) | **M3 (fila e worker)**: `photo_jobs` (RLS sem policy, só `service_role`), `photos.batch_id` + trigger `photos_enqueue_ingest`, `batch_jobs.upload_finished_at`/`updated_at`, `claim_photo_jobs` (`for update skip locked`), RPCs `finish_batch_upload` / `complete_photo_job` / `retry_failed_photo_jobs`, view `stalled_batch_jobs`. Aplicada em 21/09/2026; ensaio em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) (`m3-checks.sql`) |
 | [`fase3-authorizations-reference-faces.sql`](./supabase/fase3-authorizations-reference-faces.sql) | **M4 (autorizações e rosto de referência)**: extensão `vector`, `authorizations` (4 escopos, sem delete, prova imutável), `student_reference_faces` (RLS sem policy), `has_active_authorization`, view `v_biometric_consent`, RPCs `list_student_reference_faces` / `student_biometric_readiness`, bucket `student-refs` (insert exige consentimento ativo), migração de `students.guardian->>'consentAt'`. Seção 8: fila `student_reference_jobs` (a referência não existe sem embedding, e o vetor é calculado fora do navegador). Aplicada em 21/09/2026; ensaio em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) (`m4-seed.sql` + `m4-checks.sql` + `m4b-checks.sql`) |
 | [`fase3-face-recognition.sql`](./supabase/fase3-face-recognition.sql) | **M5 (rostos, atribuição e pasta do aluno)**: `face_recognition_settings`, `photo_faces` (RLS por linha + privilégio de coluna escondendo `embedding`), trigger da D5, `match_reference_faces` (D7, só `service_role`), `complete_recognize_job` (grava os rostos, conta em `photos.faces_count` e move o evento para `review`), bucket `face-crops`, `student_photos`. Aplicada em 21/09/2026; ensaio em `supabase/rehearsal/m5-checks.sql` |
+| [`fase3-review-audit-purge.sql`](./supabase/fase3-review-audit-purge.sql) | **M6 (revisão, trilha e expurgo)**: `biometric_events` (append-only, sem policy de insert — toda linha nasce de trigger ou RPC), `storage_purge_queue` consumida pelo `ingest-worker`, CHECK de `confirmed` sem revisor, RPCs da tela de revisão (`event_review_faces`, `event_review_counts`, `face_candidates`) e das decisões (`confirm_face`, `confirm_faces_bulk` transacional, `reject_face`), `purge_expired_biometrics()` no `pg_cron` diário. Aplicada em 21/09/2026 em 5 migrations; ensaio em `supabase/rehearsal/m6-checks.sql` |
 | [`eca-digital.sql`](./supabase/eca-digital.sql) | `share_logs` e o modelo antigo do OTP (por aluno, superado pelo M1) |
 | [`generation-quota.sql`](./supabase/generation-quota.sql) | `generation_usage` + `consume_generation_quota()` |
 | [`generation-logs.sql`](./supabase/generation-logs.sql) | `generation_logs` + bucket privado `generation-logs` |
@@ -97,6 +103,8 @@ Todas com RLS habilitada.
 | `classes` | Sala: `school_year`, `grade` (lista fixa no app), `name`, `teacher_id` |
 | `guardians` | Responsável legal, por escola + WhatsApp (E.164); `whatsapp_verified_at` só é carimbado pela RPC do OTP e zera ao trocar o número |
 | `events` | Evento escolar (Fase 2): status, retenção das fotos, declaração de direito de imagem |
+| `biometric_events` | Trilha append-only do tratamento biométrico (M6): consentimento, referência, confirmação, recusa e expurgo. Só select para o membro; escrita por trigger e RPC |
+| `storage_purge_queue` | Objetos a apagar no Storage depois do expurgo (M6). Sem policy: `service_role` e RPC |
 | `students` | Aluno cadastrado pela escola (`school_id`, `class_id`, `enrollment_number`, `primary_guardian_id`); soft delete via `deleted_at` |
 | `clubs` | Legado: identidade visual antiga. Sem uso no app desde o M1; removida depois de um ciclo com `schools` estável |
 | `reference_posts` | Modelos de arte (referência de estilo) |
@@ -167,6 +175,21 @@ Pontos de RLS e retenção que importam:
   pelo `service_role` — busca de vizinhos na mão de cliente é inferência de
   identidade. O bucket `face-crops` não tem policy de insert: o recorte é do
   worker; o membro só lê e apaga.
+- Revisão, trilha e expurgo (M6): `biometric_events` tem **só** policy de
+  select (membro da escola) e o privilégio de insert revogado — trilha que o
+  cliente escreve é trilha que o cliente forja. Cada linha nasce de trigger
+  (`authorizations_audit`, `student_reference_faces_audit`) ou de RPC
+  `security definer` (revisão, expurgo). `student_ref` guarda a matrícula do
+  momento do fato, para a trilha continuar legível depois que o aluno é
+  expurgado e a FK vira nula; nome de aluno nunca entra, nem em `detail`.
+  `confirm_faces_bulk` é transacional e tudo ou nada, trava as linhas em
+  ordem de `id` (dois revisores no mesmo aluno não confirmam duas vezes nem
+  perdem face) e exige `auth.uid()` — de propósito o `service_role` **não**
+  confirma rosto nenhum (D6). `storage_purge_queue` não tem policy: apagar a
+  linha no banco não apaga o objeto no bucket, então o que sai do banco entra
+  nessa fila e o `ingest-worker` remove de fato. **Biometria não passa pela
+  lixeira de 30 dias**: vetor e recorte somem na hora da revogação ou do
+  vencimento; a lixeira continua valendo para foto e evento.
 - Fila e progresso (M3): `photo_jobs` não tem policy nenhuma. O cliente só
   toca a fila por três RPCs `security definer` que checam `is_member_of`
   por dentro: `finish_batch_upload` (dono do lote), `retry_failed_photo_jobs`

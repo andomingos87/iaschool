@@ -19,6 +19,10 @@ export const qk = {
   referenceJobs: (studentId: string) => ["reference-faces", "jobs", studentId] as const,
   biometricReadiness: (schoolId?: string) =>
     ["reference-faces", "readiness", schoolId ?? "none"] as const,
+  reviewFaces: (eventId: string, states?: readonly string[]) =>
+    ["review", eventId, "faces", states?.join(",") ?? "pending"] as const,
+  reviewCounts: (eventId: string) => ["review", eventId, "counts"] as const,
+  faceCandidates: (faceId: string) => ["review", "candidates", faceId] as const,
   references: ["references"] as const,
   generatedPosts: ["generated-posts"] as const,
   generatedPostsTrash: ["generated-posts", "trash"] as const,

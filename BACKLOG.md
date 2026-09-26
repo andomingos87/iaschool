@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 21/09/2026 (**M4 e M5 concluídos**. M4: consentimento por escopo, rosto de referência e a fila que liga a tela ao motor facial. M5: `face-worker` em Python rodando de verdade contra o banco — 20 rostos detectados numa cena de teste, 3 sugeridos, 17 sem atribuição e sem vetor, evento movido para `review` —, `photo_faces` com o vetor bloqueado por privilégio de coluna, busca vetorial isolada por escola e pasta do aluno. 240 testes do app (140 unitários + 100 de integração contra o banco real) + 33 do face-worker + 20 do ingest-worker verdes; imagem do face-worker construída e testada, **nenhum worker implantado na Fly**)
+**Atualizado em:** 26/09/2026 (**workers implantados na Fly**: `iaschool-ingest-worker` e `iaschool-face-worker`, org `personal`, região gru, uma máquina cada, `/health` passando nos dois. Antes: 21/09/2026, **M4, M5 e M6 concluídos**. M4: consentimento por escopo, rosto de referência e a fila que liga a tela ao motor facial. M5: `face-worker` em Python rodando de verdade contra o banco — 20 rostos detectados numa cena de teste, 3 sugeridos, 17 sem atribuição e sem vetor, evento movido para `review` —, `photo_faces` com o vetor bloqueado por privilégio de coluna, busca vetorial isolada por escola e pasta do aluno. M6: tela `/eventos/:id/revisao` com cartão por aluno e confirmação em lote, fila individual por teclado, `biometric_events` append-only, `purge_expired_biometrics()` diária no `pg_cron`, fila de expurgo do Storage consumida pelo `ingest-worker` e ZIP da pasta do aluno. 275 testes do app (159 unitários + 116 de integração contra o banco real) + 33 do face-worker + 24 do ingest-worker verdes; imagem do face-worker construída e testada)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -24,8 +24,8 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 | 0 — Descontaminação | — | ✅ concluída (30/08/2026) | — |
 | Transversal — produção e conformidade | pendências #1–#7 | ❌ nenhum item andou | depende de compra de domínio/Resend/Meta |
 | 1 — Fundação escolar | M1 (mínima) + Fase 1 completa | ✅ **M1 concluído** (20/09/2026); Fase 1 completa (CSV, papel `dev`, professor da turma) segue aberta | 2–2,5 sem (M1) |
-| 2 — Upload em massa | M2, M3 | ✅ **M2** (20/09/2026) e **M3** (21/09/2026) concluídos; deploy do `ingest-worker` na Fly preparado, **não executado** | — |
-| 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito; ✅ **M4 e M5 concluídos** (21/09/2026); falta o M6 (revisão, trilha e expurgo) e o deploy dos workers | 6 sem |
+| 2 — Upload em massa | M2, M3 | ✅ **M2** (20/09/2026) e **M3** (21/09/2026) concluídos; `ingest-worker` implantado na Fly (26/09/2026) | — |
+| 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito; ✅ **M4, M5 e M6 concluídos** (21/09/2026); os dois workers implantados na Fly (26/09/2026); faltam as medições de aceite (§12.2) com acervo sintético | 6 sem |
 | 4 — Autorização granular + portal | — | ❌ sem spec | 2–3 sem |
 | 5 — Lote e WhatsApp | — | ❌ sem spec | 4–6 sem |
 
@@ -51,7 +51,7 @@ Detalhe completo no Anexo A da pivotagem. Typecheck, build e 84 testes unitário
 - [x] Edge function `send-guardian-code` em modo simulação, com 7 testes de integração em `tests/guardian-verification.integration.test.ts` (30/08/2026)
 - [x] Docs: `pivotagem-iaschool.md`, `pendencias-producao.md`, `diagnostico-geracao-imagens.md`, `AGENTS.md`, `SUPABASE.md` (30/08/2026)
 
-**Deixado de propósito** (não são pendências, são decisões): `fly.toml` com `app = "iasport-image-api-r9"`, `LOGS_ADMIN_EMAIL` antigo, variáveis `IASPORT_TEST_*` locais, tabela `clubs` no banco (vai para a Fase 1). `supabase/pivot-fase0.sql` só serve para bases legadas; o banco atual nasceu limpo.
+**Deixado de propósito** (não são pendências, são decisões): projeto Vercel `iaschool-api-server` (root `artifacts/api-server`) com deploy por Git **desligado** via `artifacts/api-server/vercel.json` em 26/09/2026 — o api-server é Express e pertence à Fly, nunca buildou na Vercel (check vermelho desde o primeiro commit); apagar o projeto no painel da Vercel quando der, `fly.toml` com `app = "iasport-image-api-r9"`, `LOGS_ADMIN_EMAIL` antigo, variáveis `IASPORT_TEST_*` locais, tabela `clubs` no banco (vai para a Fase 1). `supabase/pivot-fase0.sql` só serve para bases legadas; o banco atual nasceu limpo.
 
 ### Higiene pendente da Fase 0
 
@@ -187,7 +187,7 @@ Migrations `iaschool_fase2_photo_jobs_queue` e `iaschool_fase2_batch_progress_rp
 - [x] `ingest-worker` (Node 24 + `sharp`, concorrência 8, claim de 16 com lease de 120 s): dimensões orientadas, EXIF só como reserva de `taken_at` (o cliente manda a data no insert), miniatura WebP 320px q80 em `event-thumbs` (D4), `complete_photo_job` enfileira `recognize`. Rodado contra o banco real com 12 fotos sintéticas + 1 corrompida: 12 processadas, 1 `failed` na 5ª tentativa, lote fechado como `failed`, 12 jobs `recognize` na fila. ~1–3 s por foto **daqui** (rede até o Storage domina); a meta de ≤ 300 ms (§11.1) só se mede com o worker na mesma região (21/09/2026)
 - [x] Galeria virtualizada (`@tanstack/react-virtual`, `useWindowVirtualizer`): metadados das fotos de uma vez (paginado em blocos de 1.000 — antes o PostgREST cortava em 1.000 linhas), URLs assinadas só das células visíveis em lotes de 100 com cache por evento; célula sem miniatura vira skeleton, falhada vira aviso; lightbox assina a foto grande sob demanda. **Meta de ≤ 2 s com 2.000 fotos não medida**: não há acervo de demonstração desse tamanho (21/09/2026)
 - [x] Progresso: contador otimista do cliente + assinatura Realtime em `batch_jobs` filtrada por `event_id`, com polling de 15 s como rede de segurança; a galeria é refeita com throttle de 3 s enquanto o worker roda. Polling de 2 s do M2 removido; fotos enviadas entram na lista sem refetch (R1) (21/09/2026)
-- [~] Deploy do worker na Fly: `artifacts/ingest-worker/Dockerfile`, `fly.toml` (app `iaschool-ingest-worker`, gru, `min_machines_running = 1`, `auto_stop_machines = off`, check em `/health`) e roteiro no README **prontos, deploy não executado** (decisão de 21/09/2026). `docker build` também não rodou: daemon do Docker desligado nesta máquina
+- [x] Deploy do worker na Fly (26/09/2026): app `iaschool-ingest-worker`, org `personal`, gru, uma máquina `shared-cpu-1x` 1 GB, `min_machines_running = 1`, `auto_stop_machines = off`, check em `/health` passando; secrets `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` via `fly secrets set`. Build no builder remoto da Fly (Docker local continua desligado). Na primeira subida o worker já esvaziou a `storage_purge_queue` (5 recortes órfãos apagados do bucket `face-crops`)
 - [x] `/health` responde 503 quando a view `stalled_batch_jobs` (lote `running` parado há > 10 min **com job pendente**) tem linhas, quando o laço trava (> 60 s sem tick) ou durante o encerramento; a checagem da Fly reinicia a máquina. Lote abandonado pelo cliente sem job pendente não derruba o health (21/09/2026)
 - [x] Log estruturado (pino) com `batch_id`, `photo_id`, `job_id`, `attempt`, `duration_ms`, `result`; nunca nome de arquivo, nome de aluno ou URL assinada — verificado no ensaio ao vivo (21/09/2026)
 - [x] Testes: 8 de integração da fila (`tests/photo-jobs.integration.test.ts`: `photo_jobs` invisível para `authenticated`, trigger de enfileiramento, `claim_photo_jobs` com 4 chamadas paralelas sem id repetido, lease expirado, ciclo completo até `failed` e retry, grants, `stalled_batch_jobs` sob RLS) + os 11 de RLS de `photos` do M2 (dedup e isolamento entre escolas) verdes; 20 unitários do worker (sharp com imagem sintética, laço com concorrência ≤ 8 e shutdown, health, config); 23 unitários novos no app (EXIF, layout, cache de URLs, throttle, uploader) (21/09/2026)
@@ -229,7 +229,7 @@ contrato, com implementação Supabase e mock; `use-authorizations.ts` e
 - [x] Ficha do aluno: dois toggles, "foto para reconhecimento" → `biometric_sorting` e "envio por WhatsApp" → `delivery_whatsapp` (21/09/2026). Cada toggle grava uma linha em `authorizations` com `evidence` (`source: school_declaration`, quem registrou, quando, `terms_version` **nulo** enquanto o texto jurídico não existir), nunca um booleano em `students`. O cartão diz na tela que marcar ali é a escola declarar que colheu, não o aceite do responsável, e que revogar não recupera o que já saiu. Desligar abre confirmação e carimba `revoked_at`; a linha anterior fica no histórico. `internal_use` aparece só de leitura, marcado como herança quando veio da migração do consentimento antigo
 - [x] Tabela `student_reference_faces` (sem policy; só `service_role` e RPC) + bucket `student-refs` (21/09/2026). A extensão `vector` foi instalada aqui (estava listada no M5; sem ela a coluna `embedding` não existe). O trigger `student_reference_faces_check` exige `authorization_id` de `biometric_sorting` **ativa e do próprio aluno** — a D5 passa a viver no banco, não na tela. O bucket repete a trava no Storage: o insert só passa se o aluno do 2º segmento do caminho tiver consentimento ativo. Leitura pela tela por `list_student_reference_faces`, que nunca devolve o vetor
 - [x] Aba "Rosto de referência" em `/alunos/:id` (21/09/2026): **1 foto aceita no cadastro**, com aviso "cobertura baixa" até haver 2; sem `biometric_sorting` ativo a tela não deixa cadastrar e explica que a trava é do banco, não dela (decisão #8). A foto é preparada no cliente (HEIC → JPEG, 1280px de lado maior, sem EXIF — `prepareReferencePhoto`), sobe para `student-refs` e entra na fila; a tela mostra "aguardando processamento", deixa descartar, e mostra falha com "tentar de novo". Remover uma referência processada passa por `delete_student_reference_face`, que devolve o caminho para o cliente apagar o objeto
-- [x] `student_reference_faces.retention_until` = **fim do ano letivo**, sem renovação automática (21/09/2026): default `reference_retention_default()` = 31/12 do ano corrente. O efeito de vencer (apagar a referência mantendo o `student_id` das fotos confirmadas) é o expurgo do M6 — hoje o prazo é registro, não ação: nem vencer nem revogar apagam nada sozinhos
+- [x] `student_reference_faces.retention_until` = **fim do ano letivo**, sem renovação automática (21/09/2026): default `reference_retention_default()` = 31/12 do ano corrente. O efeito de vencer (apagar a referência mantendo o `student_id` das fotos confirmadas) é o expurgo do M6, que passou a rodar diariamente no `pg_cron` em 21/09/2026 — até lá o prazo era registro, não ação
 - [x] Indicador de prontidão na lista de alunos (21/09/2026): "N de M com rosto de referência · N sem consentimento · N autorizados sem foto · N aguardando processamento · N com cobertura baixa", com os dois primeiros recortes clicáveis. Junta `student_biometric_readiness(p_school)` com a contagem da fila; a coluna "Situação" da tabela passa a mostrar o estado por aluno. `ReferenceCoverageNotice` (aviso do evento, M2) passa a subtrair quem já tem referência processada
 - [~] Embedding de referência com `det_size` 640 — **o caminho está pronto, o motor não**. A fila `student_reference_jobs` liga a tela ao worker (mesma forma de `photo_jobs`: lease, 5 tentativas, `claim`/`complete` só para `service_role`), o roundtrip está testado no banco real e o consentimento é conferido duas vezes, ao enfileirar e ao concluir — revogado no meio, o job morre como `revoked` e nenhuma referência nasce. O que falta é quem calcula o vetor: InsightFace em Python, que é o `face-worker` do M5. Decisão de 21/09/2026: não duplicar esse worker no M4 nem gravar embedding de mentira para destravar tela — até o M5 as fotos ficam `queued` e a tela diz isso
 
@@ -254,32 +254,48 @@ roundtrip funcional em `supabase/rehearsal/m5-checks.sql`). Worker em
 - [x] **`bbox` e `det_score` de todo rosto detectado sobrevivem ao expurgo do recorte e do vetor** (21/09/2026): as duas colunas são `not null`, e o M6 vai apagar recorte e vetor sem tocá-las
 - [x] Bucket `face-crops` para os recortes da revisão (21/09/2026). Caminho `{school_id}/{event_id}/{photo_id}-{i}.jpg` em vez do `{face_id}.jpg` da spec §6: é determinístico, então reprocessar o lote sobrescreve em vez de deixar recorte órfão. Escrita só do worker (sem policy de insert); membro lê e apaga
 - [x] `revoke select on photo_faces from authenticated` + `grant select` de colunas sem `embedding` (21/09/2026). Testado pela API: `select=embedding` e `select=*` são recusados, e o conjunto de colunas permitido volta normal
-- [x] Pasta do aluno como consulta N:N (R4, R6), aba "Fotos de eventos" em `/alunos/:id` (21/09/2026). RPC `student_photos`, só `confirmed`; foto com cinco crianças confirmadas aparece nas cinco pastas, com um arquivo só. Até a revisão do M6 existir, a aba fica vazia e explica por quê
+- [x] Pasta do aluno como consulta N:N (R4, R6), aba "Fotos de eventos" em `/alunos/:id` (21/09/2026). RPC `student_photos`, só `confirmed`; foto com cinco crianças confirmadas aparece nas cinco pastas, com um arquivo só. A aba ficou vazia até o M6; desde a tela de revisão ela enche com o que uma pessoa confirmou, e ganhou o botão de baixar tudo em ZIP
 - [x] `SUPABASE_SERVICE_ROLE_KEY` só nos workers; nunca logar embedding, recorte ou nome (21/09/2026) — o log é JSON com id, contagem, duração e resultado, e o formatter não deixa passar nem stack trace do OpenCV, que carregaria caminho de arquivo
-- [ ] Sobras do M5: deploy na Fly (`Dockerfile` e `fly.toml` prontos, imagem construída, `fly deploy` **não executado**); medir §11.1 com o worker na mesma região; recalibrar `tau`/margem com dado de criança no piloto
+- [x] Deploy do `face-worker` na Fly (26/09/2026): app `iaschool-face-worker`, org `personal`, gru, uma máquina `shared-cpu-2x` 2 GB, check em `/health` passando, motor carregado em ~13 s. Pegadinha registrada no README: o `fly deploy` precisa rodar **de dentro** de `artifacts/face-worker` (passar a pasta como contexto faz o flyctl não achar o `--config`)
+- [ ] Sobras do M5: medir §11.1 com o worker na mesma região (agora possível: os dois workers rodam em gru); rodar `bench_throughput.py` na máquina da Fly; recalibrar `tau`/margem com dado de criança no piloto
 
-### M6 — Revisão, trilha, expurgo e aceite (spec §7.5, §9.4, §12) · 2,5 semanas · risco médio
+### M6 — Revisão, trilha, expurgo e aceite (spec §7.5, §9.4, §12) · 2,5 semanas · risco médio ✅ (21/09/2026, exceto aceite medido e deploy)
 
 > **Decisão de 18/09/2026:** D6 mantida, com o custo operacional atacado por
 > confirmação em lote por aluno. Prazo de 2 para 2,5 semanas — é uma tela a mais
 > que a fila original, com RPC de lote e testes de concorrência.
 
-- [ ] Tela `/eventos/:id/revisao`, **aba padrão por aluno**: um cartão por aluno com a grade dos `suggested` dele no evento, partida por faixa de confiança (alta marcada, "precisa de atenção" desmarcada), confirmação em lote; recorte grande o bastante para se enxergar o rosto
-- [ ] Mesma tela, **aba de exceção**: fila individual (recorte, foto inteira, 3 candidatos, atalhos `←/→` e `1..3`) para `unassigned` e para os desmarcados no cartão
-- [ ] RPCs `confirm_face` e `reject_face` (`security definer`, checam `is_member_of` e autorização do aluno); `not_a_student` apaga recorte e vetor na hora
-- [ ] RPC `confirm_faces_bulk(p_face_ids uuid[], p_student_id uuid)`: `security definer`, **em transação**, as mesmas checagens de `confirm_face` aplicadas ao conjunto — uma face reprovada não confirma nenhuma
-- [ ] Nenhum `confirmed` sem `reviewed_by` (D6, R7), **inclusive vindo de lote**; uma linha em `biometric_events` por lote (`kind='face_confirmed'`, `detail={face_ids,count}`)
-- [ ] Teste de concorrência: dois revisores no mesmo aluno ao mesmo tempo não confirmam duas vezes nem perdem face
-- [ ] Ação "não é aluno" **dupla** na revisão: "Criança de fora" (`not_a_student`, sai borrada) e "Adulto / equipe" (`adult_or_staff`, vai nítido). O sistema não infere idade — o `genderage` foi apagado da imagem do worker de propósito
-- [ ] Aba Fotos de `/alunos/:id` mostra **só `confirmed`**; sugestão nenhuma sai dali para download ou envio
-- [ ] Baixar as fotos do aluno em ZIP, gerado sob demanda
-- [ ] `biometric_events` append-only (mesmo padrão de `share_logs`), com `student_ref` (matrícula gravada no momento do fato) — a FK é `on delete set null` e sozinha deixaria a trilha ilegível depois do expurgo do aluno
-- [ ] `purge_expired_biometrics()` diária via `pg_cron`: retenção vencida, revogação, aluno expurgado, evento vencido. **Nada é apagado direto** — tudo passa pela lixeira de 30 dias
-- [ ] Prazos: foto do evento 2 anos, referência até o fim do ano letivo, trilha 5 anos (provisório)
-- [ ] Testes unit: limiares e margem, hash/dedup, EXIF, máquina de estados de `photo_faces`
-- [ ] Testes RLS: escola A não lê `photos`/`photo_faces`/Storage de B; `authenticated` não lê `embedding`; `student_reference_faces` inacessível fora do `service_role`
-- [ ] Aceite §12.2 com dado sintético/adulto: precisão `suggested` ≥ 0,99, cobertura ≥ 0,85, revisão ≤ 15%, falso positivo entre escolas = 0
+Cinco migrations aplicadas no banco real em 21/09/2026
+(`iaschool_fase3_biometric_events`, `iaschool_fase3_storage_purge_queue`,
+`iaschool_fase3_review_rpcs`, `iaschool_fase3_purge_expired_biometrics` e
+`iaschool_fase3_purge_cron`; referência em
+`supabase/fase3-review-audit-purge.sql`, roundtrip funcional com rollback em
+`supabase/rehearsal/m6-checks.sql`).
+
+Camada de app: `FaceReviewRepository` no contrato, com implementação Supabase
+e mock; `use-face-review.ts`; `pages/event-review.tsx`;
+`components/review-student-card.tsx` e `review-face-queue.tsx`; `lib/zip.ts`.
+Varredura do Storage em `artifacts/ingest-worker/src/purge.ts`.
+
+- [x] Tela `/eventos/:id/revisao`, **aba padrão por aluno**: um cartão por aluno com a grade dos `suggested` dele no evento, partida por faixa de confiança (alta marcada, "precisa de atenção" desmarcada), confirmação em lote; célula de 150px para cima — recorte pequeno não é revisão, é carimbo (21/09/2026). Os dois cortes (`bulk_min_sim` 0,64 e `bulk_min_margin` 0,15) moram em `face_recognition_settings`, recalibráveis sem deploy, e a RPC já devolve `high_confidence` pronto
+- [x] Mesma tela, **aba de exceção**: fila individual (recorte, foto inteira, candidatos, atalhos `←/→`, `1..3`, `N`, `A`) para `unassigned` e para os desmarcados no cartão (21/09/2026). **Divergência da spec §7.5, que pedia 3 candidatos sempre:** rosto `unassigned` não guardou vetor — por D5, biometria só persiste para aluno com consentimento —, então para ele não há candidato a calcular. A tela diz isso e cai para a busca de aluno por nome. Onde há vetor, `face_candidates` roda a busca dos 3 vizinhos
+- [x] RPCs `confirm_face` e `reject_face` (`security definer`, checam `is_member_of` e a autorização do aluno); `not_a_student` e `adult_or_staff` apagam recorte e vetor na hora e enfileiram o objeto para o expurgo do Storage (21/09/2026)
+- [x] RPC `confirm_faces_bulk(p_face_ids uuid[], p_student_id uuid)`: `security definer`, **em transação**, as mesmas checagens de `confirm_face` aplicadas ao conjunto — uma face reprovada não confirma nenhuma (21/09/2026). As linhas são travadas em ordem de `id`, que é o que evita deadlock entre dois revisores
+- [x] Nenhum `confirmed` sem `reviewed_by` (D6, R7), **inclusive vindo de lote**: além da RPC, um CHECK no banco recusa a linha por qualquer caminho, e `auth.uid()` nulo derruba a chamada — de propósito o `service_role` não confirma rosto nenhum. Uma linha em `biometric_events` por lote (`kind='face_confirmed'`, `detail={face_ids,count,event_ids}`) (21/09/2026)
+- [x] Teste de concorrência: duas chamadas paralelas de `confirm_faces_bulk` no mesmo aluno somam exatamente 2 confirmações de 2 faces — não confirmam duas vezes nem perdem face (`tests/face-review.integration.test.ts`) (21/09/2026)
+- [x] Ação "não é aluno" **dupla** na revisão: "Criança de fora" (`not_a_student`, sai borrada) e "Adulto / equipe" (`adult_or_staff`, vai nítido). O sistema não infere idade — o `genderage` foi apagado da imagem do worker de propósito (21/09/2026). Os dois mantêm `bbox` e `det_score`, verificado em teste
+- [x] Aba Fotos de `/alunos/:id` mostra **só `confirmed`** (já era assim desde o M5; o M6 é o que faz um rosto chegar a `confirmed`); sugestão nenhuma sai dali para download ou envio (21/09/2026)
+- [x] Baixar as fotos do aluno em ZIP, gerado sob demanda (21/09/2026). ZIP "store" escrito à mão em `src/lib/zip.ts` (9 testes): JPEG já é comprimido, e o workspace aplica `minimumReleaseAge` a pacote novo. Nada é guardado no Storage — um ZIP parado seria uma segunda cópia da imagem do menor para expurgar depois
+- [x] `biometric_events` append-only, com `student_ref` (matrícula gravada no momento do fato) (21/09/2026). **Mais restrito do que a spec §9.4 pedia:** sem policy de insert para `authenticated` — trilha que o cliente escreve é trilha que ele forja. Consentimento e referência viram linha por **trigger**; revisão e expurgo, por RPC `security definer`
+- [x] `purge_expired_biometrics()` diária via `pg_cron` (03:20 UTC): retenção vencida, revogação, aluno expurgado, evento vencido (21/09/2026). Foto e evento passam pela lixeira de 30 dias; **biometria não** — ver a decisão do dia. `purge_expired_student_trash()` foi reescrita: ela apagava o aluno sem tocar na biometria, o que deixaria rosto confirmado sem dono, recorte órfão no bucket e trilha sem `student_ref`
+- [x] Fila `storage_purge_queue` + varredura no `ingest-worker` (21/09/2026): apagar a linha no banco não apaga o objeto no bucket. Agrupada por bucket, com lease, 5 tentativas e log sem caminho de arquivo (4 testes unitários)
+- [x] Prazos: foto do evento 2 anos, referência até o fim do ano letivo, trilha 5 anos (provisório) — implementados como gatilho do expurgo (21/09/2026)
+- [x] Testes unit: máquina de estados de `photo_faces` e agrupamento por aluno/faixa de confiança no mock (10), ZIP e CRC-32 (9). Limiares, hash/dedup e EXIF já estavam cobertos desde o M2/M3 (21/09/2026)
+- [x] Testes RLS e de conformidade: 16 casos em `tests/face-review.integration.test.ts` contra o banco real — escola A não lê a revisão de B, `authenticated` não lê `embedding` (M5), trilha append-only e invisível para a outra escola, `storage_purge_queue` invisível para o cliente, lote tudo-ou-nada, concorrência, `confirmed` sempre com revisor, recusa preservando `bbox` (21/09/2026)
+- [ ] Aceite §12.2 com dado sintético/adulto: precisão `suggested` ≥ 0,99, cobertura ≥ 0,85, revisão ≤ 15%, falso positivo entre escolas = 0. **Não medido** — depende de um acervo de 2.000 fotos sintéticas que não existe nesta máquina
 - [ ] Recalibrar limiares com dado real da escola no piloto **antes** de reduzir a revisão manual
+- [ ] Sobras do M6: a lista de eventos ainda não mostra a pendência de revisão por evento (o cartão está na tela do evento); a tela do papel `dev` para `face_recognition_settings` (incluindo os dois cortes novos) continua na Fase 1 completa; o expurgo nunca rodou com dado de verdade, só no ensaio
+- [ ] Revisar o `grant` de `purge_expired_student_trash()` a `authenticated`: ela varre **todas** as escolas, não só a de quem chamou. Não é escalada — só apaga o que já venceu, e é assim desde a Fase 0 —, mas agora que o `pg_cron` roda o expurgo sozinho, o `execute` do cliente virou dispensável. O linter do Supabase também aponta as RPCs novas da revisão como "definer executável por authenticated": isso é intencional, elas checam `is_member_of` por dentro (mesmo padrão de `confirm_guardian_code` e `student_photos`)
 
 ---
 
@@ -321,6 +337,26 @@ Ainda sem decisão:
 - **Versão desfocada: gerada a cada entrega ou cacheada?** Recomendação em aberto: gerar na entrega, a partir do original, para refletir a autorização do momento. Fase 5.
 
 ## Decisões tomadas
+
+**21/09/2026** — M6: **biometria não passa pela lixeira de 30 dias.** A
+decisão de 18/09 dizia "sempre pela lixeira"; ela vale para foto e evento, que
+a escola pode querer de volta. Vetor e recorte de rosto são outra coisa:
+manter biometria por 30 dias depois de o responsável revogar é exatamente o
+que a revogação proíbe. Eles somem na hora; a foto continua esperando os 30
+dias. Decidido junto: (a) a trilha **não** tem policy de insert para o
+cliente — ela nasce de trigger (consentimento, referência) e de RPC `security
+definer` (revisão, expurgo), porque trilha que o cliente escreve é trilha que
+ele forja, e isso é mais restrito do que a spec §9.4 pedia; (b) apagar linha
+no banco não apaga objeto no bucket, então o expurgo enfileira em
+`storage_purge_queue` e o `ingest-worker` remove de fato — sem isso, "expurgo"
+seria só esconder o arquivo; (c) aluno expurgado não perde a linha do rosto:
+ela fica sem vetor, sem recorte e sem vínculo, em `unassigned`, que é o estado
+que a entrega borra — apagar a linha inteira tiraria o `bbox` e deixaria a
+criança **nítida** numa foto que ela não pode mais autorizar; (d) a fila
+individual não tem 3 candidatos para rosto `unassigned`, porque esse rosto não
+guardou vetor (D5) — inventar candidato exigiria guardar biometria de quem não
+autorizou; (e) `confirm_faces_bulk` exige `auth.uid()`, então o `service_role`
+não confirma rosto nenhum, nem por engano de script.
 
 **21/09/2026** — M5: **um processo por máquina, um job de cada vez**, sem
 concorrência interna. Não é simplificação: o spike mediu 1, 4 e 8 processos

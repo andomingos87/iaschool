@@ -15,6 +15,7 @@ import type {
   AuthService,
   ClassRepository,
   EventRepository,
+  FaceReviewRepository,
   SchoolBrandRepository,
   DataLayer,
   GeneratedPostRepository,
@@ -38,6 +39,7 @@ import type {
   Grade,
   Photo,
   PhotoStatus,
+  ReviewFace,
   SchoolAddress,
   SchoolBrand,
   SchoolClass,
@@ -1581,6 +1583,10 @@ export function createSupabaseDataLayer(): DataLayer {
       if (error || !data?.signedUrl) fail("Falha ao abrir a foto", error);
       return data.signedUrl;
     },
+    async signPhotoUrls(paths) {
+      if (paths.length === 0) return new Map();
+      return signGallery(EVENT_PHOTOS_BUCKET, [...paths]);
+    },
     async findExistingHashes(eventId, hashes) {
       const found = new Set<string>();
       // `in` com listas enormes estoura a URL do PostgREST: vai em lotes.
@@ -1755,6 +1761,134 @@ export function createSupabaseDataLayer(): DataLayer {
         takenAt: (r["taken_at"] as string | null) ?? undefined,
         createdAt: r["created_at"] as string,
       }));
+    },
+  };
+
+  // ---------- Revisão dos rostos (Fase 3, M6) ----------
+
+  const FACE_CROPS_BUCKET = "face-crops";
+
+  function toReviewFace(r: Row): ReviewFace {
+    const bbox = (r["bbox"] ?? {}) as Record<string, number>;
+    return {
+      id: r["face_id"] as string,
+      photoId: r["photo_id"] as string,
+      storagePath: r["storage_path"] as string,
+      thumbPath: (r["thumb_path"] as string | null) ?? undefined,
+      takenAt: (r["taken_at"] as string | null) ?? undefined,
+      bbox: {
+        x: Number(bbox["x"] ?? 0),
+        y: Number(bbox["y"] ?? 0),
+        w: Number(bbox["w"] ?? 0),
+        h: Number(bbox["h"] ?? 0),
+      },
+      cropPath: (r["crop_path"] as string | null) ?? undefined,
+      detScore: Number(r["det_score"] ?? 0),
+      quality: r["quality"] == null ? undefined : Number(r["quality"]),
+      state: r["state"] as ReviewFace["state"],
+      studentId: (r["student_id"] as string | null) ?? undefined,
+      studentName: (r["student_name"] as string | null) ?? undefined,
+      matchScore: r["match_score"] == null ? undefined : Number(r["match_score"]),
+      runnerUpStudentId: (r["runner_up_student_id"] as string | null) ?? undefined,
+      runnerUpName: (r["runner_up_name"] as string | null) ?? undefined,
+      runnerUpScore: r["runner_up_score"] == null ? undefined : Number(r["runner_up_score"]),
+      highConfidence: Boolean(r["high_confidence"]),
+      reviewedAt: (r["reviewed_at"] as string | null) ?? undefined,
+    };
+  }
+
+  /** Bloco da paginação da RPC de revisão (o PostgREST corta em 1.000). */
+  const REVIEW_PAGE = 500;
+
+  const faceReview: FaceReviewRepository = {
+    async listForEvent(eventId, states) {
+      const out: ReviewFace[] = [];
+      for (let offset = 0; ; offset += REVIEW_PAGE) {
+        const { data, error } = await supabase.rpc("event_review_faces", {
+          p_event: eventId,
+          p_states: states ? [...states] : null,
+          p_limit: REVIEW_PAGE,
+          p_offset: offset,
+        });
+        if (error) fail("Falha ao abrir a revisão do evento", error);
+        const page = (data ?? []) as Row[];
+        for (const r of page) out.push(toReviewFace(r));
+        if (page.length < REVIEW_PAGE) break;
+      }
+      return out;
+    },
+
+    async counts(eventId) {
+      const { data, error } = await supabase.rpc("event_review_counts", { p_event: eventId });
+      if (error) fail("Falha ao contar a revisão do evento", error);
+      const r = (Array.isArray(data) ? data[0] : data) as Row | undefined;
+      return {
+        suggested: Number(r?.["suggested"] ?? 0),
+        unassigned: Number(r?.["unassigned"] ?? 0),
+        confirmed: Number(r?.["confirmed"] ?? 0),
+        rejected: Number(r?.["rejected"] ?? 0),
+        notAStudent: Number(r?.["not_a_student"] ?? 0),
+        adultOrStaff: Number(r?.["adult_or_staff"] ?? 0),
+        studentsPending: Number(r?.["students_pending"] ?? 0),
+      };
+    },
+
+    async candidates(faceId) {
+      const { data, error } = await supabase.rpc("face_candidates", {
+        p_face_id: faceId,
+        p_limit: 3,
+      });
+      if (error) fail("Falha ao consultar os candidatos do rosto", error);
+      return ((data ?? []) as Row[]).map((r) => ({
+        studentId: r["student_id"] as string,
+        studentName: r["student_name"] as string,
+        sim: Number(r["sim"] ?? 0),
+      }));
+    },
+
+    async confirm(faceId, studentId) {
+      const { data, error } = await supabase.rpc("confirm_face", {
+        p_face_id: faceId,
+        p_student_id: studentId ?? null,
+      });
+      if (error) fail("Falha ao confirmar o rosto", error);
+      return Number(data ?? 0);
+    },
+
+    async confirmBulk(faceIds, studentId) {
+      const { data, error } = await supabase.rpc("confirm_faces_bulk", {
+        p_face_ids: [...faceIds],
+        p_student_id: studentId,
+      });
+      // Tudo ou nada: o erro aqui significa que NADA foi confirmado.
+      if (error) fail("Falha ao confirmar as fotos do aluno", error);
+      return Number(data ?? 0);
+    },
+
+    async reject(faceId, state, reason) {
+      const { data, error } = await supabase.rpc("reject_face", {
+        p_face_id: faceId,
+        p_state: state,
+        p_reason: reason ?? null,
+      });
+      if (error) fail("Falha ao registrar a recusa", error);
+      // A RPC devolve o caminho do recorte apagado: o objeto sai na hora, sem
+      // esperar a varredura do worker.
+      if (typeof data === "string" && data) {
+        await supabase.storage.from(FACE_CROPS_BUCKET).remove([data]);
+      }
+    },
+
+    async signCropUrls(faces) {
+      const paths = faces.filter((f) => f.cropPath).map((f) => f.cropPath!);
+      if (paths.length === 0) return new Map();
+      const byPath = await signGallery(FACE_CROPS_BUCKET, paths);
+      const out = new Map<string, string>();
+      for (const f of faces) {
+        const url = f.cropPath ? byPath.get(f.cropPath) : undefined;
+        if (url) out.set(f.id, url);
+      }
+      return out;
     },
   };
 
@@ -2193,6 +2327,7 @@ export function createSupabaseDataLayer(): DataLayer {
     referenceFaces,
     events,
     photos,
+    faceReview,
     references,
     generatedPosts,
     promptTemplate,

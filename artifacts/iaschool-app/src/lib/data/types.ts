@@ -620,3 +620,140 @@ export interface SignUpInput {
   email: string;
   password: string;
 }
+
+// ---------- Revisão dos rostos (M6, spec §7.5) ----------
+
+/**
+ * Estado de um rosto detectado (`photo_faces.state`).
+ *
+ * - `unassigned`: sem correspondência. **Sai borrado na entrega** — o default
+ *   protege quem o sistema não sabe quem é.
+ * - `suggested`: o reconhecimento apontou um aluno; ainda não é atribuição.
+ * - `confirmed`: uma pessoa confirmou. Só este estado alimenta a pasta do
+ *   aluno e, com ela, download e envio (D6).
+ * - `rejected`: a revisão passou adiante sem decidir de quem é.
+ * - `not_a_student`: criança de fora. Recorte e vetor apagados; sai borrada.
+ * - `adult_or_staff`: adulto/equipe. Recorte e vetor apagados; sai nítido
+ *   (§9.3.1). A distinção é humana: o `genderage` foi apagado do worker de
+ *   propósito, para o sistema não inferir idade de rosto de criança.
+ */
+export type PhotoFaceState =
+  | "unassigned"
+  | "suggested"
+  | "confirmed"
+  | "rejected"
+  | "not_a_student"
+  | "adult_or_staff";
+
+export const PHOTO_FACE_STATE_LABEL: Record<PhotoFaceState, string> = {
+  unassigned: "Sem correspondência",
+  suggested: "Sugerido",
+  confirmed: "Confirmado",
+  rejected: "Ignorado",
+  not_a_student: "Criança de fora",
+  adult_or_staff: "Adulto / equipe",
+};
+
+/** As três recusas da revisão. Confirmar é a única saída positiva. */
+export type FaceRejectState = "rejected" | "not_a_student" | "adult_or_staff";
+
+/**
+ * Um rosto na tela de revisão (RPC `event_review_faces`). Nunca traz o vetor:
+ * a RPC não o devolve e o privilégio de coluna não o deixaria sair.
+ */
+export interface ReviewFace {
+  id: string;
+  photoId: string;
+  storagePath: string;
+  thumbPath?: string;
+  takenAt?: string;
+  /** Caixa do rosto na foto, em pixels da imagem 2560px. */
+  bbox: { x: number; y: number; w: number; h: number };
+  /** Recorte em `face-crops`; ausente depois de "não é aluno" (apagado). */
+  cropPath?: string;
+  detScore: number;
+  quality?: number;
+  state: PhotoFaceState;
+  studentId?: string;
+  studentName?: string;
+  matchScore?: number;
+  runnerUpStudentId?: string;
+  runnerUpName?: string;
+  runnerUpScore?: number;
+  /**
+   * Passa nos dois cortes de `face_recognition_settings` (`bulk_min_sim` e
+   * `bulk_min_margin`): nasce **marcado** na grade do aluno. O resto nasce
+   * desmarcado e o botão de lote não o alcança sem ato explícito (§7.5).
+   */
+  highConfidence: boolean;
+  reviewedAt?: string;
+}
+
+/** Contadores da revisão de um evento (RPC `event_review_counts`). */
+export interface ReviewCounts {
+  suggested: number;
+  unassigned: number;
+  confirmed: number;
+  rejected: number;
+  notAStudent: number;
+  adultOrStaff: number;
+  /** Quantos alunos têm ao menos um recorte sugerido: é o número de cartões. */
+  studentsPending: number;
+}
+
+/** Total de rostos que ainda esperam decisão humana. */
+export function pendingReviewCount(counts: ReviewCounts | undefined): number {
+  if (!counts) return 0;
+  return counts.suggested + counts.unassigned;
+}
+
+/**
+ * Candidato da fila individual (RPC `face_candidates`). Só existe para rosto
+ * que guardou vetor — o que, por D5, é rosto de aluno com consentimento.
+ * Rosto `unassigned` não tem candidato nenhum: manter biometria de criança
+ * sem autorização só para gerar palpite é exatamente o que a D5 proíbe.
+ */
+export interface FaceCandidate {
+  studentId: string;
+  studentName: string;
+  /** Similaridade de cosseno com a referência do aluno (0 a 1). */
+  sim: number;
+}
+
+/** Agrupamento por aluno da aba padrão da revisão (spec §7.5). */
+export interface ReviewStudentGroup {
+  studentId: string;
+  studentName: string;
+  /** Recortes que nascem marcados (alta confiança). */
+  confident: ReviewFace[];
+  /** Recortes que exigem ato explícito ("precisa de atenção"). */
+  needsAttention: ReviewFace[];
+}
+
+/** Monta os cartões da aba por aluno a partir da lista crua de rostos. */
+export function groupReviewByStudent(faces: readonly ReviewFace[]): ReviewStudentGroup[] {
+  const groups = new Map<string, ReviewStudentGroup>();
+  for (const face of faces) {
+    if (face.state !== "suggested" || !face.studentId) continue;
+    let group = groups.get(face.studentId);
+    if (!group) {
+      group = {
+        studentId: face.studentId,
+        studentName: face.studentName ?? "Aluno sem nome",
+        confident: [],
+        needsAttention: [],
+      };
+      groups.set(face.studentId, group);
+    }
+    if (face.highConfidence) group.confident.push(face);
+    else group.needsAttention.push(face);
+  }
+  return [...groups.values()].sort((a, b) =>
+    a.studentName.localeCompare(b.studentName, "pt-BR"),
+  );
+}
+
+/** Os rostos da fila individual: sem correspondência, na ordem de detecção. */
+export function unassignedFaces(faces: readonly ReviewFace[]): ReviewFace[] {
+  return faces.filter((f) => f.state === "unassigned");
+}
