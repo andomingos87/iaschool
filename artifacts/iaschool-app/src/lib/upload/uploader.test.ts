@@ -133,16 +133,17 @@ async function settle(uploader: ReturnType<typeof build>["uploader"], timeoutMs 
 }
 
 describe("addFiles: filtro, limite e contagens", () => {
-  it("aceita JPEG/PNG/HEIC e recusa o resto", async () => {
+  it("aceita JPEG/PNG/HEIC/GIF e recusa o resto", async () => {
     const { uploader } = build();
     const result = await uploader.addFiles([
       makeFile("a.jpg"),
       new File(["x"], "b.png", { type: "image/png" }),
       new File(["x"], "c.heic", { type: "" }),
       new File(["x"], "d.gif", { type: "image/gif" }),
-      new File(["x"], "e.txt", { type: "text/plain" }),
+      new File(["x"], "e.tif", { type: "image/tiff" }),
+      new File(["x"], "f.txt", { type: "text/plain" }),
     ]);
-    expect(result.accepted).toBe(3);
+    expect(result.accepted).toBe(4);
     expect(result.rejected).toBe(2);
     await settle(uploader);
   });

@@ -25,18 +25,62 @@ export const REFERENCE_JPEG_QUALITY = 0.92;
 /** Workers de hash em paralelo (o gargalo é o disco, não a CPU). */
 export const HASH_WORKERS = 2;
 
-/** Tipos aceitos. HEIC/HEIF é convertido para JPEG no cliente. */
+/**
+ * Tipos aceitos. Tudo vira JPEG no cliente antes de subir: HEIC/HEIF passa
+ * pelo libheif (o Chrome não decodifica HEIC), o resto o navegador lê sozinho.
+ * TIFF e RAW ficam de fora: o Chrome não decodifica e não há conversor aqui.
+ */
 export const ACCEPTED_MIME = new Set([
   "image/jpeg",
+  "image/jpg",
+  "image/pjpeg",
   "image/png",
+  "image/webp",
+  "image/avif",
+  "image/gif",
+  "image/bmp",
+  "image/x-ms-bmp",
   "image/heic",
   "image/heif",
   "image/heic-sequence",
   "image/heif-sequence",
 ]);
 /** Extensões aceitas, para quando o navegador não informa o MIME (HEIC no Windows). */
-export const ACCEPTED_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".heic", ".heif"]);
+export const ACCEPTED_EXTENSIONS = new Set([
+  ".jpg",
+  ".jpeg",
+  ".jfif",
+  ".png",
+  ".webp",
+  ".avif",
+  ".gif",
+  ".bmp",
+  ".heic",
+  ".heif",
+]);
 export const HEIC_EXTENSIONS = new Set([".heic", ".heif"]);
+
+/** Valor do `accept` dos seletores de arquivo: MIME e extensão, porque no Windows o HEIC não tem MIME. */
+export const ACCEPT_ATTRIBUTE = [...ACCEPTED_MIME, ...ACCEPTED_EXTENSIONS].join(",");
+/** Formatos aceitos, para as mensagens da tela. */
+export const ACCEPTED_FORMATS_LABEL = "JPEG, PNG, HEIC, WebP, AVIF, GIF ou BMP";
+
+/** MIME pela extensão, para arquivo que chega sem tipo. */
+const MIME_BY_EXTENSION: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".jfif": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+  ".svg": "image/svg+xml",
+};
 
 /** Extensão em minúsculas, com o ponto, ou "" se não houver. */
 export function fileExtension(name: string): string {
@@ -44,15 +88,30 @@ export function fileExtension(name: string): string {
   return i >= 0 ? name.slice(i).toLowerCase() : "";
 }
 
+/** MIME inferido da extensão, ou "" se a extensão não for de imagem conhecida. */
+export function mimeFromName(name: string): string {
+  return MIME_BY_EXTENSION[fileExtension(name)] ?? "";
+}
+
+/** MIME vazio ou genérico: o navegador não sabe o que é, então vale a extensão. */
+function hasNoUsefulMime(type: string): boolean {
+  return !type || type === "application/octet-stream";
+}
+
 /** Arquivo aceito pelo lote: pelo MIME ou, na falta dele, pela extensão. */
 export function isAcceptedImage(file: { name: string; type: string }): boolean {
-  if (file.type && ACCEPTED_MIME.has(file.type.toLowerCase())) return true;
-  if (file.type && file.type.startsWith("image/") && !file.type.includes("heic") && !file.type.includes("heif")) {
-    // Outros formatos de imagem (webp, gif, bmp) ficam de fora de propósito:
-    // o pipeline é para foto de câmera.
-    return false;
-  }
-  return !file.type && ACCEPTED_EXTENSIONS.has(fileExtension(file.name));
+  const type = file.type.toLowerCase();
+  if (ACCEPTED_MIME.has(type)) return true;
+  return hasNoUsefulMime(type) && ACCEPTED_EXTENSIONS.has(fileExtension(file.name));
+}
+
+/**
+ * Filtro do upload avulso (foto do aluno, logo, referência): além dos
+ * formatos do lote, tenta qualquer `image/*` (SVG, TIFF no Safari). Se o
+ * navegador não conseguir ler, o preparo falha com mensagem clara.
+ */
+export function isImageLike(file: { name: string; type: string }): boolean {
+  return isAcceptedImage(file) || file.type.toLowerCase().startsWith("image/");
 }
 
 export function isHeicLike(file: { name: string; type: string }): boolean {

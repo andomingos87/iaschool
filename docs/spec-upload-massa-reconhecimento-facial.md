@@ -652,7 +652,7 @@ Realtime em batch_jobs ◄────── processed/failed ◄─────
 | Retentativa | 3, com backoff exponencial (1s, 4s, 16s) |
 | Dedup | SHA-256 do arquivo **antes** do redimensionamento, calculado com `crypto.subtle.digest` num Web Worker |
 | Retomada | fila persistida em IndexedDB por `event_id`; ao reabrir a tela, o que ficou pendente volta a ser oferecido |
-| Formatos | `image/jpeg`, `image/png`, `image/heic` (HEIC convertido no cliente) |
+| Formatos | `image/jpeg`, `image/png`, `image/heic`/`heif`, `image/webp`, `image/avif`, `image/gif`, `image/bmp`, todos convertidos para JPEG no cliente; HEIC também é reconhecido pelo conteúdo. TIFF e RAW ficam de fora (26/09/2026) |
 | Limite por lote | 5.000 arquivos; acima disso, o cliente pede para dividir |
 | Progresso | contador local + `batch_jobs` via Realtime |
 

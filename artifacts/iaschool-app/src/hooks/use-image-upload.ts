@@ -1,27 +1,26 @@
 import { useState } from "react";
-import imageCompression from "browser-image-compression";
 import { getDataLayer } from "@/lib/data";
 import type { StoredImage } from "@/lib/data";
+import {
+  ACCEPTED_FORMATS_LABEL,
+  UnreadableImageError,
+  isImageLike,
+  prepareAssetImage,
+} from "@/lib/upload";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 
-const COMPRESS_OPTIONS = {
-  maxWidthOrHeight: 1600,
-  maxSizeMB: 0.8,
-  useWebWorker: true,
-};
-
-/** Comprime + faz upload de vários arquivos, retornando as imagens armazenadas. */
+/** Converte (HEIC → JPEG), comprime e faz upload de vários arquivos, retornando as imagens armazenadas. */
 export function useImageUpload(bucket: string) {
   const data = getDataLayer();
   const [uploading, setUploading] = useState(false);
 
   async function uploadFiles(files: File[]): Promise<StoredImage[]> {
-    const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+    const imageFiles = files.filter(isImageLike);
     if (imageFiles.length === 0) {
       toast({
         variant: "destructive",
         title: "Arquivo inválido",
-        description: "Selecione apenas imagens.",
+        description: `Selecione apenas imagens (${ACCEPTED_FORMATS_LABEL}).`,
       });
       return [];
     }
@@ -29,15 +28,26 @@ export function useImageUpload(bucket: string) {
     const results: StoredImage[] = [];
     try {
       for (const file of imageFiles) {
+        let prepared: File;
         try {
-          const compressed = await imageCompression(file, COMPRESS_OPTIONS);
-          const stored = await data.storage.upload(bucket, compressed, file.name);
-          results.push(stored);
+          prepared = await prepareAssetImage(file);
+        } catch (err) {
+          toast({
+            variant: "destructive",
+            title: "Formato não suportado",
+            description: `"${file.name}": ${
+              err instanceof UnreadableImageError ? err.message : "não foi possível ler a imagem."
+            }`,
+          });
+          continue;
+        }
+        try {
+          results.push(await data.storage.upload(bucket, prepared, prepared.name));
         } catch {
           toast({
             variant: "destructive",
             title: "Falha no upload",
-            description: `Não foi possível processar "${file.name}".`,
+            description: `Não foi possível enviar "${file.name}". Tente de novo em instantes.`,
           });
         }
       }
