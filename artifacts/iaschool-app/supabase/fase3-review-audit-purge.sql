@@ -106,6 +106,17 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke all on function public.student_audit_ref(uuid) from public, anon, authenticated;
 
+-- Tolera cascata (migration `iaschool_fase3_audit_tolerates_cascade_delete`,
+-- 26/09/2026). Os triggers de auditoria também disparam quando a linha some
+-- por cascata, e aí gravavam na trilha uma linha apontando para a escola ou o
+-- aluno que estava sendo apagado — a FK recusava e derrubava o delete inteiro:
+-- apagar uma escola ou um aluno com rosto de referência falhava sempre.
+--   * Escola sendo apagada: não grava. A trilha dela sai junto pelo
+--     `on delete cascade` de `biometric_events.school_id`; a linha nasceria
+--     para morrer na mesma instrução.
+--   * Aluno sendo apagado (delete direto; o expurgo já apaga a referência
+--     antes do aluno): grava sem a FK e com o identificador de reserva, no
+--     mesmo formato de `student_audit_ref()`.
 create or replace function public.log_biometric_event(
   p_school  uuid,
   p_student uuid,
@@ -115,17 +126,22 @@ create or replace function public.log_biometric_event(
 ) returns uuid
 language plpgsql security definer set search_path = public as $$
 declare
-  v_id uuid;
+  v_id      uuid;
+  v_student uuid := p_student;
+  v_ref     text;
 begin
+  if not exists (select 1 from public.schools where id = p_school) then
+    return null;
+  end if;
+
+  v_ref := public.student_audit_ref(p_student);
+  if p_student is not null and v_ref is null then
+    v_student := null;
+    v_ref := 'aluno:' || left(p_student::text, 8);
+  end if;
+
   insert into public.biometric_events (school_id, student_id, student_ref, kind, detail, actor)
-  values (
-    p_school,
-    p_student,
-    public.student_audit_ref(p_student),
-    p_kind,
-    p_detail,
-    coalesce(p_actor, auth.uid())
-  )
+  values (p_school, v_student, v_ref, p_kind, p_detail, coalesce(p_actor, auth.uid()))
   returning id into v_id;
   return v_id;
 end;

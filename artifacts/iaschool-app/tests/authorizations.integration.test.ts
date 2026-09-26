@@ -13,6 +13,10 @@
 //   5. `student_biometric_readiness` recusa escola de outro tenant.
 //   6. Storage `student-refs`: o upload exige consentimento ativo do aluno
 //      que está no 2º segmento do caminho.
+//   7. A trilha tolera cascata (migration
+//      iaschool_fase3_audit_tolerates_cascade_delete): apagar aluno com rosto
+//      de referência grava `reference_purged` sem a FK; apagar a escola com
+//      referência é o que o `afterAll` faz — se falhar, a limpeza acusa.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ANON_KEY,
@@ -21,8 +25,8 @@ import {
   adminInsert,
   adminRest,
   adminRpc,
+  cleanupTestData,
   createTestUser,
-  deleteTestUser,
   envReady,
   userDelete,
   userInsert,
@@ -82,11 +86,8 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  // Autorizações, referências e jobs cascateiam pelo aluno; aluno pela escola.
-  for (const id of createdUsers) await deleteTestUser(id);
-  for (const id of [schoolAId, schoolBId]) {
-    if (id) await adminRest(`schools?id=eq.${id}`, { method: "DELETE" });
-  }
+  // Tudo o que o teste criou cascateia pela escola; o usuário sai depois.
+  await cleanupTestData({ users: createdUsers, schools: [schoolAId, schoolBId] });
 }, 120_000);
 
 describe("authorizations", () => {
@@ -233,6 +234,35 @@ describe("student_reference_faces", () => {
       p_student: studentB,
     });
     expect(foreign.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("apagar o aluno com referência não é barrado pela trilha, e a trilha fica", async () => {
+    const student = await newStudent(schoolAId, schoolA.id, "Aluno apagado");
+    const authId = await grant(schoolAId, student, schoolA.id, "biometric_sorting");
+    await adminInsert("student_reference_faces", {
+      school_id: schoolAId,
+      student_id: student,
+      embedding: EMBEDDING,
+      authorization_id: authId,
+      created_by: schoolA.id,
+      quality: 0.9,
+      source_photo_path: `${schoolAId}/${student}/ref.jpg`,
+    });
+
+    // Antes da migration, o trigger de auditoria gravava `reference_purged`
+    // apontando para o aluno que estava sendo apagado e a FK derrubava tudo.
+    const del = await adminRest(`students?id=eq.${student}`, { method: "DELETE" });
+    expect(del.status).toBeLessThan(300);
+
+    const ref = `aluno:${student.slice(0, 8)}`;
+    const trail = await adminRest(
+      `biometric_events?school_id=eq.${schoolAId}&student_ref=eq.${encodeURIComponent(ref)}&select=kind,student_id`,
+    );
+    const rows = (await trail.json()) as Array<{ kind: string; student_id: string | null }>;
+    expect(rows.map((r) => r.kind).sort()).toEqual(
+      ["consent_granted", "reference_created", "reference_purged"].sort(),
+    );
+    expect(rows.every((r) => r.student_id === null)).toBe(true);
   });
 });
 

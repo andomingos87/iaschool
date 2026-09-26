@@ -13,9 +13,8 @@ import {
   SUPABASE_URL,
   adminApproveSchool,
   adminInsert,
-  adminRest,
+  cleanupTestData,
   createTestUser,
-  deleteTestUser,
   envReady,
   userInsert,
   userInsertReturning,
@@ -72,11 +71,8 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  // Fotos e lotes cascateiam pelo evento; evento pela escola.
-  for (const id of createdUsers) await deleteTestUser(id);
-  for (const id of [schoolAId, schoolBId]) {
-    if (id) await adminRest(`schools?id=eq.${id}`, { method: "DELETE" });
-  }
+  // Tudo o que o teste criou cascateia pela escola; o usuário sai depois.
+  await cleanupTestData({ users: createdUsers, schools: [schoolAId, schoolBId] });
 }, 120_000);
 
 describe("photos: dedup por (event_id, content_hash)", () => {

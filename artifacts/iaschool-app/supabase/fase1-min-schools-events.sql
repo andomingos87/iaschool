@@ -224,6 +224,20 @@ language sql stable security definer set search_path = public as $$
 $$;
 grant execute on function public.my_schools() to authenticated;
 
+-- Migration `iaschool_revoke_definer_helpers_from_anon` (26/09/2026). O
+-- Supabase dá `execute` a `anon` em toda função nova de `public` por default
+-- privileges, e `revoke ... from public` não tira esse grant explícito. Nenhuma
+-- policy para `anon`/`public` chama estes helpers, e todo chamador do app é
+-- sessão autenticada; `authenticated` e `service_role` seguem com o grant.
+-- `has_profile()` e `is_approved()` vêm do setup.sql.
+revoke execute on function public.is_super_admin()          from public, anon;
+revoke execute on function public.is_dev()                  from public, anon;
+revoke execute on function public.is_member_of(uuid)        from public, anon;
+revoke execute on function public.is_school_admin_of(uuid)  from public, anon;
+revoke execute on function public.my_schools()              from public, anon;
+revoke execute on function public.has_profile()             from public, anon;
+revoke execute on function public.is_approved()             from public, anon;
+
 -- Aposentados junto com o autocadastro de aluno (spec §4.7, item 7).
 drop function if exists public.list_linkable_student_accounts();
 drop function if exists public.list_linked_student_record_ids();
@@ -729,7 +743,10 @@ begin
 end;
 $$;
 
-revoke all on function public.confirm_guardian_code(uuid, text) from public;
+-- `anon` entrou na lista em 26/09/2026 (migration
+-- `iaschool_revoke_definer_helpers_from_anon`): o grant dele vinha dos default
+-- privileges do Supabase, que `from public` não alcança.
+revoke all on function public.confirm_guardian_code(uuid, text) from public, anon;
 grant execute on function public.confirm_guardian_code(uuid, text) to authenticated;
 
 -- ============================================================

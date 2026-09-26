@@ -17,8 +17,8 @@ import {
   adminInsert,
   adminRest,
   adminRpc,
+  cleanupTestData,
   createTestUser,
-  deleteTestUser,
   envReady,
   userInsert,
   userInsertReturning,
@@ -147,10 +147,8 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  for (const id of createdUsers) await deleteTestUser(id);
-  for (const id of [schoolAId, schoolBId]) {
-    if (id) await adminRest(`schools?id=eq.${id}`, { method: "DELETE" });
-  }
+  // Tudo o que o teste criou cascateia pela escola; o usuário sai depois.
+  await cleanupTestData({ users: createdUsers, schools: [schoolAId, schoolBId] });
 }, 120_000);
 
 describe("photo_jobs: só o service_role", () => {

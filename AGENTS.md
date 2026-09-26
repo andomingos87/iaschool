@@ -273,7 +273,19 @@ referência em `supabase/fase3-review-audit-purge.sql`) foram **aplicadas em
 21/09/2026**: trilha `biometric_events`, fila de expurgo do Storage, o CHECK
 que impede rosto confirmado sem revisor, as RPCs da revisão e
 `purge_expired_biometrics()` agendada no `pg_cron`.
+Em 26/09/2026 entraram mais duas:
+`iaschool_fase3_audit_tolerates_cascade_delete` (a trilha deixou de derrubar
+o delete de escola ou aluno com rosto de referência) e
+`iaschool_revoke_definer_helpers_from_anon` (referência em
+`fase1-min-schools-events.sql` e `fase3-review-audit-purge.sql`).
 Estado em `BACKLOG.md`, M1 a M6.
+
+**Função nova em `public` nasce executável por `anon`.** O Supabase concede
+`execute` a `anon`, `authenticated` e `service_role` por default privileges, e
+`revoke ... from public` não tira esse grant explícito. Toda função que o
+visitante sem login não deve chamar precisa de `revoke execute ... from
+public, anon` na própria migration — foi o que deixou 8 helpers `security
+definer` abertos a `anon` até 26/09/2026.
 
 **Como alterar o schema:** exclusivamente por `apply_migration` do servidor MCP
 `supabase-iaschool` (seção abaixo). Não use o SQL Editor do painel para mudança

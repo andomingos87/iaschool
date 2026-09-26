@@ -37,9 +37,13 @@ export interface TestUser {
  */
 export async function createTestUser(opts: {
   label: string;
-  signupRole: "school_user" | "student";
+  /**
+   * "school" é o único cadastro público desde o M1 (autocadastro de aluno
+   * aposentado, e o papel `student` saiu da constraint de `profiles.role`).
+   * "school_user" é o valor legado, ainda aceito pelo trigger.
+   */
+  signupRole: "school" | "school_user";
   schoolName?: string;
-  schoolId?: string;
 }): Promise<TestUser> {
   const email = `rls-test-${opts.label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
   const createResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
@@ -53,7 +57,6 @@ export async function createTestUser(opts: {
         signup_role: opts.signupRole,
         signup_name: `RLS Test ${opts.label}`,
         signup_school_name: opts.schoolName ?? null,
-        signup_school_id: opts.schoolId ?? "",
       },
     }),
   });
@@ -75,10 +78,43 @@ export async function createTestUser(opts: {
 }
 
 export async function deleteTestUser(id: string): Promise<void> {
-  await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
+  const resp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
     method: "DELETE",
     headers: adminHeaders(),
   });
+  if (!resp.ok && resp.status !== 404) {
+    throw new Error(`Falha ao apagar usuário de teste ${id}: ${resp.status} ${await resp.text()}`);
+  }
+}
+
+/**
+ * Apaga as escolas e os usuários que um arquivo de teste criou e falha alto se
+ * sobrar algo. `schools.id` é o uid de quem foi aprovado (trigger
+ * `ensure_school_on_approval`) e não tem FK para `auth.users`: apagar só o
+ * usuário deixava a escola da aprovação para trás. Escola primeiro, porque o
+ * que ela cascateia pode apontar para o usuário sem cascata. Mesma função de
+ * `artifacts/iaschool-app/tests/supabase-test-utils.ts`.
+ */
+export async function cleanupTestData(opts: {
+  users: string[];
+  schools?: string[];
+}): Promise<void> {
+  const failures: string[] = [];
+  const schools = new Set([...(opts.schools ?? []), ...opts.users].filter(Boolean));
+  for (const id of schools) {
+    const resp = await adminRest(`schools?id=eq.${id}`, { method: "DELETE" });
+    if (!resp.ok) failures.push(`escola ${id}: ${resp.status} ${await resp.text()}`);
+  }
+  for (const id of opts.users.filter(Boolean)) {
+    try {
+      await deleteTestUser(id);
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Limpeza incompleta, sobrou dado de teste no banco:\n${failures.join("\n")}`);
+  }
 }
 
 /** Executa SQL-like via PostgREST com o service role (bypassa RLS). */

@@ -15,8 +15,8 @@ import {
   adminInsert,
   adminRest,
   adminUpdateProfile,
+  cleanupTestData,
   createTestUser,
-  deleteTestUser,
   envReady,
   userDelete,
   userInsert,
@@ -132,12 +132,9 @@ afterAll(async () => {
   if (eventA) await adminRest(`events?id=eq.${eventA}`, { method: "DELETE" });
   if (guardianA) await adminRest(`guardians?id=eq.${guardianA}`, { method: "DELETE" });
   if (classA) await adminRest(`classes?id=eq.${classA}`, { method: "DELETE" });
-  // Apagar o usuário cascateia school_members; a escola (id = uid) sai junto
-  // porque schools.id referencia nada — apagamos explicitamente.
-  for (const id of createdUsers) await deleteTestUser(id);
-  for (const id of [schoolAId, schoolBId]) {
-    if (id) await adminRest(`schools?id=eq.${id}`, { method: "DELETE" });
-  }
+  // O resto cascateia pela escola (id = uid, sem FK para auth.users, por isso
+  // apagada explicitamente); o usuário sai depois.
+  await cleanupTestData({ users: createdUsers, schools: [schoolAId, schoolBId] });
 }, 120_000);
 
 describe("aprovação cria o tenant", () => {
