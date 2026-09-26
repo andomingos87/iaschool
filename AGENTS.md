@@ -56,11 +56,13 @@ por aluno e confirmação em lote, fila individual por teclado, trilha
 `biometric_events` append-only, expurgo diário por `pg_cron` e ZIP da pasta do
 aluno. Desde 26/09/2026 os dois workers rodam na Fly (`iaschool-ingest-worker` e
 `iaschool-face-worker`, org `personal`, região gru, uma máquina cada, escala
-manual por `fly scale count`). O que ainda **não existe**: o app publicado
-(não há projeto na Vercel para o `iaschool-app`), a API de geração de arte no
-ar (o rewrite `/api` do app aponta para `iasport-image-api-r9.fly.dev`, que
-não responde), as medições de aceite da spec §12.2 com acervo sintético, o
-desfoque na entrega e o envio em lote. Varredura de 26/09/2026 em
+manual por `fly scale count`). Também desde 26/09/2026 o app está publicado
+na Vercel em `https://iaschool-app.vercel.app` (projeto `iaschool-app`, time
+`andomingos87s-projects`, deploy por Git a partir da `main`) e a API de
+geração roda na Fly como `iaschool-api`, alcançada pelo rewrite `/api` do
+`vercel.json`. O domínio é o da Vercel: não há domínio próprio. O que ainda
+**não existe**: as medições de aceite da spec §12.2 com acervo sintético, o
+desfoque na entrega e o envio em lote. O estado da publicação está em
 `BACKLOG.md`, seção "Publicação, CI e higiene".
 
 Ao trabalhar aqui, diferencie sempre protótipo, código local, integração
@@ -107,6 +109,10 @@ consentimento ou compartilhamento, use a skill `eca-digital`
   SQL do Supabase em `supabase/`.
 - `artifacts/iaschool-ui/` — design system IAschool, tokens, componentes e preview.
 - `artifacts/api-server/` — servidor Express e fluxo de geração de imagens.
+  Implanta na Fly como `iaschool-api` pelo `fly.toml` e pelo `Dockerfile` da
+  **raiz** (`fly deploy --remote-only --ha=false`). O rewrite `/api` em
+  `artifacts/iaschool-app/vercel.json` aponta para esse app: renomear um
+  obriga a mudar o outro no mesmo commit.
 - `artifacts/ingest-worker/` — worker Node 24 + `sharp` que consome
   `photo_jobs` (miniaturas, dimensões, EXIF de reserva) e expõe `/health`.
   Desde o M6 também varre `storage_purge_queue`: apagar a linha no banco não
