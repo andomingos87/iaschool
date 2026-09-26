@@ -8,6 +8,7 @@ import type {
   AuthService,
   ClassRepository,
   EventRepository,
+  FaceReviewRepository,
   SchoolBrandRepository,
   DataLayer,
   GeneratedPostRepository,
@@ -26,7 +27,10 @@ import type {
   Authorization,
   AuthorizationScope,
   BatchJob,
+  FaceRejectState,
   Photo,
+  ReviewCounts,
+  ReviewFace,
   SchoolBrand,
   SchoolClass,
   SchoolEvent,
@@ -902,7 +906,101 @@ function mockWorkerStep(): void {
     }
   }
   writeCollection("photos", [...byId.values()]);
+  mockDetectFaces([...byId.values()].filter((p) => pending.some((q) => q.id === p.id)));
   for (const b of touched.values()) writeBatch(tryCloseBatch(b));
+}
+
+/**
+ * Rosto detectado no modo demo (`photo_faces` no Supabase). Guarda o id do
+ * evento porque aqui não há join.
+ */
+interface MockFace extends ReviewFace {
+  eventId: string;
+  schoolId: string;
+}
+
+function readFaces(): MockFace[] {
+  return readCollection<MockFace>("photo-faces", []);
+}
+
+function writeFaces(items: MockFace[]): void {
+  writeCollection("photo-faces", items);
+}
+
+/**
+ * **Não é reconhecimento facial.** É um gerador de sugestões para o modo
+ * demo poder exercitar a tela de revisão sem o `face-worker` (que é Python,
+ * roda fora do navegador e não tem versão de mentira). Cada foto processada
+ * recebe um rosto atribuído a um aluno com `biometric_sorting` ativo,
+ * alternando entre as duas faixas de confiança, e de três em três um rosto
+ * sem correspondência, para a fila individual não nascer vazia.
+ *
+ * Nenhuma imagem é analisada: o recorte não existe e a tela mostra a foto
+ * inteira no lugar dele.
+ */
+function mockDetectFaces(processed: Photo[]): void {
+  const done = processed.filter((p) => p.status === "processed");
+  if (done.length === 0) return;
+  const consented = readAuthorizations().filter(
+    (a) => a.scope === "biometric_sorting" && isAuthorizationActive(a),
+  );
+  const students = readCollection<OwnedStudent>("students", []);
+  const faces = readFaces();
+  const known = new Set(faces.map((f) => f.photoId));
+  let i = faces.length;
+  for (const photo of done) {
+    if (known.has(photo.id)) continue;
+    i++;
+    const auth = consented[i % Math.max(consented.length, 1)];
+    const student = auth ? students.find((s) => s.id === auth.studentId) : undefined;
+    if (student && i % 3 !== 0) {
+      const high = i % 2 === 0;
+      faces.push({
+        id: newId(),
+        eventId: photo.eventId,
+        schoolId: photo.schoolId,
+        photoId: photo.id,
+        storagePath: photo.storagePath,
+        thumbPath: photo.thumbPath,
+        takenAt: photo.takenAt,
+        bbox: { x: 40, y: 40, w: 200, h: 200 },
+        detScore: 0.94,
+        state: "suggested",
+        studentId: student.id,
+        studentName: student.name,
+        matchScore: high ? 0.88 : 0.56,
+        runnerUpScore: high ? 0.15 : 0.5,
+        highConfidence: high,
+      });
+    } else {
+      faces.push({
+        id: newId(),
+        eventId: photo.eventId,
+        schoolId: photo.schoolId,
+        photoId: photo.id,
+        storagePath: photo.storagePath,
+        thumbPath: photo.thumbPath,
+        takenAt: photo.takenAt,
+        bbox: { x: 90, y: 30, w: 140, h: 140 },
+        detScore: 0.71,
+        state: "unassigned",
+        highConfidence: false,
+      });
+    }
+  }
+  writeFaces(faces);
+  // Mesmo caminho do banco: o evento entra em revisão quando o
+  // reconhecimento termina (`complete_recognize_job` faz isso no Supabase).
+  const eventIds = new Set(done.map((p) => p.eventId));
+  const events = readCollection<SchoolEvent>("events", []);
+  writeCollection(
+    "events",
+    events.map((e) =>
+      eventIds.has(e.id) && e.status === "processing"
+        ? { ...e, status: "review" as const, updatedAt: nowIso() }
+        : e,
+    ),
+  );
 }
 
 function ensureMockWorker(): void {
@@ -935,6 +1033,15 @@ const photos: PhotoRepository = {
     const url = photoObjectUrls.get(id);
     if (!url) throw new Error("A foto de demonstração só fica disponível até recarregar a página.");
     return url;
+  },
+  async signPhotoUrls(paths) {
+    const out = new Map<string, string>();
+    for (const path of paths) {
+      const id = path.split("/").pop()?.replace(/\.jpg$/, "") ?? "";
+      const url = photoObjectUrls.get(id);
+      if (url) out.set(path, url);
+    }
+    return out;
   },
   async findExistingHashes(eventId, hashes) {
     const wanted = new Set(hashes);
@@ -1054,11 +1161,30 @@ const photos: PhotoRepository = {
     window.addEventListener(BATCH_CHANGED_EVENT, onLocal);
     return () => window.removeEventListener(BATCH_CHANGED_EVENT, onLocal);
   },
-  async listForStudent(_studentId) {
+  async listForStudent(studentId) {
     await delay(200);
-    // O mock não tem motor facial: nenhum rosto foi detectado, logo nenhum
-    // foi confirmado. A tela explica isso em vez de fingir uma pasta cheia.
-    return [];
+    // Consulta, não cópia (spec §7.6): a foto aparece na pasta de cada aluno
+    // confirmado nela, e só entra o que passou pela revisão.
+    const confirmed = readFaces().filter(
+      (f) => f.studentId === studentId && f.state === "confirmed",
+    );
+    const byPhoto = new Map(readCollection<Photo>("photos", []).map((p) => [p.id, p]));
+    const seen = new Set<string>();
+    const out = [];
+    for (const face of confirmed) {
+      const photo = byPhoto.get(face.photoId);
+      if (!photo || photo.deletedAt || seen.has(photo.id)) continue;
+      seen.add(photo.id);
+      out.push({
+        id: photo.id,
+        eventId: photo.eventId,
+        storagePath: photo.storagePath,
+        thumbPath: photo.thumbPath,
+        takenAt: photo.takenAt,
+        createdAt: photo.createdAt,
+      });
+    }
+    return out.sort((a, b) => (a.takenAt ?? a.createdAt).localeCompare(b.takenAt ?? b.createdAt));
   },
   async retryFailedJobs(eventId) {
     await delay(150);
@@ -1091,6 +1217,149 @@ const photos: PhotoRepository = {
 };
 
 const referencesCrud = makeCrud<ReferencePost>("references");
+/**
+ * Revisão dos rostos no modo demo. Espelha as travas da RPC: confirmar exige
+ * `biometric_sorting` ativo, o lote é tudo ou nada, e "não é aluno" apaga
+ * recorte e vetor mantendo `bbox` — no mock não há vetor nenhum, mas a
+ * máquina de estados é a mesma para a tela não mentir sobre o que faz.
+ */
+const faceReview: FaceReviewRepository = {
+  async listForEvent(eventId, states) {
+    await delay(150);
+    const wanted = new Set<ReviewFace["state"]>(states ?? ["suggested", "unassigned"]);
+    return readFaces()
+      .filter((f) => f.eventId === eventId && wanted.has(f.state))
+      .map(({ eventId: _e, schoolId: _s, ...face }) => face)
+      .sort(
+        (a, b) =>
+          (a.studentName ?? "\uffff").localeCompare(b.studentName ?? "\uffff", "pt-BR") ||
+          (b.matchScore ?? 0) - (a.matchScore ?? 0),
+      );
+  },
+
+  async counts(eventId) {
+    await delay(100);
+    const faces = readFaces().filter((f) => f.eventId === eventId);
+    const by = (state: ReviewFace["state"]) => faces.filter((f) => f.state === state).length;
+    const counts: ReviewCounts = {
+      suggested: by("suggested"),
+      unassigned: by("unassigned"),
+      confirmed: by("confirmed"),
+      rejected: by("rejected"),
+      notAStudent: by("not_a_student"),
+      adultOrStaff: by("adult_or_staff"),
+      studentsPending: new Set(
+        faces.filter((f) => f.state === "suggested" && f.studentId).map((f) => f.studentId),
+      ).size,
+    };
+    return counts;
+  },
+
+  async candidates(faceId) {
+    await delay(100);
+    const face = readFaces().find((f) => f.id === faceId);
+    // Sem vetor não há candidato: é a mesma resposta do banco para rosto
+    // `unassigned` (D5 não deixa guardar biometria de quem não autorizou).
+    if (!face?.studentId) return [];
+    return [
+      { studentId: face.studentId, studentName: face.studentName ?? "", sim: face.matchScore ?? 0 },
+    ];
+  },
+
+  async confirm(faceId, studentId) {
+    return faceReview.confirmBulk(
+      [faceId],
+      studentId ?? readFaces().find((f) => f.id === faceId)?.studentId ?? "",
+    );
+  },
+
+  async confirmBulk(faceIds, studentId) {
+    await delay(250);
+    const session = currentSession();
+    if (!session) throw new Error("Você precisa estar logado para realizar esta ação.");
+    if (!studentId) throw new Error("Escolha o aluno antes de confirmar.");
+    const student = readCollection<OwnedStudent>("students", []).find((s) => s.id === studentId);
+    if (!student) throw new Error("Aluno não encontrado.");
+    if (!activeAuthorization(studentId, "biometric_sorting")) {
+      throw new Error(
+        "Confirmar a foto exige a autorização de reconhecimento ativa para este aluno.",
+      );
+    }
+    const faces = readFaces();
+    const wanted = new Set(faceIds);
+    const target = faces.filter((f) => wanted.has(f.id));
+    // Tudo ou nada, como a transação da RPC.
+    if (target.length !== wanted.size) throw new Error("Um dos rostos não existe mais.");
+    if (target.some((f) => f.schoolId !== student.schoolId)) {
+      throw new Error("Há um rosto de outra escola na seleção.");
+    }
+    const changed = target.filter((f) => !(f.state === "confirmed" && f.studentId === studentId));
+    if (changed.length === 0) return 0;
+    const changedIds = new Set(changed.map((f) => f.id));
+    writeFaces(
+      faces.map((f) =>
+        changedIds.has(f.id)
+          ? {
+              ...f,
+              state: "confirmed" as const,
+              studentId,
+              studentName: student.name,
+              reviewedAt: nowIso(),
+            }
+          : f,
+      ),
+    );
+    settleMockReview(target[0]!.eventId);
+    return changed.length;
+  },
+
+  async reject(faceId, state: FaceRejectState) {
+    await delay(200);
+    const faces = readFaces();
+    const face = faces.find((f) => f.id === faceId);
+    if (!face) throw new Error("Rosto não encontrado.");
+    writeFaces(
+      faces.map((f) =>
+        f.id === faceId
+          ? {
+              ...f,
+              state,
+              studentId: undefined,
+              studentName: undefined,
+              // "Não é aluno" apaga o recorte; bbox e det_score ficam, que é
+              // o que a entrega usa para desfocar (§9.3.1).
+              cropPath: state === "rejected" ? f.cropPath : undefined,
+              reviewedAt: nowIso(),
+            }
+          : f,
+      ),
+    );
+    settleMockReview(face.eventId);
+  },
+
+  async signCropUrls(faces) {
+    // O mock não tem recorte: a tela cai para a foto inteira.
+    void faces;
+    return new Map<string, string>();
+  },
+};
+
+/** Evento sai de `review` quando não sobra rosto pendente (RPC `settle_event_review`). */
+function settleMockReview(eventId: string): void {
+  const pending = readFaces().some(
+    (f) => f.eventId === eventId && (f.state === "suggested" || f.state === "unassigned"),
+  );
+  if (pending) return;
+  writeCollection(
+    "events",
+    readCollection<SchoolEvent>("events", []).map((e) =>
+      e.id === eventId && e.status === "review"
+        ? { ...e, status: "ready" as const, updatedAt: nowIso() }
+        : e,
+    ),
+  );
+}
+
 const references: ReferenceRepository = {
   list: () => referencesCrud.list(),
   create: (input) => referencesCrud.create(input as Record<string, unknown>),
@@ -1375,6 +1644,7 @@ export function createMockDataLayer(): DataLayer {
     referenceFaces,
     events,
     photos,
+    faceReview,
     references,
     generatedPosts,
     promptTemplate,

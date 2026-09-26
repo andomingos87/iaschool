@@ -6,6 +6,7 @@ import {
   FlaskConical,
   Images,
   Loader2,
+  ScanFace,
   ShieldAlert,
   ShieldCheck,
   Trash2,
@@ -27,6 +28,7 @@ import { useClassLabels } from "@/hooks/use-classes";
 import { useDeclareImageRights, useEvent, useMoveEventToTrash } from "@/hooks/use-events";
 import { useEventPhotos, useRetryFailedJobs } from "@/hooks/use-photos";
 import { useBatchProgress } from "@/hooks/use-batch-progress";
+import { useReviewCounts } from "@/hooks/use-face-review";
 import { useEventUpload } from "@/hooks/use-event-upload";
 import { EVENT_STATUS_LABEL } from "@/lib/data";
 import { TEST_DATA_ONLY } from "@/lib/constants";
@@ -49,6 +51,7 @@ export default function EventDetailPage() {
   const { uploader, snapshot } = useEventUpload(event.data);
   const { batch } = useBatchProgress(event.data?.id ?? null);
   const retryJobs = useRetryFailedJobs(event.data?.id ?? "");
+  const reviewCounts = useReviewCounts(event.data?.id ?? null);
   const failedJobs = useMemo(
     () => photos.data?.filter((p) => p.status === "failed").length ?? 0,
     [photos.data],
@@ -180,6 +183,36 @@ export default function EventDetailPage() {
           }
         />
       </div>
+
+      {(() => {
+        const rc = reviewCounts.data;
+        const pendingFaces = (rc?.suggested ?? 0) + (rc?.unassigned ?? 0);
+        if (!rc || (pendingFaces === 0 && rc.confirmed === 0)) return null;
+        return (
+          <Card className="border-border" data-testid="card-event-review">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+              <div>
+                <p className="flex items-center gap-2 font-medium">
+                  <ScanFace className="size-4 text-primary" />
+                  {pendingFaces > 0
+                    ? `${pendingFaces} ${pendingFaces === 1 ? "rosto aguarda" : "rostos aguardam"} revisão`
+                    : "Revisão concluída"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {pendingFaces > 0
+                    ? `${rc.studentsPending} ${rc.studentsPending === 1 ? "aluno" : "alunos"} na fila · nenhuma foto vai para a pasta do aluno antes de alguém confirmar.`
+                    : `${rc.confirmed} ${rc.confirmed === 1 ? "rosto confirmado" : "rostos confirmados"} por uma pessoa.`}
+                </p>
+              </div>
+              <Button asChild variant={pendingFaces > 0 ? "default" : "outline"}>
+                <Link href={`/eventos/${e.id}/revisao`} data-testid="link-event-review">
+                  {pendingFaces > 0 ? "Revisar rostos" : "Ver a revisão"}
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {TEST_DATA_ONLY && (
         <Alert data-testid="alert-test-data-only">

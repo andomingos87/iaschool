@@ -54,15 +54,19 @@ docker build -f artifacts/ingest-worker/Dockerfile -t iaschool-ingest-worker .
 docker run --rm -p 8080:8080 -e SUPABASE_URL -e SUPABASE_SERVICE_ROLE_KEY iaschool-ingest-worker
 ```
 
-## Deploy na Fly — roteiro (**não executado**)
+## Deploy na Fly
 
-`fly.toml` e `Dockerfile` estão prontos; o deploy real não foi feito neste
-marco (decisão de 21/09/2026, BACKLOG M3). Quando for:
+Implantado em 26/09/2026: app `iaschool-ingest-worker`, org `personal`, região
+`gru`, uma máquina `shared-cpu-1x` 1 GB, check em `/health` passando. Painel:
+<https://fly.io/apps/iaschool-ingest-worker/monitoring>.
+
+Contexto de build = **raiz do repositório** (lockfile e workspace ficam lá).
+`--remote-only` porque o Docker local não precisa estar ligado; `--ha=false`
+porque a escala é manual (sem a flag o primeiro deploy cria duas máquinas).
 
 ```bash
-fly launch --no-deploy --copy-config --config artifacts/ingest-worker/fly.toml --name iaschool-ingest-worker --region gru
 fly secrets set -a iaschool-ingest-worker SUPABASE_URL="https://jtyyauivokutperouqyh.supabase.co" SUPABASE_SERVICE_ROLE_KEY="…"
-fly deploy --config artifacts/ingest-worker/fly.toml --dockerfile artifacts/ingest-worker/Dockerfile .
+fly deploy --config artifacts/ingest-worker/fly.toml --dockerfile artifacts/ingest-worker/Dockerfile --remote-only --ha=false .
 fly checks list -a iaschool-ingest-worker
 fly logs -a iaschool-ingest-worker
 ```

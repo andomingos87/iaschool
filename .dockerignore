@@ -11,3 +11,6 @@ node_modules
 screenshots
 reports
 docs/development/evidence
+**/.venv
+**/__pycache__
+**/.pytest_cache

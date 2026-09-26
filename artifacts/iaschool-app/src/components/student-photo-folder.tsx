@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Images, Maximize2, ScanFace } from "lucide-react";
+import { Download, Images, Loader2, Maximize2, ScanFace } from "lucide-react";
+import { Button } from "@workspace/iaschool-ui/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@workspace/iaschool-ui/components/ui/alert";
 import {
   Card,
@@ -12,7 +13,9 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import { useStudentPhotos } from "@/hooks/use-photos";
 import { getDataLayer } from "@/lib/data";
 import type { Student, StudentPhoto } from "@/lib/data";
+import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { formatDateTime } from "@/lib/format";
+import { buildZip, safeZipName, uniqueNames } from "@/lib/zip";
 
 /**
  * Pasta do aluno (spec §7.6). Consulta, não cópia: uma foto com cinco
@@ -26,6 +29,7 @@ export function StudentPhotoFolder({ student }: { student: Student }) {
   const photos = useStudentPhotos(student.id);
   const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
   const [zoom, setZoom] = useState<string | null>(null);
+  const [zipping, setZipping] = useState<number | null>(null);
 
   const list: StudentPhoto[] = photos.data ?? [];
   const key = list.map((p) => p.id).join("|");
@@ -59,6 +63,61 @@ export function StudentPhotoFolder({ student }: { student: Student }) {
     }
   }
 
+  /**
+   * ZIP gerado sob demanda (spec §10): o arquivo não é guardado em lugar
+   * nenhum — a pasta do aluno é consulta, não cópia, e um ZIP parado no
+   * Storage seria uma segunda cópia da imagem do menor para expurgar depois.
+   */
+  async function downloadZip() {
+    if (list.length === 0 || zipping !== null) return;
+    setZipping(0);
+    try {
+      const urls = await getDataLayer().photos.signPhotoUrls(list.map((p) => p.storagePath));
+      const names = uniqueNames(
+        list.map((p) => {
+          const when = (p.takenAt ?? p.createdAt).slice(0, 10);
+          return safeZipName(`${when}_${p.id.slice(0, 8)}.jpg`, `${p.id}.jpg`);
+        }),
+      );
+      const entries = [];
+      for (let i = 0; i < list.length; i++) {
+        const photo = list[i]!;
+        const url = urls.get(photo.storagePath);
+        if (!url) continue;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        entries.push({
+          name: names[i]!,
+          bytes: new Uint8Array(await resp.arrayBuffer()),
+          date: new Date(photo.takenAt ?? photo.createdAt),
+        });
+        setZipping(i + 1);
+      }
+      if (entries.length === 0) throw new Error("Nenhuma foto pôde ser baixada.");
+      const blob = buildZip(entries);
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = `${safeZipName(student.name, "aluno")} - fotos.zip`;
+      link.click();
+      URL.revokeObjectURL(href);
+      if (entries.length < list.length) {
+        toast({
+          title: "ZIP gerado com menos fotos",
+          description: `${entries.length} de ${list.length} entraram; as demais não puderam ser baixadas agora.`,
+        });
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Não foi possível gerar o ZIP",
+        description: err instanceof Error ? err.message : "Tente novamente.",
+      });
+    } finally {
+      setZipping(null);
+    }
+  }
+
   return (
     <Card className="border-border" data-testid="card-student-photo-folder">
       <CardHeader>
@@ -83,9 +142,28 @@ export function StudentPhotoFolder({ student }: { student: Student }) {
           </Alert>
         ) : (
           <>
-            <p className="mb-3 text-sm text-muted-foreground">
-              {list.length === 1 ? "1 foto confirmada" : `${list.length} fotos confirmadas`}.
-            </p>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">
+                {list.length === 1 ? "1 foto confirmada" : `${list.length} fotos confirmadas`}.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void downloadZip()}
+                disabled={zipping !== null}
+                data-testid="button-download-student-zip"
+              >
+                {zipping !== null ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Baixando {zipping} de {list.length}
+                  </>
+                ) : (
+                  <>
+                    <Download className="size-4" /> Baixar tudo em ZIP
+                  </>
+                )}
+              </Button>
+            </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
               {list.map((photo) => {
                 const url = thumbs.get(photo.id);

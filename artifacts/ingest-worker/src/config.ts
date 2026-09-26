@@ -21,6 +21,10 @@ export interface WorkerConfig {
   stallCheckIntervalMs: number;
   /** Sem tick do laço por mais que isto, /health responde 503. */
   loopStaleMs: number;
+  /** De quanto em quanto tempo varre `storage_purge_queue` (M6, spec §9.4). */
+  purgeIntervalMs: number;
+  /** Objetos apagados por varredura. */
+  purgeBatch: number;
   thumbSize: number;
   thumbQuality: number;
   logLevel: string;
@@ -36,6 +40,8 @@ const DEFAULTS = {
   IDLE_BACKOFF_MAX_MS: 5_000,
   STALL_CHECK_INTERVAL_MS: 30_000,
   LOOP_STALE_MS: 60_000,
+  PURGE_INTERVAL_MS: 60_000,
+  PURGE_BATCH: 100,
   THUMB_SIZE: 320,
   THUMB_QUALITY: 80,
 } as const;
@@ -67,6 +73,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
     idleBackoffMaxMs: intFrom(env, "IDLE_BACKOFF_MAX_MS"),
     stallCheckIntervalMs: intFrom(env, "STALL_CHECK_INTERVAL_MS"),
     loopStaleMs: intFrom(env, "LOOP_STALE_MS"),
+    purgeIntervalMs: intFrom(env, "PURGE_INTERVAL_MS"),
+    purgeBatch: intFrom(env, "PURGE_BATCH"),
     thumbSize: intFrom(env, "THUMB_SIZE"),
     thumbQuality: intFrom(env, "THUMB_QUALITY"),
     logLevel: env.LOG_LEVEL ?? "info",

@@ -4,9 +4,10 @@
 # o onnxruntime já satura os núcleos dentro de uma sessão, e o spike mediu 1,
 # 4 e 8 processos com a mesma vazão agregada.
 #
-# Deploy (contexto = raiz do repositório):
-#   fly deploy --config artifacts/face-worker/fly.toml \
-#              --dockerfile artifacts/face-worker/Dockerfile artifacts/face-worker
+# Deploy (contexto = esta pasta; rodar de dentro dela, senão o flyctl não
+# resolve o --config):
+#   cd artifacts/face-worker
+#   fly deploy --config fly.toml --dockerfile Dockerfile --remote-only --ha=false .
 # Segredos: SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY via `fly secrets set`.
 
 app = "iaschool-face-worker"
@@ -36,8 +37,10 @@ kill_timeout = 180
   [[http_service.checks]]
     interval = "30s"
     timeout = "5s"
-    # O motor carrega antes de o /health abrir; dá folga para o boot.
-    grace_period = "90s"
+    # O motor carrega antes de o /health abrir; dá folga para o boot. A Fly
+    # limita o grace a 60 s (avisa e rebaixa se for maior); na primeira
+    # implantação (26/09/2026) os dois modelos carregaram em ~13 s.
+    grace_period = "60s"
     method = "GET"
     path = "/health"
 

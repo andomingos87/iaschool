@@ -24,6 +24,7 @@ import ClassesPage from '@/pages/classes';
 import EventsPage from '@/pages/events';
 import EventNewPage from '@/pages/event-new';
 import EventDetailPage from '@/pages/event-detail';
+import EventReviewPage from '@/pages/event-review';
 import ReferencesPage from '@/pages/references';
 import GalleryPage from '@/pages/gallery';
 import GeneratePage from '@/pages/generate';
@@ -62,6 +63,7 @@ function Pages() {
       <Route path="/turmas" component={ClassesPage} />
       <Route path="/eventos" component={EventsPage} />
       <Route path="/eventos/novo" component={EventNewPage} />
+      <Route path="/eventos/:id/revisao" component={EventReviewPage} />
       <Route path="/eventos/:id" component={EventDetailPage} />
       <Route path="/referencias" component={ReferencesPage} />
       <Route path="/galeria" component={GalleryPage} />

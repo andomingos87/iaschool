@@ -809,6 +809,19 @@ de `confirm_face` — `is_member_of` de todas as faces e autorização
 `biometric_sorting` do aluno. Se qualquer face falhar a checagem, nada é
 confirmado.
 
+> **Implementado em 21/09/2026 (M6), com três notas.** (1) As linhas são
+> travadas em ordem de `id`: é o que evita deadlock entre dois revisores no
+> mesmo aluno, e o segundo relê a linha já confirmada em vez de confirmar de
+> novo. (2) As RPCs exigem `auth.uid()`, então o `service_role` **não**
+> confirma rosto nenhum — a D6 vale também contra script. (3) Um CHECK em
+> `photo_faces` recusa `state = 'confirmed'` sem `reviewed_by`/`reviewed_at`
+> por qualquer caminho, não só pela RPC.
+>
+> A fila individual mostra **os candidatos que existem**: rosto `unassigned`
+> não guardou vetor (D5), então não há o que comparar, e a tela cai para a
+> busca de aluno por nome. Ter sempre 3 candidatos exigiria guardar biometria
+> de criança sem autorização, que é o que a D5 proíbe.
+
 #### Trilha
 
 Uma linha em `biometric_events` **por lote**, `kind = 'face_confirmed'`,
@@ -1006,9 +1019,22 @@ no mesmo padrão de `share_logs`.
 
 #### Expurgo
 
-Diário via `pg_cron`, função `purge_expired_biometrics()`. Nada é apagado direto:
-tudo passa pela **lixeira de 30 dias** que o produto já usa, e só depois some de
-vez.
+Diário via `pg_cron`, função `purge_expired_biometrics()`.
+
+> **Corrigido em 21/09/2026 (M6).** "Tudo passa pela lixeira de 30 dias" vale
+> para **foto e evento**, que a escola pode querer de volta. **Biometria não**:
+> manter vetor e recorte de rosto por 30 dias depois de o responsável revogar é
+> exatamente o que a revogação proíbe. Vetor e recorte somem na hora; foto e
+> evento continuam com a lixeira.
+>
+> Apagar a linha no banco também não apaga o objeto no bucket. O expurgo
+> enfileira os caminhos em `storage_purge_queue`, e o `ingest-worker` remove os
+> objetos de fato — sem isso o "expurgo" só esconderia o arquivo.
+>
+> Aluno expurgado **não** perde a linha de `photo_faces`: ela fica sem vetor,
+> sem recorte e sem vínculo, em `unassigned` — o estado que a entrega borra
+> (§9.3.1). Apagar a linha inteira levaria junto o `bbox` e deixaria a criança
+> nítida numa foto que ela já não pode autorizar.
 
 | Gatilho | Efeito |
 | --- | --- |

@@ -168,3 +168,42 @@ não tem `select` na coluna `embedding`, nem insert/update/delete na tabela,
 nem execute em `match_reference_faces`.
 
 Executado em 21/09/2026: `roundtrip M5 ok`, antes e depois de aplicar.
+
+## M6 — `fase3-review-audit-purge.sql`
+
+O M6 foi aplicado antes do ensaio (5 migrations, ver `SUPABASE.md`), então
+`m6-checks.sql` é **roundtrip funcional contra o schema já aplicado**, dentro
+de `begin … rollback`:
+
+```bash
+psql "$DSN" -v ON_ERROR_STOP=1 -q -c "begin;" \
+  -f artifacts/iaschool-app/supabase/rehearsal/m6-checks.sql \
+  -c "rollback;"
+psql "$DSN" -Atc "select count(*) from public.biometric_events"   # 0
+```
+
+Cobre, na revisão: o CHECK recusa `confirmed` sem revisor mesmo por acesso
+direto (D6/R7); a tela vê os pendentes do próprio evento com nome do aluno e
+a partição por confiança pronta, e é recusada no evento de outra escola; um
+lote com rosto de outra escola ou com id inexistente **não confirma nenhum**;
+o lote bom confirma, grava `reviewed_by`/`reviewed_at` em cada linha e cria
+**uma** linha em `biometric_events` com os `face_ids`; a segunda chamada é
+no-op e não grava trilha; a pasta do aluno enche só com o confirmado;
+"adulto / equipe" apaga recorte e vetor, mantém `bbox`/`det_score` e enfileira
+o objeto para expurgo; o evento vira `ready` quando não sobra pendência; e
+confirmar sem `biometric_sorting` ativo é recusado.
+
+Cobre, no expurgo: referência vencida some e a foto confirmada **mantém** o
+`student_id` (só o vetor sai); aluno na lixeira há mais de 30 dias é apagado
+depois de a biometria sair, o rosto dele volta a `unassigned` com `bbox`
+intacto, e a trilha continua legível pelo `student_ref` (`MAT-GONE`) com a FK
+nula; evento vencido manda foto para a lixeira, e só 30 dias depois a foto é
+apagada com foto, miniatura e original enfileirados no Storage;
+`claim_storage_purge`/`complete_storage_purge` tiram da fila.
+
+A sessão de tela é simulada com `set_config('request.jwt.claims', …, true)`.
+Atenção: isso é local à **transação**, não ao bloco `DO` — o segundo bloco
+precisa limpar o claim para voltar a agir como `service_role`/`postgres`.
+
+Executado em 21/09/2026: `=== M6 OK ===`, com o banco intacto depois do
+rollback.

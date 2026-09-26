@@ -31,7 +31,7 @@ alvo e o roadmap por fases.
 | 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
 | 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ✅ M1 concluído (20/09/2026): migration aplicada, OTP por responsável, telas de cadastro da escola e de turmas. Fase 1 completa (CSV, papel `dev`) segue aberta |
 | 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ✅ M2 (20/09/2026) e M3 (21/09/2026) concluídos: `photos`, `batch_jobs`, buckets, upload em massa no cliente; fila `photo_jobs`, `ingest-worker` (miniaturas WebP, `/health`), galeria virtualizada e progresso por Realtime. Deploy do worker na Fly preparado, **não executado** |
-| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); ✅ **M4 e M5 concluídos** (21/09/2026): consentimento por escopo, rosto de referência, `face-worker` em Python rodado contra o banco real, `photo_faces`, busca vetorial isolada por escola e pasta do aluno. Falta o M6 (revisão por aluno, trilha, expurgo) e o deploy dos workers |
+| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); ✅ **M4, M5 e M6 concluídos** (21/09/2026): consentimento por escopo, rosto de referência, `face-worker` em Python rodado contra o banco real, `photo_faces`, busca vetorial isolada por escola, pasta do aluno, e a tela de revisão por aluno com trilha `biometric_events` e expurgo diário. Falta o **deploy dos workers** e as medições de aceite (§12.2) com acervo sintético |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
 | 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
 
@@ -48,14 +48,17 @@ tabela `photos` e buckets por escola — e o M3 — fila `photo_jobs`,
 320px, `/health`), galeria virtualizada e progresso por Realtime em
 `batch_jobs` —, o M4 — consentimento por escopo (`authorizations`) com os dois
 toggles na ficha do aluno, aba "Rosto de referência" e indicador de prontidão
-na lista de alunos — e o M5: `artifacts/face-worker/` (Python + InsightFace)
+na lista de alunos —, o M5 — `artifacts/face-worker/` (Python + InsightFace)
 consumindo as duas filas, `photo_faces` com o vetor bloqueado por privilégio
 de coluna, busca vetorial isolada por escola e a pasta do aluno em
-`/alunos/:id`. O que ainda **não existe**: worker nenhum rodando na Fly (os
-dois têm Dockerfile, `fly.toml` e imagem construída, mas nenhum `fly deploy`
-foi executado — sem eles, nada sai da fila em produção), a **tela de revisão**
-(M6), sem a qual nenhum rosto vira `confirmed` e a pasta do aluno fica vazia,
-o expurgo e o envio em lote.
+`/alunos/:id` — e o M6: a tela de revisão (`/eventos/:id/revisao`) com cartão
+por aluno e confirmação em lote, fila individual por teclado, trilha
+`biometric_events` append-only, expurgo diário por `pg_cron` e ZIP da pasta do
+aluno. Desde 26/09/2026 os dois workers rodam na Fly (`iaschool-ingest-worker` e
+`iaschool-face-worker`, org `personal`, região gru, uma máquina cada, escala
+manual por `fly scale count`). O que ainda **não existe**: as medições de
+aceite da spec §12.2 com acervo sintético, o desfoque na entrega e o envio em
+lote.
 
 Ao trabalhar aqui, diferencie sempre protótipo, código local, integração
 configurada e evidência de produção.
@@ -103,6 +106,8 @@ consentimento ou compartilhamento, use a skill `eca-digital`
 - `artifacts/api-server/` — servidor Express e fluxo de geração de imagens.
 - `artifacts/ingest-worker/` — worker Node 24 + `sharp` que consome
   `photo_jobs` (miniaturas, dimensões, EXIF de reserva) e expõe `/health`.
+  Desde o M6 também varre `storage_purge_queue`: apagar a linha no banco não
+  apaga o objeto no bucket, e é este laço que remove de fato.
   `Dockerfile` e `fly.toml` próprios (um app por worker).
 - `artifacts/face-worker/` — worker **Python 3.12** (`onnxruntime` +
   `insightface`) que consome `photo_jobs` (`kind = 'recognize'`) e
@@ -130,6 +135,7 @@ consentimento ou compartilhamento, use a skill `eca-digital`
 | [`docs/pendencias-producao.md`](docs/pendencias-producao.md) | O que falta para rodar com dado real (domínio, Resend, OTP) |
 | [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md) | Spec das Fases 2 e 3: upload em massa, biometria, fila de revisão, pasta do aluno |
 | [`docs/spike-reconhecimento-facial.md`](docs/spike-reconhecimento-facial.md) | Spike M0: números medidos do motor facial, limiares calibrados e o que ficou sem medir |
+| [`docs/estimativa-custos-por-aluno.md`](docs/estimativa-custos-por-aluno.md) | Custo operacional por cenário de escala e por aluno, base para precificar; recalculável por `scripts/custos-por-aluno.py` |
 | [`docs/diagnostico-geracao-imagens.md`](docs/diagnostico-geracao-imagens.md) | Diagnóstico da falha de geração de imagens |
 | [`artifacts/iaschool-app/SUPABASE.md`](artifacts/iaschool-app/SUPABASE.md) | Integração Supabase: variáveis, tabelas, RLS, buckets |
 | [`docs/development/cross-platform-web.md`](docs/development/cross-platform-web.md) | Compatibilidade macOS/Linux/Windows |
@@ -227,9 +233,11 @@ e `events`, desde o M2 `photos` e `batch_jobs`, desde o M3 `photo_jobs`
 (sem policy: só `service_role` e RPCs), desde o M4 `authorizations`,
 `student_reference_faces` (idem, sem policy) e `student_reference_jobs`
 (a fila do rosto de referência, essa visível para a escola: não guarda vetor)
-e desde o M5 `photo_faces` (legível pelo membro, **menos a coluna
+desde o M5 `photo_faces` (legível pelo membro, **menos a coluna
 `embedding`**, bloqueada por privilégio de coluna) e
-`face_recognition_settings` — todas com RLS habilitada.
+`face_recognition_settings`, e desde o M6 `biometric_events` (trilha
+append-only: só select, escrita por trigger e RPC) e `storage_purge_queue`
+(sem policy) — todas com RLS habilitada.
 A migration do M1 (`iaschool_fase1_schools_members_classes`, referência em
 `supabase/fase1-min-schools-events.sql`) foi **aplicada em 20/09/2026**: a
 escola é o tenant, `profiles.role` é papel global (`dev`/`super_admin`/`user`)
@@ -254,8 +262,15 @@ facial. As do M5 (`iaschool_fase3_photo_faces_recognition` e
 `supabase/fase3-face-recognition.sql`) também foram **aplicadas em
 21/09/2026**: `face_recognition_settings`, `photo_faces` (com o `embedding`
 bloqueado por privilégio de coluna), `match_reference_faces`,
-`complete_recognize_job`, o bucket `face-crops` e `student_photos`.
-Estado em `BACKLOG.md`, M1 a M5.
+`complete_recognize_job`, o bucket `face-crops` e `student_photos`. As cinco
+do M6 (`iaschool_fase3_biometric_events`,
+`iaschool_fase3_storage_purge_queue`, `iaschool_fase3_review_rpcs`,
+`iaschool_fase3_purge_expired_biometrics` e `iaschool_fase3_purge_cron`,
+referência em `supabase/fase3-review-audit-purge.sql`) foram **aplicadas em
+21/09/2026**: trilha `biometric_events`, fila de expurgo do Storage, o CHECK
+que impede rosto confirmado sem revisor, as RPCs da revisão e
+`purge_expired_biometrics()` agendada no `pg_cron`.
+Estado em `BACKLOG.md`, M1 a M6.
 
 **Como alterar o schema:** exclusivamente por `apply_migration` do servidor MCP
 `supabase-iaschool` (seção abaixo). Não use o SQL Editor do painel para mudança
