@@ -3,16 +3,17 @@
 // stub e verifica, com sessões reais do Supabase, que:
 //   - sem token       → 401
 //   - conta pendente  → 403
-//   - conta de aluno  → 403
 //   - escola aprovada → passa (200 do stub)
+// O caso "conta de aluno → 403" saiu no M1: o papel `student` não existe mais
+// (a constraint de `profiles.role` só aceita dev, super_admin e user).
 import express from "express";
 import type { Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { requireSupabaseUser } from "../src/middlewares/supabase-auth";
 import {
   adminUpdateProfile,
+  cleanupTestData,
   createTestUser,
-  deleteTestUser,
   envReady,
   type TestUser,
 } from "./supabase-test-utils";
@@ -27,7 +28,6 @@ let server: Server;
 let baseUrl: string;
 let schoolUser: TestUser;
 let pendingUser: TestUser;
-let studentUser: TestUser;
 const createdUsers: string[] = [];
 
 beforeAll(async () => {
@@ -61,18 +61,16 @@ beforeAll(async () => {
     signupRole: "school_user",
     schoolName: "Escola Pendente",
   });
-  studentUser = await createTestUser({ label: "gen-student", signupRole: "student" });
-  createdUsers.push(schoolUser.id, pendingUser.id, studentUser.id);
+  createdUsers.push(schoolUser.id, pendingUser.id);
 
   await adminUpdateProfile(schoolUser.id, { approval_status: "approved" });
-  await adminUpdateProfile(studentUser.id, { approval_status: "approved", role: "student" });
 }, 120_000);
 
 afterAll(async () => {
-  for (const id of createdUsers) await deleteTestUser(id);
   await new Promise<void>((resolve, reject) =>
     server.close((err) => (err ? reject(err) : resolve())),
   );
+  await cleanupTestData({ users: createdUsers });
 }, 120_000);
 
 async function callGeneration(token?: string): Promise<number> {
@@ -98,10 +96,6 @@ describe("rota de geração — autorização", () => {
 
   it("rejeita conta pendente com 403", async () => {
     expect(await callGeneration(pendingUser.token)).toBe(403);
-  });
-
-  it("rejeita conta de aluno com 403", async () => {
-    expect(await callGeneration(studentUser.token)).toBe(403);
   });
 
   it("deixa escola aprovada passar pelo middleware", async () => {

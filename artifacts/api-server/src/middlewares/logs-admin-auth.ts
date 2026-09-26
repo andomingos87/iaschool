@@ -1,8 +1,11 @@
 import type { NextFunction, Request, Response } from "express";
 
 // Autorização da tela de logs de geração: exige um usuário autenticado no
-// Supabase que seja super_admin aprovado E tenha exatamente o e-mail do
-// administrador da IAschool. Outros super_admins recebem 403.
+// Supabase com papel de plataforma aprovado (`super_admin` ou `dev`, o mesmo
+// critério de `isPlatformAdmin` no app) E exatamente o e-mail do
+// administrador da IAschool. Os demais recebem 403.
+
+const PLATFORM_ROLES = new Set(["super_admin", "dev"]);
 
 export const LOGS_ADMIN_EMAIL = "iasport@andersondomingos.com.br";
 
@@ -54,7 +57,7 @@ export async function requireLogsAdmin(
       return;
     }
 
-    // Confirma o papel super_admin aprovado (RLS: usuário lê o próprio perfil).
+    // Confirma o papel de plataforma aprovado (RLS: usuário lê o próprio perfil).
     const profileResp = await fetch(
       `${cfg.url}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=role,approval_status&limit=1`,
       {
@@ -77,7 +80,7 @@ export async function requireLogsAdmin(
     const profile = Array.isArray(profiles) ? profiles[0] : undefined;
     if (
       !profile ||
-      profile.role !== "super_admin" ||
+      !PLATFORM_ROLES.has(profile.role ?? "") ||
       (profile.approval_status && profile.approval_status !== "approved")
     ) {
       res.status(403).json({ error: "Acesso restrito ao administrador." });

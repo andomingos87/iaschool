@@ -49,7 +49,7 @@ import {
 import { useStudents } from "@/hooks/use-students";
 import { useAuth } from "@/hooks/use-auth";
 import { formatDateTime } from "@/lib/format";
-import { TRASH_RETENTION_DAYS, type GeneratedPost } from "@/lib/data";
+import { TRASH_RETENTION_DAYS, isPlatformAdmin, type GeneratedPost } from "@/lib/data";
 
 type DeleteMode = "trash" | "permanent";
 
@@ -157,7 +157,7 @@ function PostGrid({
 
 export default function GalleryPage() {
   const { session } = useAuth();
-  const isAdmin = session?.user.role === "super_admin";
+  const isAdmin = isPlatformAdmin(session?.user.role);
   const [tab, setTab] = useState<"gallery" | "trash">("gallery");
   const posts = useGeneratedPosts();
   const trashed = useTrashedPosts(tab === "trash");

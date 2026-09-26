@@ -125,13 +125,6 @@ export async function requireSupabaseUser(
       });
       return;
     }
-    if (profile.role === "student") {
-      res.status(403).json({
-        error: "Contas de aluno não podem gerar imagens.",
-      });
-      return;
-    }
-
     req.supabaseUserId = user.id;
     next();
   } catch (err) {

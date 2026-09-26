@@ -7,8 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import generationRouter from "../src/routes/generation";
 import {
   adminUpdateProfile,
+  cleanupTestData,
   createTestUser,
-  deleteTestUser,
   envReady,
   type TestUser,
 } from "./supabase-test-utils";
@@ -52,7 +52,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server?.close(() => resolve()));
-  if (schoolUser) await deleteTestUser(schoolUser.id);
+  await cleanupTestData({ users: schoolUser ? [schoolUser.id] : [] });
 }, 30_000);
 
 describe("GET /api/generation/quota", () => {

@@ -7,8 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import app from "../src/app";
 import {
   adminUpdateProfile,
+  cleanupTestData,
   createTestUser,
-  deleteTestUser,
   envReady,
   type TestUser,
 } from "./supabase-test-utils";
@@ -40,7 +40,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  if (schoolUser) await deleteTestUser(schoolUser.id);
+  await cleanupTestData({ users: schoolUser ? [schoolUser.id] : [] });
   await new Promise<void>((resolve, reject) =>
     server.close((err) => (err ? reject(err) : resolve())),
   );

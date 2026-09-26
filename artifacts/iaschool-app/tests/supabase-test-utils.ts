@@ -77,10 +77,50 @@ export async function createTestUser(opts: {
 }
 
 export async function deleteTestUser(id: string): Promise<void> {
-  await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
+  const resp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
     method: "DELETE",
     headers: adminHeaders(),
   });
+  if (!resp.ok && resp.status !== 404) {
+    throw new Error(`Falha ao apagar usuário de teste ${id}: ${resp.status} ${await resp.text()}`);
+  }
+}
+
+/**
+ * Apaga o que um arquivo de teste criou, na ordem que o banco aceita, e falha
+ * alto se sobrar algo.
+ *
+ * Escola primeiro: `events.created_by`, `photos.uploaded_by`,
+ * `batch_jobs.created_by` e outras colunas apontam para `auth.users` sem
+ * cascata, então apagar o usuário antes da escola falha — e antes desta
+ * função a falha era silenciosa, o que deixou dezenas de usuários de teste no
+ * banco real. A escola cascateia esses registros; o usuário sai depois.
+ *
+ * `schools.id` é o uid de quem foi aprovado (trigger
+ * `ensure_school_on_approval`) e não tem FK para `auth.users`: apagar o
+ * usuário nunca leva a escola junto. Por isso os ids de usuário também entram
+ * na lista de escolas; para quem não foi aprovado o delete não acha linha.
+ */
+export async function cleanupTestData(opts: {
+  users: string[];
+  schools?: string[];
+}): Promise<void> {
+  const failures: string[] = [];
+  const schools = new Set([...(opts.schools ?? []), ...opts.users].filter(Boolean));
+  for (const id of schools) {
+    const resp = await adminRest(`schools?id=eq.${id}`, { method: "DELETE" });
+    if (!resp.ok) failures.push(`escola ${id}: ${resp.status} ${await resp.text()}`);
+  }
+  for (const id of opts.users.filter(Boolean)) {
+    try {
+      await deleteTestUser(id);
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Limpeza incompleta, sobrou dado de teste no banco:\n${failures.join("\n")}`);
+  }
 }
 
 /** Executa SQL-like via PostgREST com o service role (bypassa RLS). */

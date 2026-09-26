@@ -71,9 +71,9 @@ function useSignedThumbs(paths: string[]): Map<string, string> {
  * tela não deixa cadastrar — e o banco e o Storage também não, essa é a trava
  * que vale (D5).
  *
- * A foto vai para o bucket e entra numa fila: quem calcula o vetor é o motor
- * facial (`det_size` 640), que ainda não roda — até o M5 a referência fica
- * "aguardando processamento", e é isso que a tela diz.
+ * A foto vai para o bucket e entra numa fila: quem calcula o vetor é o laço de
+ * referência do `face-worker` (`det_size` 640). Até ele processar, a
+ * referência fica "aguardando processamento", e é isso que a tela diz.
  */
 export function StudentReferenceFaces({ student }: { student: Student }) {
   const authorizations = useAuthorizations(student.id);
@@ -320,8 +320,8 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
             </div>
             <p className="text-xs text-muted-foreground">
               O rosto só vira referência depois que o reconhecimento facial
-              processa a foto. Esse serviço ainda não está no ar — as fotos
-              ficam na fila até ele entrar.
+              processa a foto. Se ela não tiver exatamente um rosto, volta
+              como falha.
             </p>
           </div>
         )}
