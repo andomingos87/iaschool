@@ -55,7 +55,7 @@ export interface UploadSnapshot {
 export interface AddFilesResult {
   /** Entraram na fila (ou voltaram a ela). */
   accepted: number;
-  /** Fora do formato aceito (JPEG, PNG, HEIC). */
+  /** Fora do formato aceito (`ACCEPTED_MIME` / `ACCEPTED_EXTENSIONS`). */
   rejected: number;
   /** Já constavam como enviados em sessão anterior — pulados sem tocar a rede. */
   alreadySent: number;

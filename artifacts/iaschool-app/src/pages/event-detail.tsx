@@ -123,7 +123,7 @@ export default function EventDetailPage() {
       const parts: string[] = [];
       if (result.accepted > 0) parts.push(`${result.accepted.toLocaleString("pt-BR")} na fila`);
       if (result.alreadySent > 0) parts.push(`${result.alreadySent.toLocaleString("pt-BR")} já enviadas antes`);
-      if (result.rejected > 0) parts.push(`${result.rejected.toLocaleString("pt-BR")} ignoradas (não são JPEG, PNG ou HEIC)`);
+      if (result.rejected > 0) parts.push(`${result.rejected.toLocaleString("pt-BR")} ignoradas (formato não aceito)`);
       toast({
         title: result.accepted > 0 ? "Envio começou" : "Nada novo para enviar",
         description: parts.join(" · ") || "A pasta não tinha imagens aceitas.",

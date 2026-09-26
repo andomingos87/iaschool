@@ -34,7 +34,12 @@ import {
 import { getDataLayer } from "@/lib/data";
 import type { Student } from "@/lib/data";
 import { REFERENCE_FACES_RECOMMENDED } from "@/lib/data";
-import { isAcceptedImage, prepareReferencePhoto } from "@/lib/upload";
+import {
+  ACCEPTED_FORMATS_LABEL,
+  ACCEPT_ATTRIBUTE,
+  isAcceptedImage,
+  prepareReferencePhoto,
+} from "@/lib/upload";
 import { formatDateTime, isoToBrDate } from "@/lib/format";
 
 /** URLs assinadas das miniaturas, por caminho no bucket. */
@@ -111,7 +116,7 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
           toast({
             variant: "destructive",
             title: "Arquivo não aceito",
-            description: `"${file.name}" não é JPEG, PNG nem HEIC.`,
+            description: `"${file.name}" não está num formato aceito (${ACCEPTED_FORMATS_LABEL}).`,
           });
           continue;
         }
@@ -180,7 +185,7 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
               <input
                 ref={inputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/heic,image/heif"
+                accept={ACCEPT_ATTRIBUTE}
                 multiple
                 className="hidden"
                 onChange={(e) => void onPick(e.target.files)}

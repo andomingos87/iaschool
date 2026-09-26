@@ -5,7 +5,10 @@ export { createHashPool, hashFileInline, sha256Hex, type HashFile } from "./hash
 export {
   prepareForUpload,
   prepareReferencePhoto,
+  prepareAssetImage,
   convertHeicToJpeg,
+  sniffHeic,
+  UnreadableImageError,
   type PreparePhoto,
   type PreparedPhoto,
 } from "./image";

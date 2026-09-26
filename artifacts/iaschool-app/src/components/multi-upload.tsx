@@ -5,6 +5,7 @@ import { Button } from "@workspace/iaschool-ui/components/ui/button";
 import { Spinner } from "@workspace/iaschool-ui/components/ui/spinner";
 import type { StoredImage } from "@/lib/data";
 import { useImageUpload } from "@/hooks/use-image-upload";
+import { ACCEPT_ATTRIBUTE } from "@/lib/upload";
 import { ImageLightbox } from "@/components/image-lightbox";
 
 interface MultiUploadProps {
@@ -80,14 +81,15 @@ export function MultiUpload({
             <ImagePlus className="size-6 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">{label}</p>
             <p className="text-xs text-muted-foreground">
-              As imagens são comprimidas automaticamente.
+              JPEG, PNG, HEIC (iPhone), WebP e outros formatos. As imagens são
+              convertidas e comprimidas automaticamente.
             </p>
           </>
         )}
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept={`image/*,${ACCEPT_ATTRIBUTE}`}
           multiple={!single}
           className="hidden"
           onChange={(e) => {

@@ -2,7 +2,12 @@ import { useRef, useState, type DragEvent, type InputHTMLAttributes } from "reac
 import { FolderUp, Loader2 } from "lucide-react";
 import { cn } from "@workspace/iaschool-ui/lib/utils";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
-import { MAX_FILES_PER_BATCH, collectFilesFromDataTransfer } from "@/lib/upload";
+import {
+  ACCEPTED_FORMATS_LABEL,
+  ACCEPT_ATTRIBUTE,
+  MAX_FILES_PER_BATCH,
+  collectFilesFromDataTransfer,
+} from "@/lib/upload";
 
 interface Props {
   disabled?: boolean;
@@ -79,7 +84,7 @@ export function EventUploadDropzone({ disabled, onFiles }: Props) {
       <div>
         <p className="font-medium">Arraste a pasta com as fotos do evento</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          JPEG, PNG ou HEIC · até {MAX_FILES_PER_BATCH.toLocaleString("pt-BR")} fotos por vez ·
+          {ACCEPTED_FORMATS_LABEL} · até {MAX_FILES_PER_BATCH.toLocaleString("pt-BR")} fotos por vez ·
           subpastas entram junto
         </p>
       </div>
@@ -119,7 +124,7 @@ export function EventUploadDropzone({ disabled, onFiles }: Props) {
         ref={filesInput}
         type="file"
         multiple
-        accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif"
+        accept={ACCEPT_ATTRIBUTE}
         className="hidden"
         onChange={(e) => {
           void handle(Array.from(e.target.files ?? []));
