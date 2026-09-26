@@ -29,9 +29,9 @@ alvo e o roadmap por fases.
 | Fase | Escopo | Estado |
 | --- | --- | --- |
 | 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
-| 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ✅ M1 concluído (20/09/2026): migration aplicada, OTP por responsável, telas de cadastro da escola e de turmas. Fase 1 completa (CSV, papel `dev`) segue aberta |
-| 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ✅ M2 (20/09/2026) e M3 (21/09/2026) concluídos: `photos`, `batch_jobs`, buckets, upload em massa no cliente; fila `photo_jobs`, `ingest-worker` (miniaturas WebP, `/health`), galeria virtualizada e progresso por Realtime. Deploy do worker na Fly preparado, **não executado** |
-| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); ✅ **M4, M5 e M6 concluídos** (21/09/2026): consentimento por escopo, rosto de referência, `face-worker` em Python rodado contra o banco real, `photo_faces`, busca vetorial isolada por escola, pasta do aluno, e a tela de revisão por aluno com trilha `biometric_events` e expurgo diário. Falta o **deploy dos workers** e as medições de aceite (§12.2) com acervo sintético |
+| 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ✅ M1 concluído (20/09/2026): migration aplicada, OTP por responsável, telas de cadastro da escola e de turmas. Fase 1 completa (CSV, professor da turma, telas do papel `dev`, remoção de `clubs`) segue aberta |
+| 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ✅ M2 (20/09/2026) e M3 (21/09/2026) concluídos: `photos`, `batch_jobs`, buckets, upload em massa no cliente; fila `photo_jobs`, `ingest-worker` (miniaturas WebP, `/health`), galeria virtualizada e progresso por Realtime. `ingest-worker` implantado na Fly em 26/09/2026 |
+| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); ✅ **M4, M5 e M6 concluídos** (21/09/2026): consentimento por escopo, rosto de referência, `face-worker` em Python rodado contra o banco real, `photo_faces`, busca vetorial isolada por escola, pasta do aluno, e a tela de revisão por aluno com trilha `biometric_events` e expurgo diário. Os dois workers rodam na Fly desde 26/09/2026. Faltam as medições de aceite (§12.2) com acervo sintético |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
 | 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
 
@@ -56,9 +56,12 @@ por aluno e confirmação em lote, fila individual por teclado, trilha
 `biometric_events` append-only, expurgo diário por `pg_cron` e ZIP da pasta do
 aluno. Desde 26/09/2026 os dois workers rodam na Fly (`iaschool-ingest-worker` e
 `iaschool-face-worker`, org `personal`, região gru, uma máquina cada, escala
-manual por `fly scale count`). O que ainda **não existe**: as medições de
-aceite da spec §12.2 com acervo sintético, o desfoque na entrega e o envio em
-lote.
+manual por `fly scale count`). O que ainda **não existe**: o app publicado
+(não há projeto na Vercel para o `iaschool-app`), a API de geração de arte no
+ar (o rewrite `/api` do app aponta para `iasport-image-api-r9.fly.dev`, que
+não responde), as medições de aceite da spec §12.2 com acervo sintético, o
+desfoque na entrega e o envio em lote. Varredura de 26/09/2026 em
+`BACKLOG.md`, seção "Publicação, CI e higiene".
 
 Ao trabalhar aqui, diferencie sempre protótipo, código local, integração
 configurada e evidência de produção.
@@ -278,7 +281,10 @@ de schema — o que não passa por migration não fica registrado no histórico.
 
 Os scripts em `artifacts/iaschool-app/supabase/*.sql` são a referência legível
 do schema (`setup.sql`, `eca-digital.sql`, `generation-quota.sql`,
-`generation-logs.sql`, `pivot-fase0.sql`). Ao aplicar uma migration, mantenha o
+`generation-logs.sql`, `pivot-fase0.sql`, `fase1-min-schools-events.sql`,
+`fase2-photos-upload.sql`, `fase2-photo-jobs-worker.sql`,
+`fase3-authorizations-reference-faces.sql`, `fase3-face-recognition.sql`,
+`fase3-review-audit-purge.sql`). Ao aplicar uma migration, mantenha o
 SQL de referência correspondente atualizado no mesmo commit.
 
 > ⚠️ `lib/db/` é um **pacote Drizzle inerte**: `lib/db/src/schema/index.ts` é um

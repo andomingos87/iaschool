@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 26/09/2026 (**workers implantados na Fly**: `iaschool-ingest-worker` e `iaschool-face-worker`, org `personal`, região gru, uma máquina cada, `/health` passando nos dois. Antes: 21/09/2026, **M4, M5 e M6 concluídos**. M4: consentimento por escopo, rosto de referência e a fila que liga a tela ao motor facial. M5: `face-worker` em Python rodando de verdade contra o banco — 20 rostos detectados numa cena de teste, 3 sugeridos, 17 sem atribuição e sem vetor, evento movido para `review` —, `photo_faces` com o vetor bloqueado por privilégio de coluna, busca vetorial isolada por escola e pasta do aluno. M6: tela `/eventos/:id/revisao` com cartão por aluno e confirmação em lote, fila individual por teclado, `biometric_events` append-only, `purge_expired_biometrics()` diária no `pg_cron`, fila de expurgo do Storage consumida pelo `ingest-worker` e ZIP da pasta do aluno. 275 testes do app (159 unitários + 116 de integração contra o banco real) + 33 do face-worker + 24 do ingest-worker verdes; imagem do face-worker construída e testada)
+**Atualizado em:** 26/09/2026 (**varredura geral** backlog × código × GitHub × Vercel × Supabase × Fly: marcos, as 24 migrations, os workers e os testes batem com o que está escrito — typecheck e 159 + 24 + 33 testes unitários rodados de novo; os achados novos estão em "Publicação, CI e higiene": o app não está publicado, a API de geração está fora do ar, os testes de integração deixam lixo no banco real e a CI não roda testes. Status corrigidos no M3, M4, M5, M6, M0 e na Fase 1 completa. Mais cedo no mesmo dia, **workers implantados na Fly**: `iaschool-ingest-worker` e `iaschool-face-worker`, org `personal`, região gru, uma máquina cada, `/health` passando nos dois. Antes: 21/09/2026, **M4, M5 e M6 concluídos**. M4: consentimento por escopo, rosto de referência e a fila que liga a tela ao motor facial. M5: `face-worker` em Python rodando de verdade contra o banco — 20 rostos detectados numa cena de teste, 3 sugeridos, 17 sem atribuição e sem vetor, evento movido para `review` —, `photo_faces` com o vetor bloqueado por privilégio de coluna, busca vetorial isolada por escola e pasta do aluno. M6: tela `/eventos/:id/revisao` com cartão por aluno e confirmação em lote, fila individual por teclado, `biometric_events` append-only, `purge_expired_biometrics()` diária no `pg_cron`, fila de expurgo do Storage consumida pelo `ingest-worker` e ZIP da pasta do aluno. 275 testes do app (159 unitários + 116 de integração contra o banco real) + 33 do face-worker + 24 do ingest-worker verdes; imagem do face-worker construída e testada)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
@@ -22,8 +22,8 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 | Fase | Marcos | Estado | Prazo estimado |
 | --- | --- | --- | --- |
 | 0 — Descontaminação | — | ✅ concluída (30/08/2026) | — |
-| Transversal — produção e conformidade | pendências #1–#7 | ❌ nenhum item andou | depende de compra de domínio/Resend/Meta |
-| 1 — Fundação escolar | M1 (mínima) + Fase 1 completa | ✅ **M1 concluído** (20/09/2026); Fase 1 completa (CSV, papel `dev`, professor da turma) segue aberta | 2–2,5 sem (M1) |
+| Transversal — produção e conformidade | pendências #1–#7 + publicação | ❌ #1–#7 parados desde 30/08/2026 (só a reativação do Supabase e o PAT andaram, 20/09/2026); app sem publicação e API de geração fora do ar (varredura de 26/09/2026) | depende de compra de domínio/Resend/Meta |
+| 1 — Fundação escolar | M1 (mínima) + Fase 1 completa | ✅ **M1 concluído** (20/09/2026); Fase 1 completa (CSV, telas do papel `dev`, professor da turma, remoção de `clubs`) segue aberta | 2–2,5 sem (M1) |
 | 2 — Upload em massa | M2, M3 | ✅ **M2** (20/09/2026) e **M3** (21/09/2026) concluídos; `ingest-worker` implantado na Fly (26/09/2026) | — |
 | 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito; ✅ **M4, M5 e M6 concluídos** (21/09/2026); os dois workers implantados na Fly (26/09/2026); faltam as medições de aceite (§12.2) com acervo sintético | 6 sem |
 | 4 — Autorização granular + portal | — | ❌ sem spec | 2–3 sem |
@@ -51,7 +51,9 @@ Detalhe completo no Anexo A da pivotagem. Typecheck, build e 84 testes unitário
 - [x] Edge function `send-guardian-code` em modo simulação, com 7 testes de integração em `tests/guardian-verification.integration.test.ts` (30/08/2026)
 - [x] Docs: `pivotagem-iaschool.md`, `pendencias-producao.md`, `diagnostico-geracao-imagens.md`, `AGENTS.md`, `SUPABASE.md` (30/08/2026)
 
-**Deixado de propósito** (não são pendências, são decisões): projeto Vercel `iaschool-api-server` (root `artifacts/api-server`) com deploy por Git **desligado** via `artifacts/api-server/vercel.json` em 26/09/2026 — o api-server é Express e pertence à Fly, nunca buildou na Vercel (check vermelho desde o primeiro commit); apagar o projeto no painel da Vercel quando der, `fly.toml` com `app = "iasport-image-api-r9"`, `LOGS_ADMIN_EMAIL` antigo, variáveis `IASPORT_TEST_*` locais, tabela `clubs` no banco (vai para a Fase 1). `supabase/pivot-fase0.sql` só serve para bases legadas; o banco atual nasceu limpo.
+**Deixado de propósito** (não são pendências, são decisões): `LOGS_ADMIN_EMAIL` antigo, variáveis `IASPORT_TEST_*` locais, tabela `clubs` no banco (vai para a Fase 1). `supabase/pivot-fase0.sql` só serve para bases legadas; o banco atual nasceu limpo.
+
+Saíram desta lista na varredura de 26/09/2026 e viraram pendência em "Publicação, CI e higiene": o projeto Vercel `iaschool-api-server` (deploy por Git desligado via `artifacts/api-server/vercel.json` em 26/09/2026, o que funcionou — os commits seguintes não têm status da Vercel; a API da Vercel já devolve 404 para ele) e o `fly.toml` da raiz com `app = "iasport-image-api-r9"`, que parecia inofensivo mas é o destino do rewrite `/api` do app e não existe mais.
 
 ### Higiene pendente da Fase 0
 
@@ -60,7 +62,7 @@ Detalhe completo no Anexo A da pivotagem. Typecheck, build e 84 testes unitário
 - [x] Abrir PR de `pivot/fase-0` → `main`: [andomingos87/iaschool#1](https://github.com/andomingos87/iaschool/pull/1), 9 commits (18/09/2026)
 - [x] Apagar specs/planos divergentes (`docs/superpowers/`, memórias `.agents/memory/r9-*`) e corrigir Anexo B da pivotagem, cabeçalho da spec e memória de marca (15/09/2026)
 - [x] Verificar os Problemas 2 e 3 de `docs/diagnostico-geracao-imagens.md`: **persistem**, conferido no código em 20/09/2026 (`mock/index.ts:689`, `api-server/routes/generation.ts:79`, `openai-generation.ts:81`). O Problema 1 foi superado pelo provisionamento de 30/08. O diagnóstico fica como spec das correções abaixo (20/09/2026)
-- [ ] Geração em modo demo: decidir entre gerador mock (canvas) ou botão desabilitado com aviso; hoje chama o backend real sem token e falha sempre (`src/lib/data/mock/index.ts:689`)
+- [ ] Geração em modo demo: decidir entre gerador mock (canvas) ou botão desabilitado com aviso; hoje chama o backend real sem token e falha sempre (`src/lib/data/mock/index.ts:1545`, conferido em 26/09/2026; a linha 689 citada em 20/09 mudou com o M4–M6)
 - [ ] `api-server`: drenar o corpo da requisição antes de responder em `requireSupabaseUser`, ou mover o multer para antes da auth (`routes/generation.ts:79`)
 - [ ] Cliente: tratar `onerror` do XHR sem afirmar que é a internet do usuário (`src/lib/data/openai-generation.ts:81`)
 
@@ -68,13 +70,13 @@ Detalhe completo no Anexo A da pivotagem. Typecheck, build e 84 testes unitário
 
 ## Transversal — Produção e conformidade
 
-Nada aqui andou desde 30/08/2026. Enquanto #1–#7 não fecharem, vale a regra bloqueante.
+As pendências #1–#7 não andaram desde 30/08/2026 (só a reativação do Supabase e o PAT, em 20/09). Enquanto #1–#7 não fecharem, vale a regra bloqueante.
 
 ### Infra e cadastro (`docs/pendencias-producao.md`)
 
 - [x] Projeto Supabase `jtyyauivokutperouqyh` estava **pausado** (free tier, inatividade); Anderson reativou em 20/09/2026. As 7 migrations e o super_admin estão intactos; o banco não tem mais nenhuma linha (20/09/2026)
 - [x] **`SUPABASE_ACCESS_TOKEN` renovado** por Anderson em 20/09/2026; `apply_migration` via MCP voltou a funcionar e a migration do M1 subiu no mesmo dia. Fica registrado, para a próxima vez: `psql` direto em `db.jtyyauivokutperouqyh.supabase.co:5432` com `SUPABASE_DB_PASSWORD` é a saída enquanto o PAT não vem (foi o caminho do ensaio); o `DATABASE_URL` do `.env.local` aponta para o pooler de transação (porta 6543), que não conhece o tenant, e o de sessão (`aws-0-us-east-1`, porta 5432) funciona (20/09/2026)
-- [ ] Evitar nova pausa por inatividade: ou subir o plano, ou um ping semanal (cron/edge) na REST enquanto o piloto não começa
+- [ ] Evitar nova pausa por inatividade: ou subir o plano, ou um ping semanal (cron/edge) na REST enquanto o piloto não começa. Provavelmente já resolvido de fato: desde 26/09/2026 os dois workers consultam o banco a cada 1–5 s (`ingest-worker/src/config.ts:39-40`, `face_worker/config.py:20-21`). Não verificado se o Supabase conta isso como atividade; fechar quando passar uma semana sem pausa
 
 - [ ] #1 Comprar domínio — bloqueia #2 e #3
 - [ ] #2 Assinar o Resend — bloqueia #3
@@ -82,6 +84,24 @@ Nada aqui andou desde 30/08/2026. Enquanto #1–#7 não fecharem, vale a regra b
 - [ ] #4 Criar template "Confirm signup" pt-BR (`supabase/email-templates/`); `reset-password.html` e `invite.html` já prontos
 - [ ] #5 Ligar "Confirm email" no Supabase Auth
 - [ ] #6 Testar cadastro ponta a ponta: escola → e-mail → confirma → "Aguardando aprovação" → super_admin aprova em `/aprovacoes`
+
+### Publicação, CI e higiene (varredura de 26/09/2026)
+
+Achados da comparação entre backlog, código local, GitHub, Vercel, Supabase e
+Fly. Os três primeiros bloqueiam o piloto tanto quanto o e-mail e o WhatsApp:
+sem eles a escola não tem onde abrir o sistema.
+
+- [ ] **Publicar o `iaschool-app`.** Não existe projeto na Vercel para ele. O único projeto ligado ao repositório era o `iaschool-api-server` (time `andomingos87s-projects`), com 4 deploys, todos falhos, e nenhum servia o front
+- [ ] **Subir a API de geração de arte e trocar o rewrite.** `artifacts/iaschool-app/vercel.json` manda `/api` para `https://iasport-image-api-r9.fly.dev`, que não responde e não está entre os apps da Fly desta conta (só os dois workers). O `fly.toml` da raiz, que builda o api-server pelo `Dockerfile` da raiz, ainda tem `app = "iasport-image-api-r9"`. Hoje a geração unitária de arte não funciona em ambiente nenhum. Decidir o nome novo do app na Fly e atualizar os dois arquivos no mesmo commit
+- [ ] Confirmar no painel da Vercel que o `iaschool-api-server` foi apagado (a API devolve 404 para ele em 26/09/2026, no mesmo time onde os deploys rodavam) e apagar os ambientes `Preview` e `Production` que sobraram no GitHub
+- [ ] Desligar o produto antigo na Vercel: `ia-sport-image-r9-app` (repo `IA-Sport-image`) está no ar sem senha em `ia-sport-image-r9-app-two.vercel.app`; `ia-sport-image-api` está em `ERROR`
+- [ ] **Limpar o resíduo dos testes de integração no banco real** e corrigir a limpeza no `afterAll`: 3 escolas "Escola B" com 1 aluno cada e 82 perfis `user`, todos criados a partir de 21/09/2026. O banco não está vazio, como o texto do M4 dizia: há também 2 escolas "(demo)" com 12 alunos e 2 eventos — decidir se ficam como acervo de demonstração. Nenhuma foto (0 linhas em `photos` e `photo_faces`), então a regra de conformidade segue respeitada
+- [ ] **CI rodando testes.** `.github/workflows/cross-platform-web.yml` faz só typecheck, build, testes de compatibilidade e smoke: nenhum dos números de teste deste backlog roda na CI. Falta também um comando só dos unitários do app — `test` (`vitest run`) junta os de integração, que batem no banco real e quebram sem as variáveis de ambiente. Rodar na CI: unitários do app (`vitest run src`), do ingest-worker e do face-worker (pytest)
+- [ ] Corrigir `artifacts/api-server/tests/generation-auth.integration.test.ts:64,68`: grava `role: "student"`, que a constraint recusa desde o M1, então o `beforeAll` cai. Não rodado (bate no banco real); inferido do código. O ramo `role === "student"` em `api-server/src/middlewares/supabase-auth.ts:128` virou código morto
+- [ ] Revogar `execute` de `anon` nas funções `security definer` que o linter aponta (9, entre elas `confirm_guardian_code`, `is_member_of`, `my_schools`, `has_profile`). O acesso de `authenticated` é intencional (ver o item do M6 sobre o linter); o de `anon` não tem justificativa registrada. `rls_auto_enable` é função de event trigger, não é chamável pela API: ruído
+- [ ] Ligar a proteção contra senha vazada no Supabase Auth (aviso do linter; conferir se o plano atual permite)
+- [ ] Decidir se `andomingos87/iaschool` continua **público**. Nenhum segredo versionado (conferido em 26/09/2026; secret scanning sem alerta), mas specs de conformidade, deck, estimativa de custos e o SQL das travas estão abertos. Junto: proteger a `main` (hoje sem regra) e ligar o Dependabot
+- [ ] Apagar as branches já mergeadas: 6 remotas (`feat/m1-*`, `feat/m2-*`, `feat/m3-*`, `feat/m4-*`, `fix/compat-scripts`, `pivot/fase-0`) e a local `switch`
 
 ### WhatsApp oficial + OTP (#7) — bloqueia foto real de menor
 
@@ -97,7 +117,7 @@ Decisão tomada: Meta WhatsApp Cloud API direto. Fallback interino: Twilio Verif
 
 O deck (HTML 16:9 e 9:16, PDFs) está pronto e foi regenerado em 01/09/2026. Faltam decisões de negócio que ele já referencia:
 
-- [ ] Definir preço e modelo de cobrança (slide 10 / anexo)
+- [ ] Definir preço e modelo de cobrança (slide 10 / anexo). A base de custo já existe: `docs/estimativa-custos-por-aluno.md`, com `scripts/custos-por-aluno.py` e `scripts/custos-por-aluno-xlsx.py`
 - [ ] Escolher 3 exemplos reais de arte para o slide 7 (material de teste, nunca foto real de menor)
 - [ ] Confirmar prazos do piloto (slide 10)
 - [ ] Obter identidade visual da rede-alvo para personalizar a capa
@@ -139,7 +159,7 @@ Pré-requisito de tudo: `photos` precisa de `event_id`, que precisa de `school_i
   - [x] `types.ts`: `UserRole` = `dev | super_admin | user`; `AppUser.schools` (RPC `my_schools`) + `Session.activeSchoolId`; `isPlatformAdmin()` (20/09/2026)
   - [x] `supabase/index.ts`: perfil + `my_schools()`, `setActiveSchool`, `signUp` só escola, upload com prefixo da escola ativa, `students` com embed de `guardians` e upsert por (escola, número), `schoolBrands` em `schools`, `school_id` em artes e referências, `confirmCode` por `guardian_id`, aprovações sem vínculo de conta (20/09/2026)
   - [x] `mock/index.ts` e `mock/seed.ts` no mesmo modelo, tolerando sessão gravada antes do M1 (20/09/2026)
-  - [x] Checagens de papel de plataforma via `isPlatformAdmin` (aceita `dev`) em `App.tsx`, `app-shell.tsx`, `students.tsx`, `student-detail.tsx`; `gallery.tsx` ainda usa `role === "super_admin"` (só esconde ações de admin; corrigir quando o papel `dev` for usado de fato) (20/09/2026)
+  - [x] Checagens de papel de plataforma via `isPlatformAdmin` (aceita `dev`) em `App.tsx`, `app-shell.tsx`, `students.tsx`, `student-detail.tsx`; `gallery.tsx` ainda usa `role === "super_admin"` (só esconde ações de admin; corrigir quando o papel `dev` for usado de fato) (20/09/2026). A varredura de 26/09/2026 achou um segundo caso, no servidor — ver "Checagens de papel que ainda ignoram `dev`" na Fase 1 completa
 - [x] Telas: identidade da escola virou só edição (a escola nasce na aprovação); ficha do aluno ganhou **matrícula** e perdeu o seletor de escola; seletor de escola ativa no topo para quem é membro de mais de uma (20/09/2026). Os dois toggles de consentimento (foto e envio por WhatsApp) e a foto de referência entram no M4, porque gravam em `authorizations`
   - [x] **Cadastro da escola** (`/escolas`, agora "Escola"): CNPJ com máscara e validação dos dígitos verificadores, endereço (CEP, logradouro, número, complemento, bairro, cidade, UF) e contato (telefone, e-mail, responsável). `schools.address`/`contact` são jsonb; jsonb só com campos vazios grava null, e CNPJ vazio grava null para não estourar o unique. O cartão mostra CNPJ, cidade e contato, com aviso de "cadastro incompleto" enquanto não houver CNPJ. O 23505 do CNPJ vira "Este CNPJ já está cadastrado em outra escola" (20/09/2026)
   - [x] **Turmas** (`/turmas`): CRUD de `classes` agrupado por ano letivo, série em lista fixa no app (`GRADES`/`GRADE_LABEL` em `types.ts`), contagem de alunos por sala e aviso de "N alunos ainda estão sem turma". A duplicata de (ano letivo, série, nome) é recusada no mock e no banco (unique 23505), com a mesma mensagem. Excluir a turma deixa o aluno sem turma (`on delete set null`), nunca apaga o cadastro (20/09/2026)
@@ -154,8 +174,9 @@ Pré-requisito de tudo: `photos` precisa de `event_id`, que precisa de `school_i
 
 - [ ] Importação de lista de alunos e responsáveis (CSV), casando por `enrollment_number`
 - [ ] Professor responsável pela turma (`classes.teacher_id`): a coluna e o campo no domínio existem desde o M1, mas a tela não os expõe — falta listar os membros da escola (`school_members`), que hoje não tem repositório no app
-- [ ] Remover a tabela `clubs` depois de um ciclo com `schools` estável (a consolidação em si entrou no M1; `my_school_id()` já morre no M1 com o autocadastro de aluno)
-- [ ] Papel `dev`: telas de manutenção (`face_recognition_settings`, `prompt_settings`, expurgo manual, logs técnicos) — o papel nasce no M1, as telas podem vir depois
+- [ ] Remover a tabela `clubs` depois de um ciclo com `schools` estável (a consolidação em si entrou no M1; `my_school_id()` já morre no M1 com o autocadastro de aluno). O app não consulta mais a tabela (0 linhas no banco), mas o trabalho é maior do que parece: o **bucket** `clubs` ainda guarda o logo da escola (`src/lib/constants.ts:7`, `school-brand-form-dialog.tsx:409`) e `tests/rls.integration.test.ts:35` lista `clubs` entre as tabelas do domínio — apagar a tabela sem mexer nos dois quebra o upload do logo e o teste
+- [~] Papel `dev`: telas de manutenção (`face_recognition_settings`, `prompt_settings`, expurgo manual, logs técnicos) — o papel nasce no M1, as telas podem vir depois. **Parcial** (conferido em 26/09/2026): `/admin/prompt` e `/admin/logs` existem desde a Fase 0 (`App.tsx:71-76`) e o `dev` já os enxerga, mas não são exclusivos dele como pede a decisão #5 (a policy de `prompt_settings` usa `is_super_admin()`, `setup.sql:493-505`). Faltam a tela de `face_recognition_settings` (com os cortes do lote) e o expurgo manual
+- [ ] Checagens de papel que ainda ignoram `dev`: `gallery.tsx:160` (`role === "super_admin"`) e `api-server/src/middlewares/logs-admin-auth.ts:80` (`profile.role !== "super_admin"`) — a tela libera `/admin/logs` para `dev` via `isPlatformAdmin`, a API devolve 403
 
 ---
 
@@ -176,9 +197,10 @@ Migrations `iaschool_fase2_photos_batch_jobs_buckets` e `iaschool_fase2_photos_e
 - [x] `useImageUpload` atual permanece para logo e modelos de arte (20/09/2026)
 - [x] Testes de RLS contra o banco real (`tests/photos-rls.integration.test.ts`, 11 testes): dedup por hash, isolamento entre escolas, UPDATE restrito a `deleted_at`, `batch_jobs`, `event_photo_counts`, Storage com prefixo da escola e MIME (20/09/2026)
 - [x] Sobra do M2 resolvida no M3: `events.status` anda `draft` → `uploading` → `processing` (`finish_batch_upload`); o cliente sobe o original para `event-originals` (`{school_id}/{event_id}/{photo_id}.orig`, `Content-Type` do arquivo) quando `keep_originals` está ligado, e o `taken_at` é lido do EXIF do original antes do redimensionamento (21/09/2026)
-  - [ ] Lixeira de eventos sem tela de restauração (continua)
+  - [ ] Lixeira de eventos sem tela de restauração (continua): `EventRepository` só tem `moveToTrash` (`contract.ts:238`), sem listar nem restaurar; com fotos é igual (`contract.ts:312`)
+  - [ ] Apagar foto pela tela: `useMovePhotosToTrash` (`hooks/use-photos.ts:79`) existe, mas nenhuma tela o usa (achado da varredura de 26/09/2026)
 
-### M3 — Fila, ingest-worker e galeria (spec §5.2, §7.2, §10, §11) · 1,5 semanas · risco baixo ✅ (21/09/2026, exceto deploy)
+### M3 — Fila, ingest-worker e galeria (spec §5.2, §7.2, §10, §11) · 1,5 semanas · risco baixo ✅ (21/09/2026; deploy em 26/09/2026)
 
 Migrations `iaschool_fase2_photo_jobs_queue` e `iaschool_fase2_batch_progress_rpcs` aplicadas no banco real em 21/09/2026 (referência em `supabase/fase2-photo-jobs-worker.sql`; ensaio com rollback e roundtrip funcional em `supabase/rehearsal/m3-checks.sql`). Worker em `artifacts/ingest-worker/`; cliente em `src/lib/gallery/`, `src/hooks/use-batch-progress.ts`, `src/components/event-photo-grid.tsx`, `event-upload-progress.tsx`.
 
@@ -191,7 +213,7 @@ Migrations `iaschool_fase2_photo_jobs_queue` e `iaschool_fase2_batch_progress_rp
 - [x] `/health` responde 503 quando a view `stalled_batch_jobs` (lote `running` parado há > 10 min **com job pendente**) tem linhas, quando o laço trava (> 60 s sem tick) ou durante o encerramento; a checagem da Fly reinicia a máquina. Lote abandonado pelo cliente sem job pendente não derruba o health (21/09/2026)
 - [x] Log estruturado (pino) com `batch_id`, `photo_id`, `job_id`, `attempt`, `duration_ms`, `result`; nunca nome de arquivo, nome de aluno ou URL assinada — verificado no ensaio ao vivo (21/09/2026)
 - [x] Testes: 8 de integração da fila (`tests/photo-jobs.integration.test.ts`: `photo_jobs` invisível para `authenticated`, trigger de enfileiramento, `claim_photo_jobs` com 4 chamadas paralelas sem id repetido, lease expirado, ciclo completo até `failed` e retry, grants, `stalled_batch_jobs` sob RLS) + os 11 de RLS de `photos` do M2 (dedup e isolamento entre escolas) verdes; 20 unitários do worker (sharp com imagem sintética, laço com concorrência ≤ 8 e shutdown, health, config); 23 unitários novos no app (EXIF, layout, cache de URLs, throttle, uploader) (21/09/2026)
-- [ ] Sobras do M3: `events.status` fica em `processing` até o M5 consumir os jobs `recognize`; backfill das fotos `pending` do M2 sem `batch_id` (só se houver dado real — hoje o banco está vazio); medir R3 (≤ 2 s) e §11.1 (≤ 300 ms/miniatura) com acervo de demonstração e worker na Fly; HEIC continua sem amostra real
+- [ ] Sobras do M3: backfill das fotos `pending` do M2 sem `batch_id` (só se houver dado real — hoje não há nenhuma foto no banco); medir R3 (≤ 2 s com 2.000 fotos) com acervo de demonstração; HEIC continua sem amostra real. Saíram daqui em 26/09/2026: o `events.status` parado em `processing`, resolvido pelo M5 (`fase3-face-recognition.sql:314-328` passa o evento para `review` e `fase3-review-audit-purge.sql:500` para `ready`), e a medição da §11.1, que ficou só nas sobras do M5
 
 ---
 
@@ -203,11 +225,11 @@ Migrations `iaschool_fase2_photo_jobs_queue` e `iaschool_fase2_batch_progress_rp
 - [x] D1 confirmada: InsightFace `buffalo_l` self-hosted. Precisão 0,993, cobertura 0,954, 4,6% para revisão, 0,21 s/foto, ~7 min por evento de 2.000 fotos (31/08/2026)
 - [x] Limiares recalibrados na spec: `tau` 0,52, margem 0,10, rosto < 60px direto para revisão, `det_size` 640 na referência / 1600 no evento, 1 processo por máquina (31/08/2026)
 - [x] `Dockerfile` do `face-worker` esboçado, apagando `genderage` e landmarks da imagem (31/08/2026)
-- [ ] Medição em GPU — dispensada; CPU cumpre a meta com folga
-- [ ] Comparação com AWS Rekognition — não executada (sem credencial); virou opcional
+- Dispensada, fora do backlog: medição em GPU — CPU cumpre a meta com folga
+- Opcional, fora do backlog: comparação com AWS Rekognition — não executada (sem credencial)
 - [!] Acurácia em criança de 4 a 10 anos — **não pode ser medida antes do piloto** (regra de conformidade proíbe foto real). É o risco que sustenta a revisão humana obrigatória (D6)
 
-### M4 — Autorizações e rosto de referência (spec §5.3, §5.4, §7.4) · 1 semana · risco médio ✅ (21/09/2026, exceto o embedding)
+### M4 — Autorizações e rosto de referência (spec §5.3, §5.4, §7.4) · 1 semana · risco médio ✅ (21/09/2026; embedding entregue pelo M5 no mesmo dia)
 
 Quatro migrations aplicadas no banco real em 21/09/2026
 (`iaschool_fase3_authorizations_reference_faces`,
@@ -231,9 +253,10 @@ contrato, com implementação Supabase e mock; `use-authorizations.ts` e
 - [x] Aba "Rosto de referência" em `/alunos/:id` (21/09/2026): **1 foto aceita no cadastro**, com aviso "cobertura baixa" até haver 2; sem `biometric_sorting` ativo a tela não deixa cadastrar e explica que a trava é do banco, não dela (decisão #8). A foto é preparada no cliente (HEIC → JPEG, 1280px de lado maior, sem EXIF — `prepareReferencePhoto`), sobe para `student-refs` e entra na fila; a tela mostra "aguardando processamento", deixa descartar, e mostra falha com "tentar de novo". Remover uma referência processada passa por `delete_student_reference_face`, que devolve o caminho para o cliente apagar o objeto
 - [x] `student_reference_faces.retention_until` = **fim do ano letivo**, sem renovação automática (21/09/2026): default `reference_retention_default()` = 31/12 do ano corrente. O efeito de vencer (apagar a referência mantendo o `student_id` das fotos confirmadas) é o expurgo do M6, que passou a rodar diariamente no `pg_cron` em 21/09/2026 — até lá o prazo era registro, não ação
 - [x] Indicador de prontidão na lista de alunos (21/09/2026): "N de M com rosto de referência · N sem consentimento · N autorizados sem foto · N aguardando processamento · N com cobertura baixa", com os dois primeiros recortes clicáveis. Junta `student_biometric_readiness(p_school)` com a contagem da fila; a coluna "Situação" da tabela passa a mostrar o estado por aluno. `ReferenceCoverageNotice` (aviso do evento, M2) passa a subtrair quem já tem referência processada
-- [~] Embedding de referência com `det_size` 640 — **o caminho está pronto, o motor não**. A fila `student_reference_jobs` liga a tela ao worker (mesma forma de `photo_jobs`: lease, 5 tentativas, `claim`/`complete` só para `service_role`), o roundtrip está testado no banco real e o consentimento é conferido duas vezes, ao enfileirar e ao concluir — revogado no meio, o job morre como `revoked` e nenhuma referência nasce. O que falta é quem calcula o vetor: InsightFace em Python, que é o `face-worker` do M5. Decisão de 21/09/2026: não duplicar esse worker no M4 nem gravar embedding de mentira para destravar tela — até o M5 as fotos ficam `queued` e a tela diz isso
+- [ ] Texto da aba de referência desatualizado: `student-reference-faces.tsx:322-324` ainda diz ao usuário "Esse serviço ainda não está no ar — as fotos ficam na fila até ele entrar", e o comentário em `:74-76` fala em "até o M5". O `face-worker` roda na Fly desde 26/09/2026 (achado da varredura do mesmo dia)
+- [x] Embedding de referência com `det_size` 640 — entregue pelo laço de referência do `face-worker` (M5, `face_worker/loop.py` e `handlers.handle_reference`) em 21/09/2026 e no ar desde 26/09/2026. Status corrigido de `[~]` para `[x]` na varredura de 26/09/2026. Histórico: no M4, **o caminho estava pronto, o motor não**. A fila `student_reference_jobs` liga a tela ao worker (mesma forma de `photo_jobs`: lease, 5 tentativas, `claim`/`complete` só para `service_role`), o roundtrip está testado no banco real e o consentimento é conferido duas vezes, ao enfileirar e ao concluir — revogado no meio, o job morre como `revoked` e nenhuma referência nasce. O que falta é quem calcula o vetor: InsightFace em Python, que é o `face-worker` do M5. Decisão de 21/09/2026: não duplicar esse worker no M4 nem gravar embedding de mentira para destravar tela — até o M5 as fotos ficam `queued` e a tela diz isso
 
-### M5 — face-worker, atribuição e pasta do aluno (spec §5.3, §7.3, §7.6, §11) · 2,5 semanas · **risco alto** ✅ (21/09/2026, exceto deploy)
+### M5 — face-worker, atribuição e pasta do aluno (spec §5.3, §7.3, §7.6, §11) · 2,5 semanas · **risco alto** ✅ (21/09/2026; deploy em 26/09/2026)
 
 Migrations `iaschool_fase3_photo_faces_recognition` e
 `iaschool_fase3_permanent_job_failure` aplicadas no banco real em 21/09/2026
@@ -257,9 +280,9 @@ roundtrip funcional em `supabase/rehearsal/m5-checks.sql`). Worker em
 - [x] Pasta do aluno como consulta N:N (R4, R6), aba "Fotos de eventos" em `/alunos/:id` (21/09/2026). RPC `student_photos`, só `confirmed`; foto com cinco crianças confirmadas aparece nas cinco pastas, com um arquivo só. A aba ficou vazia até o M6; desde a tela de revisão ela enche com o que uma pessoa confirmou, e ganhou o botão de baixar tudo em ZIP
 - [x] `SUPABASE_SERVICE_ROLE_KEY` só nos workers; nunca logar embedding, recorte ou nome (21/09/2026) — o log é JSON com id, contagem, duração e resultado, e o formatter não deixa passar nem stack trace do OpenCV, que carregaria caminho de arquivo
 - [x] Deploy do `face-worker` na Fly (26/09/2026): app `iaschool-face-worker`, org `personal`, gru, uma máquina `shared-cpu-2x` 2 GB, check em `/health` passando, motor carregado em ~13 s. Pegadinha registrada no README: o `fly deploy` precisa rodar **de dentro** de `artifacts/face-worker` (passar a pasta como contexto faz o flyctl não achar o `--config`)
-- [ ] Sobras do M5: medir §11.1 com o worker na mesma região (agora possível: os dois workers rodam em gru); rodar `bench_throughput.py` na máquina da Fly; recalibrar `tau`/margem com dado de criança no piloto
+- [ ] Sobras do M5: medir §11.1 (≤ 300 ms por miniatura) com o worker na mesma região (agora possível: os dois workers rodam em gru); recalibrar `tau`/margem com dado de criança no piloto. O `bench_throughput.py` na máquina da Fly é o item próprio acima
 
-### M6 — Revisão, trilha, expurgo e aceite (spec §7.5, §9.4, §12) · 2,5 semanas · risco médio ✅ (21/09/2026, exceto aceite medido e deploy)
+### M6 — Revisão, trilha, expurgo e aceite (spec §7.5, §9.4, §12) · 2,5 semanas · risco médio ✅ (21/09/2026, exceto aceite medido; deploy dos workers em 26/09/2026)
 
 > **Decisão de 18/09/2026:** D6 mantida, com o custo operacional atacado por
 > confirmação em lote por aluno. Prazo de 2 para 2,5 semanas — é uma tela a mais
@@ -294,8 +317,8 @@ Varredura do Storage em `artifacts/ingest-worker/src/purge.ts`.
 - [x] Testes RLS e de conformidade: 16 casos em `tests/face-review.integration.test.ts` contra o banco real — escola A não lê a revisão de B, `authenticated` não lê `embedding` (M5), trilha append-only e invisível para a outra escola, `storage_purge_queue` invisível para o cliente, lote tudo-ou-nada, concorrência, `confirmed` sempre com revisor, recusa preservando `bbox` (21/09/2026)
 - [ ] Aceite §12.2 com dado sintético/adulto: precisão `suggested` ≥ 0,99, cobertura ≥ 0,85, revisão ≤ 15%, falso positivo entre escolas = 0. **Não medido** — depende de um acervo de 2.000 fotos sintéticas que não existe nesta máquina
 - [ ] Recalibrar limiares com dado real da escola no piloto **antes** de reduzir a revisão manual
-- [ ] Sobras do M6: a lista de eventos ainda não mostra a pendência de revisão por evento (o cartão está na tela do evento); a tela do papel `dev` para `face_recognition_settings` (incluindo os dois cortes novos) continua na Fase 1 completa; o expurgo nunca rodou com dado de verdade, só no ensaio
-- [ ] Revisar o `grant` de `purge_expired_student_trash()` a `authenticated`: ela varre **todas** as escolas, não só a de quem chamou. Não é escalada — só apaga o que já venceu, e é assim desde a Fase 0 —, mas agora que o `pg_cron` roda o expurgo sozinho, o `execute` do cliente virou dispensável. O linter do Supabase também aponta as RPCs novas da revisão como "definer executável por authenticated": isso é intencional, elas checam `is_member_of` por dentro (mesmo padrão de `confirm_guardian_code` e `student_photos`)
+- [ ] Sobras do M6: a lista de eventos mostra o selo "Em revisão" (`events.tsx:112`), mas não **quantos** rostos faltam revisar — a contagem só aparece na tela do evento; a tela do papel `dev` para `face_recognition_settings` (incluindo os dois cortes novos) continua na Fase 1 completa; o expurgo nunca rodou com dado de verdade, só no ensaio — o `pg_cron` roda todo dia e a última execução, em 26/09/2026 às 03:20 UTC, terminou `succeeded`
+- [ ] Revisar o `grant` de `purge_expired_student_trash()` a `authenticated`: ela varre **todas** as escolas, não só a de quem chamou. Não é escalada — só apaga o que já venceu, e é assim desde a Fase 0 —, mas agora que o `pg_cron` roda o expurgo sozinho, o `execute` do cliente virou dispensável. O linter do Supabase também aponta as RPCs novas da revisão como "definer executável por authenticated": isso é intencional, elas checam `is_member_of` por dentro (mesmo padrão de `confirm_guardian_code` e `student_photos`). O `execute` de `anon` nas funções `security definer` é outra coisa e virou item próprio em "Publicação, CI e higiene" (26/09/2026)
 
 ---
 
@@ -308,8 +331,7 @@ Sem spec. `authorizations` (M4) já deixa os ganchos.
 - [ ] Eliminação a pedido do responsável (LGPD art. 18, VI): tira o aluno de cena (revoga, apaga biometria e `photo_faces` dele), **não apaga o arquivo**, que tem outras crianças autorizadas. Resposta em 15 dias (provisório)
 - [ ] Quem pode apagar antes do prazo: `school_admin` derruba evento e foto; `teacher`/`school_staff`, só foto do evento que criou; `dev`/`super_admin`, expurgo manual com trilha obrigatória
 - [ ] Papel `guardian` e portal do responsável — os ganchos nascem no M1: `guardians.user_id` (nulo) e `profiles.role`, cujo `check` ganha `'guardian'` como quarto valor
-- [x] Decisão de produto: foto com criança sem autorização na hora da entrega — **desfocar quem não autorizou** (18/09/2026; spec §9.3.1)
-- [ ] Implementar o desfoque na entrega: aplicado no arquivo, nunca como sobreposição de tela; gerado a partir do original para refletir a autorização do momento
+- [x] Decisão de produto: foto com criança sem autorização na hora da entrega — **desfocar quem não autorizou** (18/09/2026; spec §9.3.1). A implementação está na Fase 5, como a decisão de 18/09 diz (movida para lá em 26/09/2026)
 
 ---
 
@@ -322,6 +344,7 @@ Sem spec. Depende da pendência #7 fechada.
 - [ ] `delivery_queue` com retry por canal
 - [ ] Envio em lote via WhatsApp Business API com templates aprovados pela Meta
 - [ ] Trava de autorização por escopo (`delivery_whatsapp`, `social_media`) antes de qualquer envio/publicação
+- [ ] Implementar o desfoque na entrega (decisão de 18/09/2026, spec §9.3.1): aplicado no arquivo, nunca como sobreposição de tela; gerado a partir do original para refletir a autorização do momento. Depende do `bbox` e do `det_score` que o M5 e o M6 já preservam
 
 ---
 
