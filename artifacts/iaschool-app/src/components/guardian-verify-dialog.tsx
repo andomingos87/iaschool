@@ -39,14 +39,11 @@ export function GuardianVerifyDialog({
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [sent, setSent] = useState(false);
-  /** Só existe no modo demo; em produção o código nunca volta ao cliente. */
-  const [demoCode, setDemoCode] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) return;
     setCode("");
     setSent(false);
-    setDemoCode(null);
   }, [open]);
 
   const guardian = student?.guardian;
@@ -55,14 +52,11 @@ export function GuardianVerifyDialog({
     if (!student) return;
     setSending(true);
     try {
-      const { demoCode: demo } = await getDataLayer().guardianVerification.requestCode(
-        student.id,
-      );
+      await getDataLayer().guardianVerification.requestCode(student.id);
       setSent(true);
-      setDemoCode(demo ?? null);
       toast({
-        title: "Código enviado",
-        description: `Enviamos um código para ${storedToMasked(guardian?.whatsapp ?? "")}.`,
+        title: "Envio solicitado",
+        description: `O provedor aceitou a solicitação para ${storedToMasked(guardian?.whatsapp ?? "")}. Confira o WhatsApp do responsável.`,
       });
     } catch (err) {
       toast({
@@ -137,18 +131,6 @@ export function GuardianVerifyDialog({
               </Button>
             ) : (
               <div className="space-y-3">
-                {demoCode && (
-                  <p
-                    className="rounded-md border border-dashed border-primary/50 p-2 text-center text-xs text-muted-foreground"
-                    data-testid="text-demo-code"
-                  >
-                    Modo demonstração — o código é{" "}
-                    <span className="font-mono font-semibold text-foreground">
-                      {demoCode}
-                    </span>
-                    . Em produção ele só chega ao WhatsApp do responsável.
-                  </p>
-                )}
                 <div className="space-y-2">
                   <Label htmlFor="guardian-code">Código recebido</Label>
                   <Input

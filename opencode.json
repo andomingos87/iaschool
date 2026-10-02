@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "supabase-iaschool": {
+        "type": "local",
+        "cwd": ".",
+        "command": [
+          "sh",
+          "-c",
+          "set -a; [ -f ./.env.local ] && . ./.env.local; [ -f ./.env ] && . ./.env; set +a; if [ -z \"$SUPABASE_ACCESS_TOKEN\" ]; then echo 'ERRO: SUPABASE_ACCESS_TOKEN vazio. Preencha em .env.local ou .env na raiz do repositorio.' >&2; exit 1; fi; exec npx -y @supabase/mcp-server-supabase@latest --project-ref=jtyyauivokutperouqyh --features=docs,database,debugging,development,functions,branching,storage"
+        ]
+      },
+      "supabase": {
+        "type": "remote",
+        "url": "https://mcp.supabase.com/mcp?project_ref=blykqmbgwhhctromwtjp",
+        "disabled": true
+      }
+    }
+  }
+}

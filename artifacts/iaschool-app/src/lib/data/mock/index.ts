@@ -1550,64 +1550,13 @@ const generation: ImageGenerationService = createOpenAIGenerationService(
 
 // ---------- Conformidade ECA Digital ----------
 
-/** Código de confirmação do WhatsApp do responsável (modo demo). */
-interface GuardianCode {
-  code: string;
-  /** ISO de expiração — códigos velhos não valem. */
-  expiresAt: string;
-}
-
-const GUARDIAN_CODE_TTL_MINUTES = 10;
-
-function readGuardianCodes(): Record<string, GuardianCode> {
-  return readValue<Record<string, GuardianCode>>("guardian-codes") ?? {};
-}
-
-/**
- * Verificação do canal do responsável. No modo demo o código é devolvido à
- * tela; em produção ele sai por WhatsApp/SMS e nunca volta ao cliente.
- */
+/** Verificação de WhatsApp não é simulada pelo mock: ela falha fechada. */
 const guardianVerification: GuardianVerificationService = {
-  async requestCode(studentId) {
-    await delay(500);
-    const student = await studentsCrud.get(studentId);
-    if (!student) throw new Error("Aluno não encontrado.");
-    if (!student.guardian?.whatsapp) {
-      throw new Error(
-        "Cadastre o responsável legal antes de verificar o WhatsApp.",
-      );
-    }
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    const codes = readGuardianCodes();
-    codes[studentId] = {
-      code,
-      expiresAt: new Date(
-        Date.now() + GUARDIAN_CODE_TTL_MINUTES * 60 * 1000,
-      ).toISOString(),
-    };
-    writeValue("guardian-codes", codes);
-    return { demoCode: code };
+  async requestCode() {
+    throw new Error("A verificação pelo WhatsApp está indisponível neste modo.");
   },
-  async confirmCode(studentId, code) {
-    await delay(500);
-    const codes = readGuardianCodes();
-    const entry = codes[studentId];
-    if (!entry) throw new Error("Peça um novo código.");
-    if (new Date(entry.expiresAt).getTime() < Date.now()) {
-      delete codes[studentId];
-      writeValue("guardian-codes", codes);
-      throw new Error("O código expirou. Peça um novo.");
-    }
-    if (entry.code !== code.replace(/\D/g, "")) {
-      throw new Error("Código incorreto.");
-    }
-    const student = await studentsCrud.get(studentId);
-    if (!student?.guardian) throw new Error("Aluno sem responsável cadastrado.");
-    delete codes[studentId];
-    writeValue("guardian-codes", codes);
-    return studentsCrud.update(studentId, {
-      guardian: { ...student.guardian, whatsappVerifiedAt: nowIso() },
-    });
+  async confirmCode() {
+    throw new Error("A verificação pelo WhatsApp está indisponível neste modo.");
   },
 };
 

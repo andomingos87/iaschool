@@ -3,11 +3,13 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 26/09/2026 (**upload aceita HEIC do iPhone em todas as telas, e mais formatos**: a foto do aluno, a logo da escola e os modelos de arte (`MultiUpload` → `useImageUpload`) mandavam o HEIC direto para a compressão, que o Chrome não decodifica, e davam "Falha no upload". Agora os três caminhos passam pelo mesmo preparo em `src/lib/upload/image.ts`: HEIC detectado por MIME, extensão ou pelos bytes do arquivo vira JPEG, e o lote do evento passou a aceitar WebP, AVIF, GIF e BMP. Testado no Chromium com HEIC gerado pelo ImageIO do macOS, inclusive retrato com rotação. Antes, no mesmo dia, **produção conferida na `main`**: os PRs empilhados #10 e #11 foram mergeados fora de ordem, e o #12 levou o deploy para a `main`. Antes, no mesmo dia, **app publicado e API de geração no ar**: `iaschool-app` na Vercel em `https://iaschool-app.vercel.app` (time `andomingos87s-projects`, ligado ao repositório, raiz `artifacts/iaschool-app`) e o `api-server` na Fly como `iaschool-api` (gru, uma máquina que dorme sem tráfego); rewrite `/api` trocado e fallback de SPA no `vercel.json`; Site URL e Redirect URLs do Supabase Auth apontando para o app. Conferido de fora: tela de login sem erro no console, rotas internas com 200, `/api/healthz` 200 e cota 401 sem sessão pelo domínio da Vercel. Geração com usuário logado **não testada** em produção. Antes, no mesmo dia, **correções de código da varredura**: limpeza dos testes de integração refeita (`cleanupTestData`) e 87 usuários + 7 escolas de teste apagados do banco real, com a suíte inteira rodada depois sem deixar resíduo; bug achado no caminho — apagar escola ou aluno com rosto de referência falhava porque a trilha gravava em cima da cascata — corrigido pela migration `iaschool_fase3_audit_tolerates_cascade_delete`; `execute` de `anon` revogado em 8 helpers `security definer` (`iaschool_revoke_definer_helpers_from_anon`); `dev` passa na API de logs e na galeria; teste do api-server sem o papel `student`; texto da aba de referência atualizado. Testes: typecheck ok, 159 unitários do app, 6 unitários e 10 de integração do api-server, 114 de 117 de integração do app — as 3 falhas são de `photo-jobs` e vêm da disputa com o `ingest-worker` da Fly, falham igual no código anterior (item novo em "Publicação, CI e higiene"). Antes, no mesmo dia, **varredura geral** backlog × código × GitHub × Vercel × Supabase × Fly: marcos, as 24 migrations, os workers e os testes batem com o que está escrito — typecheck e 159 + 24 + 33 testes unitários rodados de novo; os achados novos estão em "Publicação, CI e higiene": o app não está publicado, a API de geração está fora do ar, os testes de integração deixam lixo no banco real e a CI não roda testes. Status corrigidos no M3, M4, M5, M6, M0 e na Fase 1 completa. Mais cedo no mesmo dia, **workers implantados na Fly**: `iaschool-ingest-worker` e `iaschool-face-worker`, org `personal`, região gru, uma máquina cada, `/health` passando nos dois. Antes: 21/09/2026, **M4, M5 e M6 concluídos**. M4: consentimento por escopo, rosto de referência e a fila que liga a tela ao motor facial. M5: `face-worker` em Python rodando de verdade contra o banco — 20 rostos detectados numa cena de teste, 3 sugeridos, 17 sem atribuição e sem vetor, evento movido para `review` —, `photo_faces` com o vetor bloqueado por privilégio de coluna, busca vetorial isolada por escola e pasta do aluno. M6: tela `/eventos/:id/revisao` com cartão por aluno e confirmação em lote, fila individual por teclado, `biometric_events` append-only, `purge_expired_biometrics()` diária no `pg_cron`, fila de expurgo do Storage consumida pelo `ingest-worker` e ZIP da pasta do aluno. 275 testes do app (159 unitários + 116 de integração contra o banco real) + 33 do face-worker + 24 do ingest-worker verdes; imagem do face-worker construída e testada)
+**Atualizado em:** 02/10/2026 (**fundação WhatsApp aplicada e funções publicadas**: migration `iaschool_fase4_whatsapp_foundation` aplicada via MCP `supabase-iaschool` em 02/10/2026 (tabelas `whatsapp_*`, allowlist/teto/kill switch, OTP com hash bcrypt e RPCs de reserva/status) e Edge Functions `send-guardian-code` (v4) e `provider-webhook` (v2) publicadas — ambas falham fechado (`503`) sem `WHATSAPP_MODE` configurado; nenhum secret, instância Z-API ou envio real. Antes, em 29/09/2026, **ponte temporária Z-API aprovada**: D8 permite validar o fluxo com até quatro destinatários allowlisted e obriga migração para a Meta antes do uso comercial. Antes, em 27/09/2026, **spec e backlog do WhatsApp oficial aprovados**: D1–D7 homologadas; Trilha A dividida em W0–W5 com tarefas, testes e critérios de aceite. Antes, em 26/09/2026, **upload aceita HEIC do iPhone em todas as telas, e mais formatos**: a foto do aluno, a logo da escola e os modelos de arte (`MultiUpload` → `useImageUpload`) mandavam o HEIC direto para a compressão, que o Chrome não decodifica, e davam "Falha no upload". Agora os três caminhos passam pelo mesmo preparo em `src/lib/upload/image.ts`: HEIC detectado por MIME, extensão ou pelos bytes do arquivo vira JPEG, e o lote do evento passou a aceitar WebP, AVIF, GIF e BMP. Testado no Chromium com HEIC gerado pelo ImageIO do macOS, inclusive retrato com rotação. Antes, no mesmo dia, **produção conferida na `main`**: os PRs empilhados #10 e #11 foram mergeados fora de ordem, e o #12 levou o deploy para a `main`. Antes, no mesmo dia, **app publicado e API de geração no ar**: `iaschool-app` na Vercel em `https://iaschool-app.vercel.app` (time `andomingos87s-projects`, ligado ao repositório, raiz `artifacts/iaschool-app`) e o `api-server` na Fly como `iaschool-api` (gru, uma máquina que dorme sem tráfego); rewrite `/api` trocado e fallback de SPA no `vercel.json`; Site URL e Redirect URLs do Supabase Auth apontando para o app. Conferido de fora: tela de login sem erro no console, rotas internas com 200, `/api/healthz` 200 e cota 401 sem sessão pelo domínio da Vercel. Geração com usuário logado **não testada** em produção. Antes, no mesmo dia, **correções de código da varredura**: limpeza dos testes de integração refeita (`cleanupTestData`) e 87 usuários + 7 escolas de teste apagados do banco real, com a suíte inteira rodada depois sem deixar resíduo; bug achado no caminho — apagar escola ou aluno com rosto de referência falhava porque a trilha gravava em cima da cascata — corrigido pela migration `iaschool_fase3_audit_tolerates_cascade_delete`; `execute` de `anon` revogado em 8 helpers `security definer` (`iaschool_revoke_definer_helpers_from_anon`); `dev` passa na API de logs e na galeria; teste do api-server sem o papel `student`; texto da aba de referência atualizado. Testes: typecheck ok, 159 unitários do app, 6 unitários e 10 de integração do api-server, 114 de 117 de integração do app — as 3 falhas são de `photo-jobs` e vêm da disputa com o `ingest-worker` da Fly, falham igual no código anterior (item novo em "Publicação, CI e higiene"). Antes, no mesmo dia, **varredura geral** backlog × código × GitHub × Vercel × Supabase × Fly: marcos, as 24 migrations, os workers e os testes batem com o que está escrito — typecheck e 159 + 24 + 33 testes unitários rodados de novo; os achados novos estão em "Publicação, CI e higiene": o app não está publicado, a API de geração está fora do ar, os testes de integração deixam lixo no banco real e a CI não roda testes. Status corrigidos no M3, M4, M5, M6, M0 e na Fase 1 completa. Mais cedo no mesmo dia, **workers implantados na Fly**: `iaschool-ingest-worker` e `iaschool-face-worker`, org `personal`, região gru, uma máquina cada, `/health` passando nos dois. Antes: 21/09/2026, **M4, M5 e M6 concluídos**. M4: consentimento por escopo, rosto de referência e a fila que liga a tela ao motor facial. M5: `face-worker` em Python rodando de verdade contra o banco — 20 rostos detectados numa cena de teste, 3 sugeridos, 17 sem atribuição e sem vetor, evento movido para `review` —, `photo_faces` com o vetor bloqueado por privilégio de coluna, busca vetorial isolada por escola e pasta do aluno. M6: tela `/eventos/:id/revisao` com cartão por aluno e confirmação em lote, fila individual por teclado, `biometric_events` append-only, `purge_expired_biometrics()` diária no `pg_cron`, fila de expurgo do Storage consumida pelo `ingest-worker` e ZIP da pasta do aluno. 275 testes do app (159 unitários + 116 de integração contra o banco real) + 33 do face-worker + 24 do ingest-worker verdes; imagem do face-worker construída e testada)
 **Fontes:** [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) (roadmap por
 fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-massa-reconhecimento-facial.md)
 (marcos M0–M6), [`docs/pendencias-producao.md`](docs/pendencias-producao.md),
-[`docs/spike-reconhecimento-facial.md`](docs/spike-reconhecimento-facial.md).
+[`docs/spike-reconhecimento-facial.md`](docs/spike-reconhecimento-facial.md) e
+[`docs/spec-whatsapp-api-oficial-entrega-fotos.md`](docs/spec-whatsapp-api-oficial-entrega-fotos.md)
+(marcos W0–W5).
 
 ## Como usar
 
@@ -15,7 +17,7 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 - Um item só vira `[x]` depois de executado e conferido (typecheck, teste, migration aplicada, tela aberta). "Escrito mas não rodado" fica `[~]`.
 - Ao concluir um item, registre a data em `(dd/mm/aaaa)`. Datas sempre absolutas.
 - Ao abrir uma frente nova, quebre-a aqui **antes** de codar; a spec detalha, o backlog rastreia.
-- Regra bloqueante enquanto a seção "Transversal" não fechar: **nenhuma foto real de menor** e **nenhum WhatsApp ligado** (ver `AGENTS.md`).
+- Regra bloqueante enquanto a seção "Transversal" não fechar: **nenhuma foto real de menor**. A única chamada externa antecipada é `controlled_zapi`, limitada pelos gates da spec §18.1; não libera uso comercial (ver `AGENTS.md`).
 
 ## Visão geral
 
@@ -27,7 +29,7 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 | 2 — Upload em massa | M2, M3 | ✅ **M2** (20/09/2026) e **M3** (21/09/2026) concluídos; `ingest-worker` implantado na Fly (26/09/2026) | — |
 | 3 — Reconhecimento facial | M0 ✅, M4, M5, M6 | 🔬 spike feito; ✅ **M4, M5 e M6 concluídos** (21/09/2026); os dois workers implantados na Fly (26/09/2026); faltam as medições de aceite (§12.2) com acervo sintético | 6 sem |
 | 4 — Autorização granular + portal | — | ❌ sem spec | 2–3 sem |
-| 5 — Lote e WhatsApp | — | ❌ sem spec | 4–6 sem |
+| 5 — Lote e WhatsApp | W0–W5 | ✅ spec aprovada; D8 adiciona Z-API temporária para até 4 pessoas; implementação aberta; Meta obrigatória antes do comercial | 4–6 sem de engenharia + prazo externo da Meta |
 
 MVP para piloto em 1 escola = Fases 0 + 1 + 2 + 3 (com revisão manual
 obrigatória) ≈ 2,5 a 3 meses a partir do início do M1 — 11,5 a 12,5 semanas
@@ -344,31 +346,362 @@ Sem spec. `authorizations` (M4) já deixa os ganchos.
 
 ---
 
-## Fase 5 — Criação e envio em lote · 4–6 semanas · **risco alto** (dependência da Meta)
+## Fase 5 — Criação e envio em lote · **risco alto** (dependência da Meta)
 
-Sem spec. Depende da pendência #7 fechada.
+### Trilha A — Ponte Z-API e WhatsApp oficial para OTP e entrega privada · W0–W5
 
-- [ ] Spec da fase
-- [ ] Templates de evento e geração em lote (1 arte → N alunos); subir cota e rate limit de `generation-quota.ts`
-- [ ] `delivery_queue` com retry por canal
-- [ ] Envio em lote via WhatsApp Business API com templates aprovados pela Meta
-- [ ] Trava de autorização por escopo (`delivery_whatsapp`, `social_media`) antes de qualquer envio/publicação
-- [ ] Implementar o desfoque na entrega (decisão de 18/09/2026, spec §9.3.1): aplicado no arquivo, nunca como sobreposição de tela; gerado a partir do original para refletir a autorização do momento. Depende do `bbox` e do `det_score` que o M5 e o M6 já preservam
+Spec aprovada em 27/09/2026:
+[`docs/spec-whatsapp-api-oficial-entrega-fotos.md`](docs/spec-whatsapp-api-oficial-entrega-fotos.md).
+
+Decisões homologadas: Meta Cloud API direta como provedor definitivo; Z-API
+como ponte temporária, não comercial e limitada a quatro destinatários;
+link privado temporário; professor prepara e `school_admin` ou `school_staff`
+aprova; fila em tabelas com claim atômico; derivado por destinatário guardado
+por até 7 dias; falha fechada sem fallback automático.
+
+Sequência técnica: **W0 → W1 → W2 → W3 → W4 → W5**. O ramo Z-API permite E2E
+controlado antes do contrato. Depois do contrato, W0 e W4 reabrem para ativar
+Meta e repetir a suíte de contrato e o E2E. Foto real de menor continua
+bloqueada até os gates da spec §18; antes disso, usar material sintético/adulto.
+
+#### W0 — Provedores e homologação operacional
+
+**Objetivo:** criar a fronteira descartável de provedor, operar a ponte Z-API
+com limites duros e preparar a migração obrigatória para a Meta.
+
+**Implementação local em 29/09/2026:** interface de provedor e adaptador Z-API
+de texto, templates versionados, validação E.164, reserva atômica do teto e
+allowlist no SQL de referência, mais receptor de status por rota secreta.
+
+**Publicado em 02/10/2026:** migration `iaschool_fase4_whatsapp_foundation`
+aplicada via MCP `supabase-iaschool` (`whatsapp_controlled_settings`,
+`whatsapp_controlled_allowlist`, `whatsapp_messages`, `whatsapp_webhook_events`;
+`guardian_verification_codes` com `code_hash`/`phone_hash`; RPCs
+`reserve_whatsapp_send`, `complete_whatsapp_send`,
+`record_whatsapp_provider_status`). Edge Functions `send-guardian-code` (v4) e
+`provider-webhook` (v2) publicadas; sem `WHATSAPP_MODE`, ambas respondem `503`
+(fail-closed). Faltam ainda: secrets e instância Z-API, webhook HTTPS,
+integração Meta e homologação operacional (avaliação de impacto, termo,
+retenções, runbook).
+
+Tarefas:
+
+- [x] Aprovar D1 a D7 da spec (27/09/2026)
+- [x] Aprovar D8: Z-API temporária, até quatro allowlisted e Meta antes do comercial (29/09/2026)
+- [ ] Criar `WhatsAppProvider` com adaptadores falso, Z-API e Meta
+- [ ] Centralizar as mensagens lógicas versionadas de OTP, consentimento e álbum pronto
+- [ ] Implementar `WHATSAPP_MODE=simulation|controlled_zapi|meta_test|pilot|production`, somente no servidor
+- [ ] Implementar allowlist E.164 de 1 a 4 pessoas, teto de 40 mensagens/dia, uma escola habilitada e kill switch
+- [ ] Configurar instância Z-API, QR code, token da instância e `Client-Token`, sem valores no Git ou logs
+- [ ] Configurar webhook HTTPS Z-API com segredo de rota, `instanceId` esperado e correlação por `messageId`/telefone
+- [ ] Atualizar avaliação de impacto e mapa de operadores para incluir Z-API e WhatsApp
+- [ ] Escrever e homologar o termo versionado de `delivery_whatsapp`
+- [ ] Homologar a retenção proposta da spec §11.3 e documentar a base de cada prazo
+- [ ] Registrar custo, suporte, desconexão, bloqueio e encerramento da Z-API no runbook
+
+Tarefas obrigatórias após o contrato e antes do uso comercial:
+
+- [ ] Confirmar no ambiente remoto Business Portfolio, WABA, Meta App e número dedicado do IAschool
+- [ ] Concluir verificação da empresa, método de pagamento e modo Live do Meta App
+- [ ] Criar usuário de sistema com os menores privilégios necessários e política de rotação do token
+- [ ] Assinar a WABA no endpoint de webhook e registrar verify token e App Secret como secrets
+- [ ] Submeter e aprovar `guardian_verification_code` em `pt_BR`, categoria Authentication
+- [ ] Submeter e aprovar `guardian_consent_request`; registrar a categoria aceita pela Meta
+- [ ] Submeter e aprovar `guardian_event_photos_ready`; registrar a categoria aceita pela Meta
+- [ ] Configurar secrets Meta no projeto Supabase, sem valores no Git ou logs
+- [ ] Implementar `MetaCloudProvider` sem alterar domínio, fila, auditoria ou UI
+- [ ] Desabilitar `controlled_zapi` e repetir a suíte de contrato e o E2E em `meta_test`
+- [ ] Registrar preços, limites, qualidade dos templates e procedimento de suporte no runbook
+
+Testes e evidências:
+
+- [ ] Suite de contrato igual para os adaptadores falso, Z-API e Meta
+- [ ] Z-API: rejeitar quinto número, não allowlisted, teto diário e modo pausado antes da rede
+- [ ] Z-API: simular 2xx, 4xx, 429, 5xx, timeout e payload inesperado
+- [ ] Z-API: rejeitar webhook com segredo, `instanceId`, `messageId` ou telefone divergente
+- [ ] Enviar somente texto/link para até quatro pessoas autorizadas e confirmar `SENT`, `RECEIVED` e `READ`
+- [ ] Confirmar que nenhum binário de foto é transmitido à Z-API
+- [ ] Meta: enviar template de teste somente para adultos internos autorizados
+- [ ] Meta: confirmar por webhook `sent`, `delivered` e, quando disponível, `read`
+- [ ] Confirmar que template rejeitado ou pausado bloqueia o fluxo
+- [ ] Confirmar que nenhum secret aparece no bundle Vite, resposta HTTP, console ou log
+- [ ] Fazer leitura remota dos ativos e registrar somente ids não secretos e estados necessários
+
+Critérios de aceite:
+
+- [ ] `controlled_zapi` funciona somente para 1–4 allowlisted, uma escola e até 40 mensagens/dia
+- [ ] Resposta 2xx é `accepted`; entrega e leitura vêm do webhook correlacionado
+- [ ] Z-API recebe somente texto e link privado, sem foto anexada
+- [ ] Termo e retenções homologados
+- [ ] Teste inicial usa material sintético/adulto até os gates gerais para menores
+- [ ] Migração para Meta não exige mudar regras de produto, banco ou interface
+- [ ] WABA, empresa, número, pagamento, token e permissões comprovados antes do comercial
+- [ ] Três templates Meta aprovados e ativos antes do comercial
+
+#### W1 — OTP real e trilha de mensagens
+
+**Objetivo:** substituir a simulação por verificação real do número, sem expor o
+código ao cliente.
+
+**Implementação local em 29/09/2026:** Edge Function preparada para o provedor;
+código legado é descartado pela migration de referência e substituído por hash
+bcrypt do OTP e do número, com expiração e limites; no modo mock a verificação
+falha fechada.
+
+**Publicado em 02/10/2026:** migration aplicada e lida de volta (coluna `code`
+removida; `confirm_guardian_code` agora retorna `boolean`; `anon` sem `execute`
+nas funções novas) e `send-guardian-code` v4 publicada. Falta validar envio
+adulto real, que depende da instância Z-API e dos secrets.
+
+Tarefas:
+
+- [ ] Criar migration do OTP e de `whatsapp_messages`, mantendo o SQL de referência no mesmo commit
+- [ ] Substituir `guardian_verification_codes.code` por `code_hash` e migrar sem preservar códigos pendentes em texto
+- [ ] Adicionar hash do número verificado e invalidá-lo ao mudar `guardians.whatsapp`
+- [ ] Implementar limites de 60 s entre envios, 5 por hora e 10 por dia por número
+- [ ] Limitar a confirmação a cinco tentativas e consumir o código no sucesso
+- [ ] Implementar adaptadores falso, Z-API e Meta sob `WhatsAppProvider`
+- [ ] Alterar `send-guardian-code` para enviar a mensagem lógica de OTP e guardar provedor + ID externo
+- [ ] Remover `demoCode` e `simulated` da resposta, UI e tipos
+- [ ] Implementar `provider-webhook`: validação específica, correlação, deduplicação e estados do OTP
+- [ ] Atualizar a tela para diferenciar solicitado, aceito pelo provedor, entregue, confirmado, expirado e falho
+- [ ] Revogar acesso do cliente a código, mensagem completa e tabelas operacionais
+- [ ] Aplicar a migration somente pelo MCP `supabase-iaschool`, após revisão e autorização do marco
+- [ ] Publicar `send-guardian-code` e `whatsapp-webhook` somente depois dos testes locais e de integração
+
+Testes:
+
+- [ ] Unitários: E.164, geração/hash, expiração, limites, cinco tentativas e sanitização de erros
+- [ ] Integração: outra escola, usuário não aprovado, responsável ausente, número alterado, corrida e código reutilizado
+- [ ] RLS/grants: `anon` e `authenticated` não leem código nem `whatsapp_messages`
+- [ ] Função: contratos falso/Z-API/Meta para 2xx, 4xx, 429, 5xx, timeout e resposta malformada
+- [ ] Webhook Meta: verify token, assinatura, `phone_number_id` e repetição
+- [ ] Webhook Z-API: segredo, instância, mensagem, telefone, repetição e status desconhecido
+- [ ] E2E com adulto: código chega, não aparece no browser/log/banco em texto e confirma o número correto
+
+Critérios de aceite:
+
+- [ ] Código nunca aparece no cliente, log ou banco em texto
+- [ ] Expira em 10 minutos, respeita limites e aceita no máximo cinco tentativas
+- [ ] Trocar o número invalida verificação, tokens e envios pendentes
+- [ ] UI não apresenta HTTP 2xx de nenhum provedor como entrega
+- [ ] Ao menos um OTP real tem `delivered` comprovado por webhook em ambiente de teste
+- [ ] Advisors do Supabase sem achado novo crítico do marco
+
+#### W2 — Consentimento direto do responsável
+
+**Objetivo:** obter autorização granular e versionada pelo próprio responsável,
+separada da verificação do número e da declaração da escola.
+
+Tarefas:
+
+- [ ] Criar migration de `guardian_action_tokens` e evidência de aceite `guardian_link`
+- [ ] Implementar token opaco de 256 bits, hash no banco, uso único e expiração em 24 h
+- [ ] Implementar `request-guardian-consent` com checagem de membro, canal verificado e antiflood
+- [ ] Implementar `guardian-consent` para trocar token, exibir termo e registrar aceite ou recusa
+- [ ] Criar página pública de consentimento com `noindex`, `no-referrer`, CSP e linguagem simples
+- [ ] Exigir ação afirmativa; toggles começam desligados e silêncio não autoriza
+- [ ] Gravar `guardian_id`, `termsVersion`, data, canal e sessão na evidência
+- [ ] Impedir `school_declaration` e consentimento legado de liberar entrega real
+- [ ] Substituir o toggle direto da escola por estados e ações de solicitação
+- [ ] Implementar recusa, revogação e nova concessão como registros históricos separados
+- [ ] Invalidar tokens de consentimento ao trocar número ou responsável principal
+- [ ] Publicar `request-guardian-consent` e `guardian-consent` após aceite técnico
+
+Testes:
+
+- [ ] Unitários: token válido, expirado, usado, revogado, hash e resposta sem enumeração
+- [ ] Integração: escola A não solicita para responsável da B; cliente não cria aceite direto
+- [ ] Integração: declaração da escola não satisfaz o preflight; aceite versionado satisfaz
+- [ ] Integração: recusa e revogação não podem ser revertidas por update do cliente
+- [ ] Concorrência: aceite e revogação simultâneos terminam no estado mais protetivo
+- [ ] E2E com adulto: mensagem, link, termo, aceite, leitura do estado pela escola e revogação
+
+Critérios de aceite:
+
+- [ ] Responsável aceita diretamente um termo versionado para `delivery_whatsapp`
+- [ ] Verificação do canal e consentimento aparecem como fatos separados
+- [ ] Escola não aceita em nome do responsável
+- [ ] Recusa ou revogação bloqueia o preflight imediatamente
+- [ ] Texto informa finalidade, provedores envolvidos no modo ativo, retenção e limite da revogação após download
+
+#### W3 — Lote, derivados protegidos e prévia
+
+**Objetivo:** congelar uma entrega elegível, gerar versões protegidas e exigir
+revisão humana antes de enfileirar mensagens.
+
+Tarefas de banco e segurança:
+
+- [ ] Criar migrations de `delivery_batches`, `delivery_recipients`, `delivery_recipient_students` e `delivery_items`
+- [ ] Criar `delivery_render_jobs`, `delivery_access_sessions`, `delivery_events` e deduplicação de webhook
+- [ ] Criar bucket privado `delivery-assets`, sem policy para `anon` ou `authenticated`
+- [ ] Criar RPC transacional de preflight e congelamento do lote por escola e evento
+- [ ] Criar RPC de aprovação que exige `school_admin` ou `school_staff`
+- [ ] Permitir ao `teacher` preparar, mas nunca aprovar ou enviar
+- [ ] Impedir `dev` e `super_admin` de enviar sem vínculo escolar permitido
+- [ ] Expor somente projeções seguras por RPC, sem telefone completo, token ou caminho de objeto
+- [ ] Publicar progresso por Realtime sem expor dados do destinatário
+
+Tarefas de imagem e worker:
+
+- [ ] Estender o `ingest-worker` para reivindicar `delivery_render_jobs`
+- [ ] Gerar derivado por destinatário a partir do original, removendo EXIF
+- [ ] Manter nítido somente aluno daquele responsável e `adult_or_staff` confirmado
+- [ ] Desfocar outros alunos, `suggested`, `unassigned` e `not_a_student`
+- [ ] Guardar derivado e miniatura por no máximo 7 dias
+- [ ] Integrar expiração e revogação a `storage_purge_queue`
+- [ ] Garantir que reprocessamento sobrescreve o caminho determinístico e não deixa órfão
+
+Tarefas de interface:
+
+- [ ] Criar `/eventos/:id/entregas` com preflight por turma e motivo de bloqueio
+- [ ] Agrupar irmãos em uma entrega por responsável e evento
+- [ ] Criar rascunho, progresso de render, grade da prévia e aprovação
+- [ ] Exigir revisão da versão final; o blur precisa existir nos pixels, não em CSS
+- [ ] Permitir cancelamento somente antes da transmissão ao provedor
+
+Testes:
+
+- [ ] Unitários: elegibilidade, agrupamento de irmãos, estados, idempotência e regra de blur
+- [ ] Worker: alvo nítido; terceiros/unknown desfocados; adulto nítido; sem EXIF; hash estável
+- [ ] Worker: falha, lease vencido, cinco tentativas, reprocessamento e purge
+- [ ] Integração: isolamento entre escolas, papéis, snapshot de autorização e lote duplicado
+- [ ] Concorrência: aprovação versus revogação e duas aprovações simultâneas
+- [ ] Storage: `anon`/`authenticated` sem acesso; service role gera e purge remove
+- [ ] UI: preflight, estados vazios/erro, prévia e bloqueios com dados sintéticos
+
+Critérios de aceite:
+
+- [ ] Só `photo_faces.state = 'confirmed'` do aluno entra como foto dele
+- [ ] Uma mensagem futura corresponde a um responsável e evento, mesmo com irmãos
+- [ ] Todas as outras crianças e rostos incertos aparecem desfocados na prévia
+- [ ] Pessoa autorizada revisa a versão final antes de aprovar
+- [ ] Revogação cancela itens ainda não enviados e enfileira expurgo
+- [ ] Derivados expiram e são removidos com leitura de banco e Storage
+
+#### W4 — Envio, webhook, acesso privado e download
+
+**Objetivo:** enviar o link pelo provedor ativo, comprovar o estado real e
+entregar os arquivos por sessão temporária e revogável.
+
+Tarefas:
+
+- [ ] Implementar claim atômico de destinatários com lease e lote pequeno
+- [ ] Implementar `process-whatsapp-deliveries` contra `WhatsAppProvider`
+- [ ] Renderizar a mensagem lógica como texto Z-API ou template Meta
+- [ ] Criar uma linha em `whatsapp_messages` por tentativa, com provedor e ID externo
+- [ ] Implementar retry com jitter para 429/5xx e falha permanente para erros não recuperáveis
+- [ ] Marcar timeout pós-transmissão como `unknown` e aguardar reconciliação antes de retry
+- [ ] Completar `provider-webhook` para normalizar `sent`, `delivered`, `read` e `failed`
+- [ ] Aplicar eventos fora de ordem pelo timestamp sem regredir o estado conhecido
+- [ ] Implementar troca do link de uso único por cookie `HttpOnly`, `Secure`, `SameSite=Lax`
+- [ ] Implementar `guardian-delivery` com revalidação de autorização em cada acesso
+- [ ] Assinar URLs de Storage por no máximo 5 minutos e responder com cache privado/no-store
+- [ ] Implementar download individual e ZIP sob demanda, sem persistir o ZIP
+- [ ] Gravar eventos de acesso e download sem URL, token, nome ou telefone
+- [ ] Atualizar a tela do lote por Realtime com textos distintos para cada estado
+- [ ] Publicar `process-whatsapp-deliveries` e `guardian-delivery` após aceite local
+
+Testes:
+
+- [ ] Unitários: classificação de erro, backoff, máquina de estados e sanitização
+- [ ] Contrato comum: adaptadores falso, Z-API e Meta convergem nos mesmos estados/erros
+- [ ] Z-API: 2xx, 4xx, 429, 5xx, timeout, resposta inválida e bloqueios locais
+- [ ] Webhook: duplicado, fora de ordem, falha terminal, assinatura Meta inválida e correlação Z-API inválida
+- [ ] Acesso: token válido, expirado, usado, revogado e tentativa de enumeração
+- [ ] Sessão: cookie seguro, expiração, revogação e URL assinada curta
+- [ ] Integração: retry não duplica mensagem; cancelamento não afeta tentativa já aceita
+- [ ] E2E com adultos: dois responsáveis, irmãos, foto de grupo, entrega, leitura e download
+- [ ] Repetir o E2E em `meta_test` após o contrato, antes de desligar a ponte
+
+Critérios de aceite:
+
+- [ ] Uma mensagem de entrega por responsável e evento
+- [ ] Repetir aprovação, função ou webhook não duplica envio ou auditoria
+- [ ] UI diferencia `accepted`, `sent`, `delivered`, `read`, `failed` e `unknown`
+- [ ] Timeout ambíguo não dispara retry imediato
+- [ ] Link é opaco, de uso único; sessão dura 24 h e URLs de arquivo 5 min
+- [ ] Revogação bloqueia novo acesso e não promete recolher arquivo já baixado
+
+#### W5 — Observabilidade, segurança e piloto controlado
+
+**Objetivo:** provar operação, recuperação e segurança antes de qualquer foto
+real de menor.
+
+Tarefas:
+
+- [ ] Implementar métricas de OTP, consentimento, fila, render, webhook, entrega, acesso e purge
+- [ ] Configurar alertas de fila > 10 min, falha > 5%, webhook parado, template pausado, token inválido e purge esgotado
+- [ ] Escrever runbooks previstos na spec §13.3 e ensaiar cada caminho crítico
+- [ ] Executar carga com 500 destinatários usando provedor falso e imagens sintéticas/adultas
+- [ ] Executar canário Z-API com 3–4 pessoas autorizadas, allowlist explícita e material sintético/adulto
+- [ ] Rodar typecheck, testes dos pacotes, build e verificações de compatibilidade relevantes
+- [ ] Rodar testes de integração contra o projeto real com dados sintéticos/adultos
+- [ ] Rodar advisors do Supabase e revisar funções `security definer`, grants, RLS e buckets
+- [ ] Verificar ausência de secrets e PII em bundle, logs e respostas
+- [ ] Provar expiração e expurgo por leitura do banco e Storage
+- [ ] Verificar dashboards, alertas, cancelamento, pausa do consumidor e rollback
+- [ ] Fechar todos os gates da spec §18 e de `docs/pendencias-producao.md`
+- [ ] Após o contrato: desligar Z-API, ativar `meta_test` e repetir contrato + E2E com adultos
+- [ ] Obter autorização explícita separada para iniciar piloto com dado real
+- [ ] Habilitar `pilot` para uma escola por feature flag e observar o primeiro lote
+
+Testes e aceite final:
+
+- [ ] Suite unitária e de integração verde nos pacotes alterados
+- [ ] E2E adulto comprova OTP → consentimento → preparo → envio → webhook → acesso → download → revogação → expurgo
+- [ ] Nenhum falso acesso entre escolas, responsáveis ou lotes
+- [ ] Fila recupera lease expirado e indisponibilidade temporária sem duplicar mensagem
+- [ ] Alertas disparam e runbooks recuperam os cenários ensaiados
+- [ ] Canário adulto concluído sem vazamento de código, token, telefone, nome ou arquivo
+- [ ] Ponte Z-API não aceita quinta pessoa, outra escola, anexo de foto ou mais de 40 mensagens/dia
+- [ ] Meta substitui a Z-API sem alterar domínio, banco, links ou interface
+- [ ] Produção continua bloqueada se qualquer gate estiver pendente
+
+#### Definição de pronto da Trilha A
+
+- [ ] Código, SQL de referência, testes e documentação no mesmo conjunto de mudanças
+- [ ] Migrations aplicadas pelo MCP `supabase-iaschool` e confirmadas por readback
+- [ ] Edge Functions publicadas e versões confirmadas
+- [ ] `ingest-worker` publicado somente se o render/purge tiver mudado
+- [ ] CI verde separado de evidência E2E e produção
+- [ ] E2E real limitado a adultos antes do piloto
+- [ ] Uso comercial bloqueado enquanto `WHATSAPP_PROVIDER=zapi`
+- [ ] Migração para Meta comprovada pela mesma suíte de contrato e por novo E2E
+- [ ] Relatório final lista arquivos, migrations, funções, deploys, testes e limites observados
+- [ ] Primeiro lote do piloto acompanhado até `delivered`/falha e expurgo, sem inferir sucesso de HTTP 2xx
+
+### Trilha B — Templates de evento e geração de artes em lote
+
+Continua fora da spec de WhatsApp. Não começa por analogia com a Trilha A.
+
+- [ ] Criar spec própria para templates de evento e geração `1 arte → N alunos`
+- [ ] Decidir fila, cota, rate limit, custo, moderação e revisão da geração em lote
+- [ ] Implementar somente depois da homologação da spec própria
 
 ---
 
 ## Decisões em aberto
 
-| # | Decisão | Onde | Bloqueia |
-| --- | --- | --- | --- |
-| 4 | Fallback Twilio Verify se o onboarding da Meta travar | pendências #7 | Transversal |
-
-Ainda sem decisão:
-
 - **Animação distribuindo as fotos nas pastas** no momento da confirmação em lote. Toca a tela do M6. Se entrar, mostra as fotos em estado "sugerido", nunca como atribuição final.
-- **Versão desfocada: gerada a cada entrega ou cacheada?** Recomendação em aberto: gerar na entrega, a partir do original, para refletir a autorização do momento. Fase 5.
 
 ## Decisões tomadas
+
+**29/09/2026** — Ponte temporária WhatsApp: Z-API aprovada para validar o fluxo
+antes do primeiro contrato, com até quatro destinatários em allowlist, uma
+escola, teto de 40 mensagens/dia e kill switch. A implementação usa um contrato
+único de provedor; envia somente texto e link privado, sem anexar fotos. Não há
+fallback automático. Ao fechar o contrato, a Z-API é desligada e o fluxo passa
+por contrato + E2E na Meta antes do uso comercial. Spec D8 e §§9.5, 18.1 e 19.
+
+**27/09/2026** — WhatsApp e entrega: Meta Cloud API direta para OTP,
+consentimento e aviso de álbum; link privado temporário em vez de anexar fotos;
+uma WABA e um número do IAschool no MVP; `teacher` prepara e `school_admin` ou
+`school_staff` aprova; fila em tabelas com claim atômico e Edge Function;
+derivado desfocado por destinatário, gerado do original e guardado por até 7
+dias; indisponibilidade da Meta falha fechado e permanece na fila, sem Twilio,
+e-mail ou API não oficial automáticos. Spec:
+[`docs/spec-whatsapp-api-oficial-entrega-fotos.md`](docs/spec-whatsapp-api-oficial-entrega-fotos.md).
 
 **26/09/2026** — Upload: **aceitar os formatos que o navegador lê, convertendo
 no cliente.** A regra do M2 ("outros formatos ficam de fora de propósito, o
