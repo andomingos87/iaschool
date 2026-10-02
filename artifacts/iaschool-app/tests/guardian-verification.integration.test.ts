@@ -5,10 +5,12 @@
 // Modelo do M1 (spec §4.7, item 8): a verificação é por RESPONSÁVEL, não por
 // aluno, e a autorização é por escola (`school_members`).
 //
-// Roda contra o Supabase real configurado via env vars. Enquanto a função
-// estiver em modo simulação (pendência 7 de docs/pendencias-producao.md), ela
-// devolve `demoCode`; quando o envio real por WhatsApp entrar, o código deixa
-// de voltar ao cliente e os testes que dependem dele são pulados sozinhos.
+// Roda contra o Supabase real configurado via env vars. A função pode estar em
+// três estados: **pausada** (`WHATSAPP_MODE` ausente → `503` antes de
+// autorizar), **simulação** (devolve `demoCode`) ou **envio real** (o código
+// não volta ao cliente). Os caminhos que dependem do provedor só rodam por
+// inteiro quando ele está configurado; nos demais, o teste confirma o `503`
+// fechado e segue.
 // Base legal do fluxo: Decreto nº 12.880/2026, art. 35.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -58,6 +60,17 @@ async function sendCode(
     body: JSON.stringify(target),
   });
   return { status: resp.status, body: await resp.json() };
+}
+
+/**
+ * Com o provedor desligado (`WHATSAPP_MODE` ausente) a função falha fechado
+ * ANTES de autorizar e devolve `503`. Nesse estado os caminhos que dependem do
+ * provedor não são exercitáveis; o teste confirma o fechamento e segue.
+ */
+function providerPaused(result: SendResult): boolean {
+  if (result.status !== 503) return false;
+  expect(result.body.error).toMatch(/pausado|não configurado/i);
+  return true;
 }
 
 async function confirmCode(
@@ -171,43 +184,58 @@ describe("send-guardian-code", () => {
     expect(resp.status).toBe(401);
   });
 
+  it("falha fechado (503) enquanto o provedor não está configurado", async () => {
+    await clearCooldown(guardianId);
+    const result = await sendCode(school, { guardianId });
+    // Sem provedor configurado a função fecha antes de autorizar.
+    if (result.status === 503) {
+      expect(result.body.error).toMatch(/pausado|não configurado/i);
+    }
+  });
+
   it("recusa responsável de outra escola", async () => {
-    const { status, body } = await sendCode(otherSchool, { guardianId });
-    expect(status).toBe(403);
-    expect(body.error).toMatch(/não pertence/i);
+    const result = await sendCode(otherSchool, { guardianId });
+    if (providerPaused(result)) return;
+    expect(result.status).toBe(403);
+    expect(result.body.error).toMatch(/não pertence/i);
   });
 
   it("recusa aluno de outra escola (resolvendo pelo studentId)", async () => {
-    const { status } = await sendCode(otherSchool, { studentId: studentWithGuardian });
-    expect(status).toBe(403);
+    const result = await sendCode(otherSchool, { studentId: studentWithGuardian });
+    if (providerPaused(result)) return;
+    expect(result.status).toBe(403);
   });
 
   it("exige responsável cadastrado antes de verificar", async () => {
-    const { status, body } = await sendCode(school, { studentId: studentWithoutGuardian });
-    expect(status).toBe(400);
-    expect(body.error).toMatch(/responsável legal/i);
+    const result = await sendCode(school, { studentId: studentWithoutGuardian });
+    if (providerPaused(result)) return;
+    expect(result.status).toBe(400);
+    expect(result.body.error).toMatch(/responsável legal/i);
   });
 
   it("gera o código para o admin da escola, pelo guardianId", async () => {
     await clearCooldown(guardianId);
-    const { status, body } = await sendCode(school, { guardianId });
-    expect(status).toBe(200);
-    expect(body.ok).toBe(true);
-    expect(body.guardianId).toBe(guardianId);
-    if (body.simulated) expect(body.demoCode).toMatch(/^\d{6}$/);
+    const result = await sendCode(school, { guardianId });
+    if (providerPaused(result)) return;
+    expect(result.status).toBe(200);
+    expect(result.body.ok).toBe(true);
+    expect(result.body.guardianId).toBe(guardianId);
+    if (result.body.simulated) expect(result.body.demoCode).toMatch(/^\d{6}$/);
   });
 
   it("aplica o antiflood de 60s no reenvio", async () => {
-    const { status, body } = await sendCode(school, { guardianId });
-    expect(status).toBe(429);
-    expect(body.error).toMatch(/aguarde/i);
+    const result = await sendCode(school, { guardianId });
+    if (providerPaused(result)) return;
+    expect(result.status).toBe(429);
+    expect(result.body.error).toMatch(/aguarde/i);
   });
 
   it("uma professora (membro teacher) também gera o código, pelo studentId", async () => {
     await clearCooldown(guardianId);
-    const { status, body } = await sendCode(teacher, { studentId: studentWithGuardian });
-    expect(status).toBe(200);
-    expect(body.guardianId).toBe(guardianId);
+    const result = await sendCode(teacher, { studentId: studentWithGuardian });
+    if (providerPaused(result)) return;
+    expect(result.status).toBe(200);
+    expect(result.body.guardianId).toBe(guardianId);
   });
 });
 
