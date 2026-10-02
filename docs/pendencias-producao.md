@@ -9,15 +9,18 @@ Enquanto as pendências abaixo não estiverem **implementadas e ligadas**:
 
 - **Nenhuma foto real de criança ou adolescente entra no produto.** Só material
   de teste/demonstração.
-- **O fluxo de WhatsApp não é ligado.** A verificação do responsável e o envio
-  podem ser *simulados no front-end*, nunca executados de verdade.
+- **O fluxo comercial de WhatsApp não é ligado.** A exceção controlada é a
+  ponte Z-API de 29/09/2026: uma escola, até quatro pessoas allowlisted, teto
+  diário, kill switch e material sintético/adulto. Ela não libera foto real de
+  menor nem substitui a migração para Meta antes do primeiro contrato.
 
-Essa regra é o que sustenta a conformidade com o ECA Digital nesta fase: o
-banco já tem toda a estrutura de proteção provisionada (consentimento do
-responsável, canal verificado, trilha imutável de envio), mas os mecanismos que
-a alimentam ainda não existem. Rodar com dado real antes disso significaria
-tratar imagem de menor sem o canal verificado que o Decreto nº 12.880/2026,
-art. 35 exige.
+Essa regra é a barreira técnica de privacidade desta fase: o banco já tem parte
+da estrutura de proteção (autorização por escopo, canal verificável e trilhas),
+mas o aceite direto do responsável, a entrega protegida e a comprovação do
+resultado ainda não existem. O art. 35 do Decreto nº 12.880/2026 trata de
+conteúdo violador, vexatório ou degradante; a verificação do canal é um controle
+de produto baseado em privacidade por padrão, minimização e melhor interesse,
+não uma exigência literal desse artigo.
 
 ## Pendências
 
@@ -29,7 +32,7 @@ art. 35 exige.
 | 4 | Criar os templates HTML de e-mail | Código | 5 |
 | 5 | Ligar "Confirm email" no Supabase | Config | 6 |
 | 6 | Testar o fluxo de cadastro ponta a ponta | QA | Uso real |
-| 7 | Implementar a WhatsApp API oficial + fluxo OTP | Código | Foto real de menor |
+| 7 | Implementar WhatsApp oficial para OTP, consentimento e entrega privada de fotos | Código + Meta | Foto real de menor |
 
 ### Detalhamento
 
@@ -70,33 +73,24 @@ responsável por um menor.
 Teste esperado: cadastro de escola → e-mail chega → confirma → cai em
 "Aguardando aprovação" → super_admin aprova em /admin.
 
-**7. WhatsApp API oficial + OTP**
+**7. WhatsApp: ponte controlada e integração oficial**
 
-Decisão tomada: **Meta WhatsApp Cloud API direto**, não Z-API/UAZAPI/Evolution.
-O compartilhamento do post já é um deep link `wa.me` aberto no WhatsApp do
-próprio professor (`src/pages/generate.tsx`), então a API serve *só* para o OTP
-de verificação do responsável — cerca de uma mensagem por aluno, uma vez. O
-volume não justifica o risco de ban e a fragilidade probatória de uma API não
-oficial num fluxo cuja razão de existir é comprovar conformidade.
+Decisão final de 27/09/2026: **Meta WhatsApp Cloud API direta** para OTP e
+entrega das fotos em uso comercial. Decisão temporária de 29/09/2026: usar
+**Z-API** somente para validar o fluxo antes do contrato, em uma escola, com
+até quatro destinatários allowlisted, teto diário e kill switch. UAZAPI,
+Evolution e outras automações continuam fora. A especificação completa é
+[`spec-whatsapp-api-oficial-entrega-fotos.md`](spec-whatsapp-api-oficial-entrega-fotos.md).
 
-Passos:
+Ela cobre a fronteira de provedor, Z-API temporária, migração para WABA,
+templates, secrets, OTP sem vazamento, aceite direto do responsável, versão
+desfocada, fila, webhook de status, acesso privado, revogação, expurgo,
+observabilidade, rollout e gates de produção.
 
-1. Meta Business Suite: criar a WABA, verificar a empresa, cadastrar número dedicado.
-2. Criar o template `guardian_verification_code`, categoria **Authentication**,
-   idioma `pt_BR`, com botão de copiar código.
-3. Guardar `WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID` como secrets do Supabase.
-4. Implementar a edge function `send-guardian-code`:
-   - JWT verificado; confere que `auth.uid()` é o `owner_id` do aluno (ou super_admin);
-   - gera código de 6 dígitos e grava em `guardian_verification_codes` com
-     `expires_at = now() + 10 min`;
-   - antiflood: recusa reenvio se já houver código com menos de 60s;
-   - chama a Graph API e **nunca** devolve o código ao cliente.
-5. Teste ponta a ponta: aluno menor → verificar responsável → compartilhar →
-   conferir a linha gravada em `share_logs`.
-
-*Fallback se o onboarding da Meta travar:* OTP por SMS (Twilio Verify) como
-interino. Verifica a posse do mesmo número e é defensável; a troca depois não
-mexe no banco.
+A Z-API usa sessão do WhatsApp Web e envia mensagens externas reais. O modo
+controlado não é sandbox e não libera atividade comercial. Até os gates gerais
+fecharem, o ensaio usa material sintético ou de adultos; foto real de menor
+continua bloqueada.
 
 #### Estado atual: stub de simulação no ar
 
@@ -105,17 +99,21 @@ simulação**: ela gera o código, grava em `guardian_verification_codes` e
 devolve o código à própria tela, que o exibe com o aviso "Modo demonstração".
 Nenhuma mensagem sai para o WhatsApp.
 
-Isso existe para que a demo do MVP exercite o fluxo real de ponta a ponta
-(autorização → TTL → antiflood → RPC `confirm_guardian_code` →
-`students.guardian.whatsappVerifiedAt` → liberação do compartilhamento →
-`share_logs`) sem tocar em canal de verdade.
+Isso existe para que a demo do MVP exercite o fluxo atual
+(TTL → antiflood → RPC `confirm_guardian_code` →
+`guardians.whatsapp_verified_at` → liberação do compartilhamento manual →
+`share_logs`) sem tocar em canal de verdade. O aceite direto do responsável e
+a entrega automática ainda não fazem parte desse ensaio.
 
 Fonte: `artifacts/iaschool-app/supabase/functions/send-guardian-code/index.ts`.
 
-Para ligar o envio real, substitua **apenas** o bloco marcado `SIMULAÇÃO` pela
-chamada à Graph API e pare de devolver `demoCode` e `simulated`. Todo o resto
-(autorização por dono/super_admin, TTL de 10 min, antiflood de 60s, código com
-aleatoriedade criptográfica) já é comportamento de produção.
+Ligar qualquer envio externo exige mais do que substituir o bloco `SIMULAÇÃO`: o código
+deve deixar de ser armazenado em texto, limites adicionais precisam ser
+aplicados, a resposta deve parar de devolver `demoCode`, o webhook precisa
+acompanhar o resultado e o consentimento deve ser aceito diretamente pelo
+responsável. A sequência está dividida em W0 a W5 na nova spec. A Z-API entra
+atrás de `WhatsAppProvider`; após o contrato, a Meta substitui o adaptador e o
+E2E é repetido antes do uso comercial.
 
 Três coisas sinalizam que o stub está ativo, para ninguém achar que o OTP está
 no ar: a resposta carrega `simulated: true`, cada chamada emite um warn no log
@@ -127,15 +125,17 @@ visível se pulam sozinhos quando `simulated` deixar de vir na resposta.
 
 ## O que já está pronto
 
-O banco não precisa de nenhuma alteração para as pendências acima:
+O banco já possui bases reutilizáveis:
 
 - `guardian_verification_codes` + RPC `confirm_guardian_code` (security definer,
   RLS sem policy — só a edge function e a RPC acessam);
 - `share_logs` append-only (policies de insert e select, nenhuma de update/delete);
-- `students.guardian` (jsonb) e `profiles.age_bracket` / `guardian_name` /
-  `guardian_consent`, com a constraint que impede conta de criança sem
-  responsável autorizado;
+- `guardians` + `students.primary_guardian_id`, com verificação por responsável
+  e invalidação do carimbo quando o número muda;
+- `authorizations`, inclusive o escopo `delivery_whatsapp`, ainda alimentado
+  pela declaração da escola;
 - super admin provisionado e aprovado.
 
-O que falta é só o que alimenta essas estruturas — e, no caso do WhatsApp, a
-troca do stub de simulação pelo envio real.
+Para a entrega automática, ainda faltam migrations de segurança do OTP,
+consentimento direto, lote, destinatários, ativos temporários, sessões, webhook
+e auditoria. O inventário completo está na nova spec.

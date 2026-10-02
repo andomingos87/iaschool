@@ -75,8 +75,13 @@ não estiverem implementadas e ligadas:
 
 - **Nenhuma foto real de criança ou adolescente entra no produto.** Só material
   de teste ou demonstração.
-- **O fluxo de WhatsApp não é ligado.** Verificação do responsável e envio podem
-  ser simulados no front-end, nunca executados de verdade.
+- **O fluxo comercial de WhatsApp não é ligado.** A única exceção é o modo
+  `controlled_zapi` aprovado em 29/09/2026: uma escola, de uma a quatro pessoas
+  allowlisted, teto diário, kill switch e somente material sintético ou de
+  adultos. A ponte temporária não autoriza foto real de menor e deve ser trocada
+  pela Meta Cloud API antes do primeiro uso comercial, conforme
+  [`docs/spec-whatsapp-api-oficial-entrega-fotos.md`](docs/spec-whatsapp-api-oficial-entrega-fotos.md),
+  §§9.5, 18.1 e 19.
 
 O banco já tem a estrutura de proteção (consentimento do responsável, canal
 verificado, `share_logs` imutável), mas os mecanismos que a alimentam ainda não
@@ -244,9 +249,12 @@ e `events`, desde o M2 `photos` e `batch_jobs`, desde o M3 `photo_jobs`
 (a fila do rosto de referência, essa visível para a escola: não guarda vetor)
 desde o M5 `photo_faces` (legível pelo membro, **menos a coluna
 `embedding`**, bloqueada por privilégio de coluna) e
-`face_recognition_settings`, e desde o M6 `biometric_events` (trilha
+`face_recognition_settings`, desde o M6 `biometric_events` (trilha
 append-only: só select, escrita por trigger e RPC) e `storage_purge_queue`
-(sem policy) — todas com RLS habilitada.
+(sem policy), e desde a fase 4 (02/10/2026) `whatsapp_controlled_settings`,
+`whatsapp_controlled_allowlist`, `whatsapp_messages` e
+`whatsapp_webhook_events` (sem policy: só `service_role` e RPCs) — todas com
+RLS habilitada.
 A migration do M1 (`iaschool_fase1_schools_members_classes`, referência em
 `supabase/fase1-min-schools-events.sql`) foi **aplicada em 20/09/2026**: a
 escola é o tenant, `profiles.role` é papel global (`dev`/`super_admin`/`user`)
@@ -284,7 +292,19 @@ Em 26/09/2026 entraram mais duas:
 o delete de escola ou aluno com rosto de referência) e
 `iaschool_revoke_definer_helpers_from_anon` (referência em
 `fase1-min-schools-events.sql` e `fase3-review-audit-purge.sql`).
-Estado em `BACKLOG.md`, M1 a M6.
+A da fundação WhatsApp (`iaschool_fase4_whatsapp_foundation`, referência em
+`supabase/fase4-whatsapp-foundation.sql`) foi **aplicada em 02/10/2026** pelo
+MCP `supabase-iaschool`: allowlist de 1–4 números, teto diário e kill switch
+em `whatsapp_controlled_settings`/`whatsapp_controlled_allowlist`; trilha em
+`whatsapp_messages`/`whatsapp_webhook_events` com as RPCs
+`reserve_whatsapp_send`, `complete_whatsapp_send` e
+`record_whatsapp_provider_status`; e o OTP trocou
+`guardian_verification_codes.code` por `code_hash`/`phone_hash` (bcrypt), com
+`confirm_guardian_code` passando a retornar `boolean`. As Edge Functions
+`send-guardian-code` (v4) e `provider-webhook` (v2) foram **publicadas em
+02/10/2026** e falham fechado (`503`) enquanto `WHATSAPP_MODE` não existir.
+Sem secrets, sem instância Z-API, sem envio real. Estado em `BACKLOG.md`, M1 a
+M6 e fase 4.
 
 **Função nova em `public` nasce executável por `anon`.** O Supabase concede
 `execute` a `anon`, `authenticated` e `service_role` por default privileges, e

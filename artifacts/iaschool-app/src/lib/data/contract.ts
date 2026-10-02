@@ -126,12 +126,8 @@ export interface StudentRepository {
  * (Decreto nº 12.880/2026, art. 35).
  */
 export interface GuardianVerificationService {
-  /**
-   * Dispara o código de confirmação para o WhatsApp do responsável do aluno.
-   * No modo demo o código é devolvido em `demoCode` para exibição na tela;
-   * na implementação real ele nunca volta ao cliente.
-   */
-  requestCode(studentId: string): Promise<{ demoCode?: string }>;
+  /** Dispara o código sem devolver seu conteúdo ao navegador. */
+  requestCode(studentId: string): Promise<void>;
   /**
    * Confere o código e, se correto, marca `guardian.whatsappVerifiedAt`.
    * Lança erro com mensagem em pt-BR quando o código não confere ou expirou.

@@ -2224,16 +2224,15 @@ export function createSupabaseDataLayer(): DataLayer {
    * `guardian.whatsappVerifiedAt` com security definer.
    * Base: Decreto nº 12.880/2026, art. 35.
    *
-   * Enquanto a função estiver em modo simulação (fase MVP — pendência 7 de
-   * docs/pendencias-producao.md) ela devolve `demoCode` e a tela exibe o aviso
-   * "Modo demonstração". Com o envio real ligado, `demoCode` some da resposta
-   * e o código passa a existir só no WhatsApp do responsável.
+   * O código nunca volta ao navegador. `accepted` confirma somente a aceitação
+   * pelo provedor; a entrega real é registrada pelo webhook.
    */
   const guardianVerification: GuardianVerificationService = {
     async requestCode(studentId) {
-      const { data, error } = await supabase.functions.invoke<{
-        demoCode?: string;
-      }>("send-guardian-code", { body: { studentId } });
+      const { error } = await supabase.functions.invoke<{ ok: true; status: "accepted" }>(
+        "send-guardian-code",
+        { body: { studentId } },
+      );
       if (error) {
         throw new Error(
           await edgeFunctionMessage(
@@ -2242,7 +2241,7 @@ export function createSupabaseDataLayer(): DataLayer {
           ),
         );
       }
-      return { demoCode: data?.demoCode };
+      return;
     },
     async confirmCode(studentId, code) {
       // A verificação é por responsável (M1): resolve a linha em guardians.
@@ -2251,7 +2250,7 @@ export function createSupabaseDataLayer(): DataLayer {
       if (!current.primaryGuardianId) {
         throw new Error("Cadastre o responsável legal antes de verificar o WhatsApp.");
       }
-      const { error } = await supabase.rpc("confirm_guardian_code", {
+      const { data, error } = await supabase.rpc("confirm_guardian_code", {
         p_guardian_id: current.primaryGuardianId,
         p_code: code.replace(/\D/g, ""),
       });
@@ -2264,6 +2263,7 @@ export function createSupabaseDataLayer(): DataLayer {
               : `Falha ao confirmar o código: ${error.message}`,
         );
       }
+      if (data === false) throw new Error("Código incorreto ou expirado. Peça um novo.");
       const student = await students.get(studentId);
       if (!student) throw new Error("Aluno não encontrado.");
       return student;
