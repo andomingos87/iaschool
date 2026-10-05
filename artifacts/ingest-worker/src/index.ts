@@ -1,6 +1,8 @@
 // ingest-worker (spec §7.2, §11): um processo, concorrência 8, consome
 // `photo_jobs(kind='ingest')` via `claim_photo_jobs`, gera miniatura WebP
-// 320px e conclui por `complete_photo_job`. `/health` para a Fly.
+// 320px e conclui por `complete_photo_job`. Desde o W3 também consome
+// `delivery_render_jobs`: gera o derivado desfocado por destinatário (spec
+// §6.4) no bucket `delivery-assets`. `/health` para a Fly.
 
 import { loadConfig } from "./config";
 import { makeHandler } from "./handler";
@@ -9,6 +11,9 @@ import { logger } from "./logger";
 import { startLoop } from "./loop";
 import { makePurgeApi, runPurgeSweep } from "./purge";
 import { makeQueueApi } from "./queue";
+import { makeRenderHandler } from "./render-handler";
+import { startRenderLoop } from "./render-loop";
+import { makeRenderQueueApi } from "./render-queue";
 import { makeStorage } from "./storage";
 import { createWorkerClient } from "./supabase";
 
@@ -64,6 +69,16 @@ async function main(): Promise<void> {
     onError: (err) => logger.error({ err: err instanceof Error ? err.message : String(err) }, "erro no laço da fila"),
   });
 
+  // Derivados de entrega (W3): fila separada, mesmo processo e concorrência.
+  const renderQueue = makeRenderQueueApi(client);
+  const renderLoop = startRenderLoop({
+    queue: renderQueue,
+    handle: makeRenderHandler({ queue: renderQueue, storage, cfg }),
+    cfg,
+    onError: (err) =>
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, "erro no laço de render"),
+  });
+
   const health = startHealthServer(
     cfg.port,
     {
@@ -88,7 +103,7 @@ async function main(): Promise<void> {
     logger.info({ signal, inFlight: loop.inFlight }, "encerrando: sem novos claims, aguardando o lote em voo");
     clearInterval(stallTimer);
     clearInterval(purgeTimer);
-    await loop.stop();
+    await Promise.all([loop.stop(), renderLoop.stop()]);
     await health.close();
     logger.info("ingest-worker encerrado");
     process.exit(0);

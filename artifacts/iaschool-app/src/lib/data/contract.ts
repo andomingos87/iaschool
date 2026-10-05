@@ -20,6 +20,10 @@ import type {
   GuardianConsentAnswer,
   GuardianConsentStatus,
   GuardianConsentView,
+  DeliveryBatchDetail,
+  DeliveryBatchSummary,
+  DeliveryPreflight,
+  DeliveryPreviewItem,
   Photo,
   ReviewCounts,
   ReviewFace,
@@ -153,6 +157,28 @@ export interface GuardianConsentService {
   getByToken(token: string): Promise<GuardianConsentView>;
   /** Página pública: registra o aceite ou a recusa. */
   respond(token: string, action: "accept" | "decline"): Promise<GuardianConsentAnswer>;
+}
+
+/**
+ * Entrega em lote (Fase 5, W3): preflight, congelamento, derivados e prévia.
+ * O envio é do W4; aqui o lote para em `queued` depois da aprovação por papel.
+ * A prévia nunca recebe caminho de objeto — só URLs assinadas de curta duração.
+ */
+export interface DeliveryRepository {
+  /** Retrato do evento antes de criar o lote, com motivos de bloqueio. */
+  preflight(eventId: string): Promise<DeliveryPreflight>;
+  batchesForEvent(eventId: string): Promise<DeliveryBatchSummary[]>;
+  batchDetail(batchId: string): Promise<DeliveryBatchDetail>;
+  /** Congela os destinatários aptos; devolve o id do lote criado. */
+  createBatch(eventId: string, guardianIds: string[], termsVersion: string): Promise<string>;
+  /** Só `school_admin`/`school_staff`; revalida e enfileira. */
+  approveBatch(batchId: string): Promise<{ approved: number; blocked: number }>;
+  cancelBatch(batchId: string): Promise<{ canceledRecipients: number; canceledJobs: number }>;
+  retryFailedRenders(batchId: string): Promise<number>;
+  previewItems(batchId: string): Promise<DeliveryPreviewItem[]>;
+  previewAssetUrl(batchId: string, itemId: string): Promise<string>;
+  /** Sinal de mudança do lote (Realtime); retorna o cancelador. */
+  onBatchChange(eventId: string, cb: () => void): () => void;
 }
 
 /**
@@ -584,6 +610,7 @@ export interface DataLayer {
   generation: ImageGenerationService;
   guardianVerification: GuardianVerificationService;
   guardianConsent: GuardianConsentService;
+  deliveries: DeliveryRepository;
   shareLogs: ShareLogRepository;
   /** true enquanto o app roda com dados mock (exibir aviso discreto na UI) */
   readonly isMock: boolean;

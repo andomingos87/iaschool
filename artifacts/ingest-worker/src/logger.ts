@@ -22,7 +22,10 @@ export const logger: Logger = pino({
 
 export interface JobLogFields {
   batch_id: string;
-  photo_id: string;
+  /** Jobs de ingest. */
+  photo_id?: string;
+  /** Jobs de render de entrega (W3). */
+  item_id?: string;
   job_id: number;
   attempt: number;
 }

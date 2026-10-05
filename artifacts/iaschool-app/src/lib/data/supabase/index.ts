@@ -18,6 +18,7 @@ import type {
   FaceReviewRepository,
   SchoolBrandRepository,
   DataLayer,
+  DeliveryRepository,
   GeneratedPostRepository,
   GuardianConsentService,
   GuardianVerificationService,
@@ -55,6 +56,10 @@ import type {
   GuardianConsentAnswer,
   GuardianConsentStatus,
   GuardianConsentView,
+  DeliveryBatchDetail,
+  DeliveryBatchSummary,
+  DeliveryPreflight,
+  DeliveryPreviewItem,
   ReferencePost,
   Session,
   ShareLog,
@@ -2342,6 +2347,173 @@ export function createSupabaseDataLayer(): DataLayer {
     },
   };
 
+  // ---------- Entrega em lote (Fase 5, W3) ----------
+
+  function toDeliveryPreflight(raw: Row): DeliveryPreflight {
+    const event = (raw["event"] ?? {}) as Row;
+    return {
+      event: {
+        id: event["id"] as string,
+        name: event["name"] as string,
+        classId: (event["class_id"] as string | null) ?? undefined,
+      },
+      unassignedPendingFaces: Number(raw["unassigned_pending_faces"] ?? 0),
+      recipients: ((raw["recipients"] ?? []) as Row[]).map((r) => ({
+        guardianId: (r["guardian_id"] as string | null) ?? undefined,
+        guardianName: (r["guardian_name"] as string | null) ?? undefined,
+        phoneMasked: (r["phone_masked"] as string | null) ?? undefined,
+        verified: Boolean(r["verified"]),
+        eligible: Boolean(r["eligible"]),
+        blockedReason:
+          (r["blocked_reason"] as DeliveryPreflight["recipients"][number]["blockedReason"] | null) ??
+          undefined,
+        students: ((r["students"] ?? []) as Row[]).map((s) => ({
+          studentId: s["student_id"] as string,
+          name: s["name"] as string,
+          confirmedPhotos: Number(s["confirmed_photos"] ?? 0),
+          pendingFaces: Number(s["pending_faces"] ?? 0),
+          consentSource: (s["consent_source"] as string | null) ?? undefined,
+        })),
+      })),
+    };
+  }
+
+  function toDeliveryBatchSummary(row: Row): DeliveryBatchSummary {
+    return {
+      id: row["id"] as string,
+      status: row["status"] as DeliveryBatchSummary["status"],
+      termsVersion: row["terms_version"] as string,
+      recipientCount: Number(row["recipient_count"] ?? 0),
+      itemCount: Number(row["item_count"] ?? 0),
+      renderedCount: Number(row["rendered_count"] ?? 0),
+      failedCount: Number(row["failed_count"] ?? 0),
+      createdAt: row["created_at"] as string,
+      approvedAt: (row["approved_at"] as string | null) ?? undefined,
+      canceledAt: (row["canceled_at"] as string | null) ?? undefined,
+      recipientsByStatus: (row["recipients_by_status"] ?? {}) as Record<string, number>,
+    };
+  }
+
+  /**
+   * Entrega em lote (Fase 5, W3). Os lotes passam a ser visíveis para a escola
+   * via Realtime; a prévia sai pela Edge Function `delivery-preview`, que
+   * assina URLs curtas — o navegador nunca vê caminho de objeto (§8.3).
+   */
+  const deliveries: DeliveryRepository = {
+    async preflight(eventId) {
+      const { data, error } = await supabase.rpc("delivery_preflight", {
+        p_event_id: eventId,
+      });
+      if (error) fail("Falha ao consultar o preflight da entrega", error);
+      return toDeliveryPreflight((data ?? {}) as Row);
+    },
+    async batchesForEvent(eventId) {
+      const { data, error } = await supabase.rpc("delivery_batches_for_event", {
+        p_event_id: eventId,
+      });
+      if (error) fail("Falha ao listar os lotes de entrega", error);
+      return ((data ?? []) as Row[]).map(toDeliveryBatchSummary);
+    },
+    async batchDetail(batchId) {
+      const { data, error } = await supabase.rpc("delivery_batch_detail", {
+        p_batch_id: batchId,
+      });
+      if (error) fail("Falha ao consultar o lote de entrega", error);
+      const raw = (data ?? {}) as Row;
+      const batch = (raw["batch"] ?? {}) as Row;
+      return {
+        batch: {
+          ...toDeliveryBatchSummary(batch),
+          eventId: batch["event_id"] as string,
+        },
+        recipients: ((raw["recipients"] ?? []) as Row[]).map((r) => ({
+          id: r["id"] as string,
+          guardianName: (r["guardian_name"] as string | null) ?? "",
+          phoneMasked: (r["phone_masked"] as string | null) ?? "",
+          status: r["status"] as DeliveryBatchDetail["recipients"][number]["status"],
+          lastError: (r["last_error"] as string | null) ?? undefined,
+          students: ((r["students"] ?? []) as string[]).map(String),
+          itemsTotal: Number(r["items_total"] ?? 0),
+          itemsRendered: Number(r["items_rendered"] ?? 0),
+          itemsFailed: Number(r["items_failed"] ?? 0),
+        })),
+      };
+    },
+    async createBatch(eventId, guardianIds, termsVersion) {
+      const { data, error } = await supabase.rpc("create_delivery_batch", {
+        p_event_id: eventId,
+        p_guardian_ids: guardianIds,
+        p_terms_version: termsVersion,
+      });
+      if (error) throw new Error(error.message);
+      return data as string;
+    },
+    async approveBatch(batchId) {
+      const { data, error } = await supabase.rpc("approve_delivery_batch", {
+        p_batch_id: batchId,
+      });
+      if (error) throw new Error(error.message);
+      const raw = (data ?? {}) as Row;
+      return {
+        approved: Number(raw["approved"] ?? 0),
+        blocked: Number(raw["blocked"] ?? 0),
+      };
+    },
+    async cancelBatch(batchId) {
+      const { data, error } = await supabase.rpc("cancel_delivery_batch", {
+        p_batch_id: batchId,
+      });
+      if (error) throw new Error(error.message);
+      const raw = (data ?? {}) as Row;
+      return {
+        canceledRecipients: Number(raw["canceled_recipients"] ?? 0),
+        canceledJobs: Number(raw["canceled_jobs"] ?? 0),
+      };
+    },
+    async retryFailedRenders(batchId) {
+      const { data, error } = await supabase.rpc("retry_failed_delivery_render_jobs", {
+        p_batch_id: batchId,
+      });
+      if (error) throw new Error(error.message);
+      return Number(data ?? 0);
+    },
+    async previewItems(batchId) {
+      const { data, error } = await supabase.functions.invoke<{
+        items: DeliveryPreviewItem[];
+      }>("delivery-preview", { body: { batchId } });
+      if (error) {
+        throw new Error(await edgeFunctionMessage(error, "Falha ao carregar a prévia"));
+      }
+      return data?.items ?? [];
+    },
+    async previewAssetUrl(batchId, itemId) {
+      const { data, error } = await supabase.functions.invoke<{ url: string }>(
+        "delivery-preview",
+        { body: { batchId, itemId } },
+      );
+      if (error) {
+        throw new Error(await edgeFunctionMessage(error, "Falha ao abrir a imagem"));
+      }
+      if (!data?.url) throw new Error("Não foi possível abrir a imagem.");
+      return data.url;
+    },
+    onBatchChange(eventId, cb) {
+      // `delivery_batches` entra na publicação no W3; o RLS do Realtime usa a
+      // policy de membro. O caminho é só um sinal para refazer as consultas.
+      const channel = supabase
+        .channel(`delivery-batches:${eventId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "delivery_batches", filter: `event_id=eq.${eventId}` },
+          () => cb(),
+        )
+        .subscribe();
+      return () => {
+        void supabase.removeChannel(channel);
+      };
+    },
+  };
+
   /**
    * Trilha append-only dos envios de imagem de aluno.
    * A RLS de `share_logs` permite INSERT e SELECT, nunca UPDATE nem DELETE.
@@ -2406,6 +2578,7 @@ export function createSupabaseDataLayer(): DataLayer {
     generation,
     guardianVerification,
     guardianConsent,
+    deliveries,
     shareLogs,
     isMock: false,
   };

@@ -1,14 +1,14 @@
 # Plano de implementação — ponte temporária Z-API
 
 **Base:** [spec de WhatsApp](spec-whatsapp-api-oficial-entrega-fotos.md), decisão D8 e marcos W0–W5 do [backlog](../BACKLOG.md).  
-**Estado em 05/10/2026:** Z0 e Z1 implementados e publicados (migration `iaschool_fase4_whatsapp_foundation` aplicada em 02/10/2026; `send-guardian-code` v4 e `provider-webhook` v2 no ar) e o OTP validado ponta a ponta com adulto. Pendências operacionais: o webhook de status **não dispara** do lado da Z-API ([diagnóstico](diagnostico-webhook-zapi.md)) e os segredos expostos na depuração precisam ser rotacionados. Z2 foi **aplicado e publicado em 05/10/2026** (migration e funções no ar; teste de integração 10/10); o deploy do frontend com a página pública ainda está pendente. O `BACKLOG.md` continua sendo a fonte do estado de execução.
+**Estado em 05/10/2026:** Z0 e Z1 implementados e publicados (migration `iaschool_fase4_whatsapp_foundation` aplicada em 02/10/2026; `send-guardian-code` v4 e `provider-webhook` v2 no ar) e o OTP validado ponta a ponta com adulto. Pendências operacionais: o webhook de status **não dispara** do lado da Z-API ([diagnóstico](diagnostico-webhook-zapi.md)) e os segredos expostos na depuração precisam ser rotacionados. Z2 foi **aplicado e publicado em 05/10/2026** (migration e funções no ar; teste de integração 10/10); o deploy do frontend com a página pública ainda está pendente. Z3 foi **aplicado e publicado em 05/10/2026** (migration + correção de lock, `delivery-preview` v1, worker com render na Fly; ensaio real e integração 9/9 verdes); a tela `/eventos/:id/entregas` acompanha o deploy do frontend. O `BACKLOG.md` continua sendo a fonte do estado de execução.
 
 | Marco | Estado em 05/10/2026 |
 | --- | --- |
 | Z0 — Contrato e trava | Parcial: provedor com adaptadores falso e Z-API publicados; allowlist/teto/kill switch aplicados; instância e secrets configurados. Faltam adaptador Meta, homologações e o webhook (lado do provedor) |
 | Z1 — OTP | Parcial: hash/limites/migration aplicados e OTP real validado com adulto; a telemetria de status (`sent`/`delivered`/`read`) segue bloqueada pelo webhook |
 | Z2 — Aceite | **Aplicado e publicado em 05/10/2026**: migration aplicada via MCP, funções v1 no ar (`guardian-consent` com `verify_jwt` desligado), secret `APP_PUBLIC_URL` e teste de integração 10/10; falta o deploy do frontend |
-| Z3 — Álbum | Não iniciado |
+| Z3 — Álbum | **Aplicado e publicado em 05/10/2026**: migration + correção de lock aplicadas via MCP, `delivery-preview` v1 publicada, `ingest-worker` com o render na Fly, ensaio transacional verde e integração 9/9; a tela entra com o deploy do frontend |
 | Z4 — Envio e retorno | Não iniciado |
 | Z5 — Canário e retirada | Não iniciado |
 
