@@ -15,6 +15,7 @@ export const qk = {
   studentPhotos: (studentId: string) => ["photos", "student", studentId] as const,
   batch: (eventId: string) => ["batch-jobs", eventId] as const,
   authorizations: (studentId: string) => ["authorizations", studentId] as const,
+  guardianConsent: (studentId: string) => ["guardian-consent", studentId] as const,
   referenceFaces: (studentId: string) => ["reference-faces", studentId] as const,
   referenceJobs: (studentId: string) => ["reference-faces", "jobs", studentId] as const,
   biometricReadiness: (schoolId?: string) =>

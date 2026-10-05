@@ -15,6 +15,7 @@ import type {
   ImageGenerationService,
   PhotoRepository,
   PromptTemplateRepository,
+  GuardianConsentService,
   GuardianVerificationService,
   ReferenceFaceRepository,
   ReferenceRepository,
@@ -1560,6 +1561,26 @@ const guardianVerification: GuardianVerificationService = {
   },
 };
 
+/**
+ * Consentimento pelo link também não é simulado: sem Edge Function não há
+ * convite nem página pública. O status responde "não" para a ficha do aluno
+ * continuar renderizando no modo demo.
+ */
+const guardianConsent: GuardianConsentService = {
+  async status() {
+    return { verified: false, state: "none" };
+  },
+  async request() {
+    throw new Error("O consentimento pelo WhatsApp está indisponível neste modo.");
+  },
+  async getByToken() {
+    throw new Error("O consentimento pelo WhatsApp está indisponível neste modo.");
+  },
+  async respond() {
+    throw new Error("O consentimento pelo WhatsApp está indisponível neste modo.");
+  },
+};
+
 const shareLogs: ShareLogRepository = {
   async list(studentId) {
     await delay(200);
@@ -1599,6 +1620,7 @@ export function createMockDataLayer(): DataLayer {
     promptTemplate,
     generation,
     guardianVerification,
+    guardianConsent,
     shareLogs,
     isMock: true,
   };

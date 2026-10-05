@@ -1,7 +1,16 @@
 # Plano de implementação — ponte temporária Z-API
 
 **Base:** [spec de WhatsApp](spec-whatsapp-api-oficial-entrega-fotos.md), decisão D8 e marcos W0–W5 do [backlog](../BACKLOG.md).  
-**Estado em 29/09/2026:** plano; nenhuma etapa abaixo é declarada implementada, configurada ou publicada. O `BACKLOG.md` continua sendo a fonte do estado de execução.
+**Estado em 05/10/2026:** Z0 e Z1 implementados e publicados (migration `iaschool_fase4_whatsapp_foundation` aplicada em 02/10/2026; `send-guardian-code` v4 e `provider-webhook` v2 no ar) e o OTP validado ponta a ponta com adulto. Pendências operacionais: o webhook de status **não dispara** do lado da Z-API ([diagnóstico](diagnostico-webhook-zapi.md)) e os segredos expostos na depuração precisam ser rotacionados. Z2 foi **aplicado e publicado em 05/10/2026** (migration e funções no ar; teste de integração 10/10); o deploy do frontend com a página pública ainda está pendente. O `BACKLOG.md` continua sendo a fonte do estado de execução.
+
+| Marco | Estado em 05/10/2026 |
+| --- | --- |
+| Z0 — Contrato e trava | Parcial: provedor com adaptadores falso e Z-API publicados; allowlist/teto/kill switch aplicados; instância e secrets configurados. Faltam adaptador Meta, homologações e o webhook (lado do provedor) |
+| Z1 — OTP | Parcial: hash/limites/migration aplicados e OTP real validado com adulto; a telemetria de status (`sent`/`delivered`/`read`) segue bloqueada pelo webhook |
+| Z2 — Aceite | **Aplicado e publicado em 05/10/2026**: migration aplicada via MCP, funções v1 no ar (`guardian-consent` com `verify_jwt` desligado), secret `APP_PUBLIC_URL` e teste de integração 10/10; falta o deploy do frontend |
+| Z3 — Álbum | Não iniciado |
+| Z4 — Envio e retorno | Não iniciado |
+| Z5 — Canário e retirada | Não iniciado |
 
 ## Resultado e limites
 
@@ -22,11 +31,11 @@ Validar com uma escola e até quatro pessoas participantes o fluxo completo: OTP
 
 ### Z0 — Contrato do provedor e travas operacionais
 
-- [ ] Criar `WhatsAppProvider` para `sendOtp`, `sendConsentRequest`, `sendDeliveryReady` e `normalizeWebhook`, com resultados internos `accepted`, `sent`, `delivered`, `read`, `failed` e `unknown`. Centralizar as três mensagens lógicas, textos e versões; criar adaptador falso para testes e Z-API para o modo controlado. Reservar o mesmo contrato para o adaptador Meta.
-- [ ] Resolver `WHATSAPP_MODE` e `WHATSAPP_PROVIDER` apenas no servidor. Qualquer combinação inválida, segredo ausente ou modo pausado falha fechado. O cliente não escolhe provedor nem recebe capacidade de forçar `controlled_zapi`.
-- [ ] Antes **de toda chamada externa**, validar escola única habilitada, número E.164 na allowlist de 1–4 pessoas, máximo de 40 mensagens externas por dia, limite específico de OTP e kill switch. Contabilizar OTP, pedido de aceite e aviso do álbum no mesmo teto, de forma atômica no banco; concorrência não pode passar do limite. Normalizar E.164 para o formato só com dígitos exigido pelo campo `phone` da Z-API.
-- [ ] Implementar `ZApiProvider` apenas com envio de texto: `POST /send-text`, corpo `phone` e `message`, cabeçalho `Client-Token`. Guardar `zaapId` e `messageId` da resposta no registro operacional. Construir a URL com o token da instância somente dentro do adaptador; jamais registrar URL completa, headers, texto do OTP ou link.
-- [ ] Configurar instância temporária, conexão por QR, token da instância e `Client-Token` como secrets de servidor. Validar conexão e procedimento de pausa/desconexão sem disparar mensagens fora do canário. Registrar custo da instância, suporte, rotação e encerramento no runbook.
+- [x] Criar `WhatsAppProvider` para `sendOtp`, `sendConsentRequest`, `sendDeliveryReady` e `normalizeWebhook`, com resultados internos `accepted`, `sent`, `delivered`, `read`, `failed` e `unknown`. Centralizar as três mensagens lógicas, textos e versões; criar adaptador falso para testes e Z-API para o modo controlado. Reservar o mesmo contrato para o adaptador Meta.
+- [x] Resolver `WHATSAPP_MODE` e `WHATSAPP_PROVIDER` apenas no servidor. Qualquer combinação inválida, segredo ausente ou modo pausado falha fechado. O cliente não escolhe provedor nem recebe capacidade de forçar `controlled_zapi`.
+- [x] Antes **de toda chamada externa**, validar escola única habilitada, número E.164 na allowlist de 1–4 pessoas, máximo de 40 mensagens externas por dia, limite específico de OTP e kill switch. Contabilizar OTP, pedido de aceite e aviso do álbum no mesmo teto, de forma atômica no banco; concorrência não pode passar do limite. Normalizar E.164 para o formato só com dígitos exigido pelo campo `phone` da Z-API.
+- [x] Implementar `ZApiProvider` apenas com envio de texto: `POST /send-text`, corpo `phone` e `message`, cabeçalho `Client-Token`. Guardar `zaapId` e `messageId` da resposta no registro operacional. Construir a URL com o token da instância somente dentro do adaptador; jamais registrar URL completa, headers, texto do OTP ou link.
+- [x] Configurar instância temporária, conexão por QR, token da instância e `Client-Token` como secrets de servidor. Validar conexão e procedimento de pausa/desconexão sem disparar mensagens fora do canário. Registrar custo da instância, suporte, rotação e encerramento no runbook.
 - [ ] Configurar webhook HTTPS exclusivo com segredo de rota de alta entropia. A documentação da Z-API consultada para este plano descreve `ids[]` no webhook de status, enquanto `/send-text` devolve `messageId`; a implementação deve correlacionar **cada ID recebido** com `messageId`, `instanceId` e telefone esperado. Rejeitar grupo, tipo inesperado e evento sem correspondência. Testar o formato com retorno real antes de liberar o canário.
 - [ ] Atualizar avaliação de impacto e mapa de operadores para incluir Z-API/WhatsApp; homologar termo versionado e retenções da spec §11.3 antes de qualquer envio de consentimento ou foto.
 
@@ -34,10 +43,10 @@ Validar com uma escola e até quatro pessoas participantes o fluxo completo: OTP
 
 ### Z1 — Verificação real do número
 
-- [ ] Criar migration independente para trocar `guardian_verification_codes.code` por `code_hash`, descartar códigos pendentes em texto, registrar solicitante e mensagem externa, limitar tentativas e vincular a verificação ao hash do número atual. Atualizar o SQL de referência no mesmo conjunto de mudanças.
-- [ ] Adaptar `send-guardian-code` para gerar código aleatório, guardar só hash e chamar a mensagem lógica pelo provedor ativo. Remover `demoCode` e `simulated` da resposta, tipos e interface. Ao mudar `guardians.whatsapp`, invalidar OTP, verificação, tokens e envios ainda pendentes.
-- [ ] Aplicar 10 minutos de validade, 60 segundos entre envios, 5 por hora, 10 por dia por número e no máximo 5 tentativas de confirmação. O limite geral de 40 mensagens também vale para OTP.
-- [ ] Persistir `whatsapp_messages` por tentativa: provedor, finalidade, versão lógica, ID externo e erro sanitizado. Resposta 2xx com ID externo vira somente `accepted`; timeout após transmissão vira `unknown`.
+- [x] Criar migration independente para trocar `guardian_verification_codes.code` por `code_hash`, descartar códigos pendentes em texto, registrar solicitante e mensagem externa, limitar tentativas e vincular a verificação ao hash do número atual. Atualizar o SQL de referência no mesmo conjunto de mudanças.
+- [x] Adaptar `send-guardian-code` para gerar código aleatório, guardar só hash e chamar a mensagem lógica pelo provedor ativo. Remover `demoCode` e `simulated` da resposta, tipos e interface. Ao mudar `guardians.whatsapp`, invalidar OTP, verificação, tokens e envios ainda pendentes.
+- [x] Aplicar 10 minutos de validade, 60 segundos entre envios, 5 por hora, 10 por dia por número e no máximo 5 tentativas de confirmação. O limite geral de 40 mensagens também vale para OTP.
+- [x] Persistir `whatsapp_messages` por tentativa: provedor, finalidade, versão lógica, ID externo e erro sanitizado. Resposta 2xx com ID externo vira somente `accepted`; timeout após transmissão vira `unknown`.
 
 **Aceite Z1:** E2E com adulto comprova que o OTP chega ao número correto e confirma apenas aquele número; código nunca aparece no navegador, logs ou banco em texto. `anon` e `authenticated` não leem códigos ou mensagens operacionais.
 
@@ -46,6 +55,8 @@ Validar com uma escola e até quatro pessoas participantes o fluxo completo: OTP
 - [ ] Criar `guardian_action_tokens` com token opaco de 256 bits, somente hash persistido, uso único e 24 horas de validade. Implementar `request-guardian-consent`, página pública e `guardian-consent`.
 - [ ] Enviar texto de convite ao número **já verificado**, com link opaco. O responsável vê termo versionado, finalidade, retenção, operadores envolvidos no modo ativo e limite da revogação. Aceite exige ação afirmativa separada; recusa ou silêncio não criam autorização.
 - [ ] Gravar `authorizations.evidence` com `source = guardian_link`, responsável, versão do termo, data e canal. `school_declaration` e consentimento herdado permanecem no histórico, mas não satisfazem o preflight. Revogação invalida tokens e bloqueia novas entregas.
+
+**Aplicada e publicada em 05/10/2026:** migration de referência [`supabase/fase5-guardian-consent.sql`](../artifacts/iaschool-app/supabase/fase5-guardian-consent.sql) — `guardian_action_tokens` (uso único, só hash, RLS sem policy), `create_guardian_consent_token` (antiflood de 60s, invalida o pedido anterior), `get_guardian_consent_status` (projeção para a ficha) e `consume_guardian_consent_token` (aceite transacional; revoga a declaração anterior da escola e grava `source = guardian_link` para todos os alunos do responsável); `authorizations.created_by` passa a aceitar nulo; trocar o número revoga os pedidos pendentes. Edge Functions `request-guardian-consent` (v1, JWT ligado) e `guardian-consent` (v1, JWT desligado); página pública `/consentimento/:token` (fora do `AuthGate`, primeira rota sem sessão do app); estados e pedido no cartão de autorizações da ficha do aluno; termo exibido em `_shared/whatsapp/consent-terms.ts` e rascunho jurídico em [`docs/termos/delivery-whatsapp-v1.md`](termos/delivery-whatsapp-v1.md). Cobertura: `tokens.test.ts` (Deno) e `tests/guardian-consent.integration.test.ts` (verde, 10/10, contra o projeto real em 05/10/2026).
 
 **Aceite Z2:** teste com adulto percorre mensagem → termo → aceite/recusa → revogação. A escola acompanha estado, mas não aceita pelo responsável; corrida entre aceite e revogação termina no estado mais protetivo.
 
