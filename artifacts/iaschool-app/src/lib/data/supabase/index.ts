@@ -19,6 +19,7 @@ import type {
   SchoolBrandRepository,
   DataLayer,
   GeneratedPostRepository,
+  GuardianConsentService,
   GuardianVerificationService,
   PhotoRepository,
   PromptTemplateRepository,
@@ -51,6 +52,9 @@ import type {
   PromptTemplateSetting,
   PromptTemplateVersion,
   Guardian,
+  GuardianConsentAnswer,
+  GuardianConsentStatus,
+  GuardianConsentView,
   ReferencePost,
   Session,
   ShareLog,
@@ -2271,6 +2275,74 @@ export function createSupabaseDataLayer(): DataLayer {
   };
 
   /**
+   * Consentimento direto do responsável (Fase 5, W2). O pedido sai pela edge
+   * function `request-guardian-consent`; o aceite acontece na página pública
+   * (`/consentimento/:token`) e é registrado pela função `guardian-consent`.
+   * O link nunca volta ao navegador: se a família perder, a escola pede outro.
+   */
+  const guardianConsent: GuardianConsentService = {
+    async status(studentId) {
+      const { data, error } = await supabase.rpc("get_guardian_consent_status", {
+        p_student_id: studentId,
+      });
+      if (error) {
+        throw new Error(
+          `Falha ao consultar o consentimento do responsável: ${error.message}`,
+        );
+      }
+      const row = (data ?? {}) as Row;
+      return {
+        verified: Boolean(row["verified"]),
+        state: (row["state"] as GuardianConsentStatus["state"]) ?? "none",
+        requestedAt: (row["requestedAt"] as string | null) ?? undefined,
+        expiresAt: (row["expiresAt"] as string | null) ?? undefined,
+        answeredAt: (row["answeredAt"] as string | null) ?? undefined,
+      };
+    },
+    async request(studentId) {
+      const { error } = await supabase.functions.invoke("request-guardian-consent", {
+        body: { studentId },
+      });
+      if (error) {
+        throw new Error(
+          await edgeFunctionMessage(
+            error,
+            "Falha ao pedir o consentimento ao responsável",
+          ),
+        );
+      }
+    },
+    async getByToken(token) {
+      const { data, error } = await supabase.functions.invoke<GuardianConsentView>(
+        "guardian-consent",
+        { body: { token, action: "view" } },
+      );
+      if (error) {
+        throw new Error(
+          await edgeFunctionMessage(error, "Não foi possível abrir a solicitação"),
+        );
+      }
+      if (!data) throw new Error("Não foi possível abrir a solicitação.");
+      return data;
+    },
+    async respond(token, action) {
+      const { data, error } = await supabase.functions.invoke<{
+        ok: true;
+        outcome: GuardianConsentAnswer;
+      }>("guardian-consent", { body: { token, action } });
+      if (error) {
+        throw new Error(
+          await edgeFunctionMessage(error, "Não foi possível registrar a resposta"),
+        );
+      }
+      if (data?.outcome !== "accepted" && data?.outcome !== "declined") {
+        throw new Error("Não foi possível registrar a resposta.");
+      }
+      return data.outcome;
+    },
+  };
+
+  /**
    * Trilha append-only dos envios de imagem de aluno.
    * A RLS de `share_logs` permite INSERT e SELECT, nunca UPDATE nem DELETE.
    */
@@ -2333,6 +2405,7 @@ export function createSupabaseDataLayer(): DataLayer {
     promptTemplate,
     generation,
     guardianVerification,
+    guardianConsent,
     shareLogs,
     isMock: false,
   };

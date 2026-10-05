@@ -17,6 +17,9 @@ import type {
   GeneratedPost,
   FaceCandidate,
   FaceRejectState,
+  GuardianConsentAnswer,
+  GuardianConsentStatus,
+  GuardianConsentView,
   Photo,
   ReviewCounts,
   ReviewFace,
@@ -133,6 +136,23 @@ export interface GuardianVerificationService {
    * Lança erro com mensagem em pt-BR quando o código não confere ou expirou.
    */
   confirmCode(studentId: string, code: string): Promise<Student>;
+}
+
+/**
+ * Consentimento direto do responsável para `delivery_whatsapp` (Fase 5, W2).
+ * O convite sai pelo WhatsApp verificado; o aceite vale como `guardian_link`
+ * em `authorizations`. A escola acompanha e revoga, mas não aceita no lugar
+ * do responsável.
+ */
+export interface GuardianConsentService {
+  /** Estado do consentimento para a ficha do aluno (projeção segura). */
+  status(studentId: string): Promise<GuardianConsentStatus>;
+  /** Envia o convite ao número verificado. O link não volta ao navegador. */
+  request(studentId: string): Promise<void>;
+  /** Página pública: visão do pedido a partir do token do link. */
+  getByToken(token: string): Promise<GuardianConsentView>;
+  /** Página pública: registra o aceite ou a recusa. */
+  respond(token: string, action: "accept" | "decline"): Promise<GuardianConsentAnswer>;
 }
 
 /**
@@ -563,6 +583,7 @@ export interface DataLayer {
   promptTemplate: PromptTemplateRepository;
   generation: ImageGenerationService;
   guardianVerification: GuardianVerificationService;
+  guardianConsent: GuardianConsentService;
   shareLogs: ShareLogRepository;
   /** true enquanto o app roda com dados mock (exibir aviso discreto na UI) */
   readonly isMock: boolean;

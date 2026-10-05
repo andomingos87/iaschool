@@ -385,9 +385,11 @@ export interface AuthorizationEvidence {
    *   (o toggle da ficha do aluno). Não é o responsável aceitando no produto.
    * - `students.guardian.consentAt`: herança do booleano da Fase 0, trazida
    *   pela migração do M4.
-   * - `guardian_portal`: aceite do próprio responsável (Fase 4, ainda não existe).
+   * - `guardian_link`: o responsável aceitou no produto, pelo link individual
+   *   enviado ao WhatsApp verificado (Fase 5, W2). Só esta origem libera a
+   *   entrega real no preflight.
    */
-  source?: "school_declaration" | "students.guardian.consentAt" | "guardian_portal";
+  source?: "school_declaration" | "students.guardian.consentAt" | "guardian_link";
   /** Quem registrou, como aparece na UI. */
   registeredBy?: string;
   registeredByUserId?: string;
@@ -418,7 +420,8 @@ export interface Authorization {
   guardianChannel?: string;
   revokedAt?: string;
   evidence?: AuthorizationEvidence;
-  createdBy: string;
+  /** Ausente quando o aceite veio do responsável (não há usuário logado). */
+  createdBy?: string;
   createdAt: string;
 }
 
@@ -426,6 +429,55 @@ export interface Authorization {
 export function isAuthorizationActive(a: Authorization): boolean {
   return Boolean(a.grantedAt) && !a.revokedAt;
 }
+
+/**
+ * Estado do consentimento de `delivery_whatsapp` do aluno (Fase 5, W2), como a
+ * ficha da escola o vê. `accepted` só existe quando o responsável aceitou pelo
+ * link; `school_declared` é a declaração antiga da escola, que não libera a
+ * entrega real no preflight.
+ */
+export type GuardianConsentState =
+  | "none"
+  | "pending"
+  | "accepted"
+  | "declined"
+  | "expired"
+  | "revoked"
+  | "school_declared";
+
+export interface GuardianConsentStatus {
+  /** O WhatsApp do responsável está verificado (pré-requisito do convite). */
+  verified: boolean;
+  state: GuardianConsentState;
+  /** Quando o último pedido saiu. */
+  requestedAt?: string;
+  /** Quando o link expira. */
+  expiresAt?: string;
+  /** Quando o responsável respondeu. */
+  answeredAt?: string;
+}
+
+export interface GuardianConsentTerm {
+  version: string;
+  title: string;
+  paragraphs: readonly string[];
+}
+
+/**
+ * Visão pública da solicitação (página `/consentimento/:token`), devolvida
+ * pela Edge Function `guardian-consent`. Só primeiros nomes: a página precisa
+ * confirmar escola e criança, não expor o cadastro.
+ */
+export interface GuardianConsentView {
+  state: "pending" | "accepted" | "declined" | "revoked" | "expired";
+  schoolName: string;
+  guardianFirstName: string;
+  studentFirstNames: string[];
+  expiresAt?: string;
+  terms: GuardianConsentTerm;
+}
+
+export type GuardianConsentAnswer = "accepted" | "declined";
 
 /**
  * Rosto de referência do aluno (`student_reference_faces`), como a tela o vê.

@@ -25,6 +25,7 @@ import EventsPage from '@/pages/events';
 import EventNewPage from '@/pages/event-new';
 import EventDetailPage from '@/pages/event-detail';
 import EventReviewPage from '@/pages/event-review';
+import ConsentPage from '@/pages/consent';
 import ReferencesPage from '@/pages/references';
 import GalleryPage from '@/pages/gallery';
 import GeneratePage from '@/pages/generate';
@@ -84,9 +85,22 @@ function Pages() {
 
 function AuthGate() {
   const { session, loading } = useAuth();
+  const [location] = useLocation();
   const [recovering, setRecovering] = useState(
     () => isRecoveryPending(),
   );
+
+  // Primeira rota pública do app: o consentimento do responsável (Fase 5,
+  // W2) não tem sessão — a posse do token do link é a credencial. Fica antes
+  // do gate para nunca cair na tela de login.
+  if (location === '/consentimento' || location.startsWith('/consentimento/')) {
+    return (
+      <Switch>
+        <Route path="/consentimento/:token" component={ConsentPage} />
+        <Route component={NotFound} />
+      </Switch>
+    );
+  }
 
   if (loading) {
     return (
