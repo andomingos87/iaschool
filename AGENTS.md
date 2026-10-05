@@ -151,6 +151,8 @@ consentimento ou compartilhamento, use a skill `eca-digital`
 | [`docs/spike-reconhecimento-facial.md`](docs/spike-reconhecimento-facial.md) | Spike M0: números medidos do motor facial, limiares calibrados e o que ficou sem medir |
 | [`docs/estimativa-custos-por-aluno.md`](docs/estimativa-custos-por-aluno.md) | Custo operacional por cenário de escala e por aluno, base para precificar; recalculável por `scripts/custos-por-aluno.py` |
 | [`docs/diagnostico-geracao-imagens.md`](docs/diagnostico-geracao-imagens.md) | Diagnóstico da falha de geração de imagens |
+| [`docs/referencia-zapi.md`](docs/referencia-zapi.md) | Referência da Z-API: autenticação, `send-text`, webhook de status, filtros e gotchas |
+| [`docs/diagnostico-webhook-zapi.md`](docs/diagnostico-webhook-zapi.md) | Registro da depuração: tentativas, erros e descobertas do webhook Z-API |
 | [`artifacts/iaschool-app/SUPABASE.md`](artifacts/iaschool-app/SUPABASE.md) | Integração Supabase: variáveis, tabelas, RLS, buckets |
 | [`docs/development/cross-platform-web.md`](docs/development/cross-platform-web.md) | Compatibilidade macOS/Linux/Windows |
 | `artifacts/iaschool-ui/docs/` | Guias de consumo e migração do design system |
