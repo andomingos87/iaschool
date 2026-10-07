@@ -2,6 +2,7 @@ import type { WorkerClient } from "./supabase";
 
 export const EVENT_PHOTOS_BUCKET = "event-photos";
 export const EVENT_THUMBS_BUCKET = "event-thumbs";
+export const DELIVERY_ASSETS_BUCKET = "delivery-assets";
 
 export interface StorageApi {
   download(bucket: string, path: string): Promise<Buffer>;

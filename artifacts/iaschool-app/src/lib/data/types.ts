@@ -480,6 +480,155 @@ export interface GuardianConsentView {
 export type GuardianConsentAnswer = "accepted" | "declined";
 
 /**
+ * Versão do termo da entrega em uso. Espelha `_shared/whatsapp/consent-terms.ts`
+ * (Deno) — mudar lá exige mudar aqui. É a versão gravada no congelamento do lote.
+ */
+export const DELIVERY_TERMS_VERSION = "delivery_whatsapp.v1";
+
+export type DeliveryBatchStatus =
+  | "draft"
+  | "preparing"
+  | "awaiting_review"
+  | "ready"
+  | "queued"
+  | "processing"
+  | "completed"
+  | "completed_with_errors"
+  | "canceled";
+
+export type DeliveryRecipientStatus =
+  | "preparing"
+  | "blocked"
+  | "awaiting_review"
+  | "ready"
+  | "queued"
+  | "sending"
+  | "accepted"
+  | "sent"
+  | "delivered"
+  | "read"
+  | "failed"
+  | "unknown"
+  | "canceled"
+  | "revoked"
+  | "expired";
+
+/** Motivo de bloqueio: pt-BR no preflight; código técnico na aprovação. */
+export type DeliveryBlockedReason =
+  | "sem_responsavel"
+  | "numero_nao_verificado"
+  | "sem_consentimento"
+  | "sem_fotos"
+  | "revisao_pendente"
+  | "number_unverified"
+  | "authorization_revoked"
+  | "render_incomplete";
+
+export interface DeliveryPreflightStudent {
+  studentId: string;
+  name: string;
+  confirmedPhotos: number;
+  pendingFaces: number;
+  consentSource?: string;
+}
+
+export interface DeliveryPreflightRecipient {
+  guardianId?: string;
+  guardianName?: string;
+  phoneMasked?: string;
+  verified: boolean;
+  eligible: boolean;
+  blockedReason?: DeliveryBlockedReason;
+  students: DeliveryPreflightStudent[];
+}
+
+export interface DeliveryPreflight {
+  event: { id: string; name: string; classId?: string };
+  /** Rostos sem atribuição no evento: revisão incompleta (aviso, não bloqueio). */
+  unassignedPendingFaces: number;
+  recipients: DeliveryPreflightRecipient[];
+}
+
+export interface DeliveryBatchSummary {
+  id: string;
+  status: DeliveryBatchStatus;
+  termsVersion: string;
+  recipientCount: number;
+  itemCount: number;
+  renderedCount: number;
+  failedCount: number;
+  createdAt: string;
+  approvedAt?: string;
+  canceledAt?: string;
+  recipientsByStatus: Record<string, number>;
+}
+
+export interface DeliveryBatchRecipientDetail {
+  id: string;
+  guardianName: string;
+  phoneMasked: string;
+  status: DeliveryRecipientStatus;
+  lastError?: string;
+  students: string[];
+  itemsTotal: number;
+  itemsRendered: number;
+  itemsFailed: number;
+}
+
+export interface DeliveryBatchDetail {
+  batch: DeliveryBatchSummary & { eventId: string };
+  recipients: DeliveryBatchRecipientDetail[];
+}
+
+export interface DeliveryPreviewItem {
+  itemId: string;
+  studentId?: string;
+  studentName: string;
+  url: string;
+}
+
+export const DELIVERY_BATCH_STATUS_LABEL: Record<DeliveryBatchStatus, string> = {
+  draft: "Rascunho",
+  preparing: "Preparando",
+  awaiting_review: "Aguardando revisão",
+  ready: "Pronto",
+  queued: "Na fila",
+  processing: "Processando",
+  completed: "Concluído",
+  completed_with_errors: "Concluído com falhas",
+  canceled: "Cancelado",
+};
+
+export const DELIVERY_RECIPIENT_STATUS_LABEL: Record<DeliveryRecipientStatus, string> = {
+  preparing: "Preparando",
+  blocked: "Bloqueado",
+  awaiting_review: "Aguardando revisão",
+  ready: "Pronto",
+  queued: "Na fila",
+  sending: "Enviando",
+  accepted: "Aceita pelo provedor",
+  sent: "Enviada",
+  delivered: "Entregue",
+  read: "Lida",
+  failed: "Falhou",
+  unknown: "Resultado incerto",
+  canceled: "Cancelado",
+  revoked: "Revogado",
+  expired: "Expirado",
+};
+
+export const DELIVERY_BLOCKED_REASON_LABEL: Record<string, string> = {
+  sem_responsavel: "Sem responsável cadastrado",
+  numero_nao_verificado: "WhatsApp não verificado",
+  sem_consentimento: "Sem aceite do responsável",
+  sem_fotos: "Sem fotos confirmadas",
+  revisao_pendente: "Revisão de rostos pendente",
+  number_unverified: "Número mudou ou perdeu a verificação",
+  authorization_revoked: "Aceite revogado",
+  render_incomplete: "Derivado pendente ou falho",
+};
+
+/**
  * Rosto de referência do aluno (`student_reference_faces`), como a tela o vê.
  * O vetor biométrico **nunca** sai do banco: a RPC de leitura não o devolve.
  */

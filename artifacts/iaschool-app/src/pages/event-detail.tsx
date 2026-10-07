@@ -7,6 +7,7 @@ import {
   Images,
   Loader2,
   ScanFace,
+  Send,
   ShieldAlert,
   ShieldCheck,
   Trash2,
@@ -213,6 +214,26 @@ export default function EventDetailPage() {
           </Card>
         );
       })()}
+
+      <Card className="border-border" data-testid="card-event-deliveries">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+          <div>
+            <p className="flex items-center gap-2 font-medium">
+              <Send className="size-4 text-primary" />
+              Entregas aos responsáveis
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Prepare o lote, revise a prévia com as outras crianças desfocadas
+              e aprove o envio às famílias.
+            </p>
+          </div>
+          <Button asChild variant="outline">
+            <Link href={`/eventos/${e.id}/entregas`} data-testid="link-event-deliveries">
+              Abrir entregas
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       {TEST_DATA_ONLY && (
         <Alert data-testid="alert-test-data-only">

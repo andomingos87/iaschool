@@ -11,6 +11,7 @@ import type {
   FaceReviewRepository,
   SchoolBrandRepository,
   DataLayer,
+  DeliveryRepository,
   GeneratedPostRepository,
   ImageGenerationService,
   PhotoRepository,
@@ -1581,6 +1582,44 @@ const guardianConsent: GuardianConsentService = {
   },
 };
 
+/**
+ * Entrega em lote também não é simulada no modo demo: sem RPCs e sem worker
+ * não há lote nem prévia. A lista responde vazia para a tela renderizar; as
+ * ações falham fechado.
+ */
+const deliveries: DeliveryRepository = {
+  async preflight() {
+    throw new Error("A entrega em lote está indisponível neste modo.");
+  },
+  async batchesForEvent() {
+    return [];
+  },
+  async batchDetail() {
+    throw new Error("A entrega em lote está indisponível neste modo.");
+  },
+  async createBatch() {
+    throw new Error("A entrega em lote está indisponível neste modo.");
+  },
+  async approveBatch() {
+    throw new Error("A entrega em lote está indisponível neste modo.");
+  },
+  async cancelBatch() {
+    throw new Error("A entrega em lote está indisponível neste modo.");
+  },
+  async retryFailedRenders() {
+    throw new Error("A entrega em lote está indisponível neste modo.");
+  },
+  async previewItems() {
+    return [];
+  },
+  async previewAssetUrl() {
+    throw new Error("A entrega em lote está indisponível neste modo.");
+  },
+  onBatchChange() {
+    return () => {};
+  },
+};
+
 const shareLogs: ShareLogRepository = {
   async list(studentId) {
     await delay(200);
@@ -1621,6 +1660,7 @@ export function createMockDataLayer(): DataLayer {
     generation,
     guardianVerification,
     guardianConsent,
+    deliveries,
     shareLogs,
     isMock: true,
   };

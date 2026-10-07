@@ -27,6 +27,12 @@ export interface WorkerConfig {
   purgeBatch: number;
   thumbSize: number;
   thumbQuality: number;
+  /** Sigma do desfoque dos derivados de entrega (W3). */
+  blurSigma: number;
+  /** Maior lado da miniatura de prévia/entrega (W3). */
+  deliveryThumbSize: number;
+  /** Qualidade do JPEG do derivado de entrega (W3). */
+  deliveryJpegQuality: number;
   logLevel: string;
 }
 
@@ -44,6 +50,9 @@ const DEFAULTS = {
   PURGE_BATCH: 100,
   THUMB_SIZE: 320,
   THUMB_QUALITY: 80,
+  DELIVERY_BLUR_SIGMA: 30,
+  DELIVERY_THUMB_SIZE: 960,
+  DELIVERY_JPEG_QUALITY: 82,
 } as const;
 
 function intFrom(env: NodeJS.ProcessEnv, key: keyof typeof DEFAULTS): number {
@@ -77,6 +86,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
     purgeBatch: intFrom(env, "PURGE_BATCH"),
     thumbSize: intFrom(env, "THUMB_SIZE"),
     thumbQuality: intFrom(env, "THUMB_QUALITY"),
+    blurSigma: intFrom(env, "DELIVERY_BLUR_SIGMA"),
+    deliveryThumbSize: intFrom(env, "DELIVERY_THUMB_SIZE"),
+    deliveryJpegQuality: intFrom(env, "DELIVERY_JPEG_QUALITY"),
     logLevel: env.LOG_LEVEL ?? "info",
   };
 }
