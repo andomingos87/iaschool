@@ -27,6 +27,8 @@ import { iaschool } from "@/config/iaschool";
 import { DemoIndicator } from "@/components/demo-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { getDataLayer } from "@/lib/data";
+import { appEntry } from "@/lib/auth-entry";
+import { SessionReadError } from "@/lib/auth-messages";
 import { SignupCard } from "@/pages/signup";
 
 const schema = z.object({
@@ -46,7 +48,7 @@ const DEMO_USERS = [
 ];
 
 export default function LoginPage() {
-  const { signIn } = useAuth();
+  const { signIn, sessionError, clearSessionError, retrySession } = useAuth();
   const isMock = getDataLayer().isMock;
   const [submitting, setSubmitting] = useState(false);
   const [mode, setMode] = useState<"login" | "forgot" | "sent" | "signup">(
@@ -80,9 +82,11 @@ export default function LoginPage() {
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
     try {
-      await signIn(values.email, values.password);
+      const session = await signIn(values.email, values.password);
+      if (appEntry(session.user) !== "app") return;
       toast({ title: "Bem-vindo de volta!", description: "Login efetuado com sucesso." });
     } catch (err) {
+      if (err instanceof SessionReadError) return;
       toast({
         variant: "destructive",
         title: "Não foi possível entrar",
@@ -210,7 +214,56 @@ export default function LoginPage() {
             <CardTitle>Entrar</CardTitle>
             <CardDescription>Acesse com sua conta {iaschool.brand.name}.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {sessionError && (
+              <div
+                className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm"
+                data-testid="box-session-error"
+              >
+                <p>{sessionError}</p>
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={submitting}
+                    onClick={() => {
+                      setSubmitting(true);
+                      void retrySession()
+                        .then((session) => {
+                          if (appEntry(session.user) === "app") {
+                            toast({
+                              title: "Bem-vindo de volta!",
+                              description: "Login efetuado com sucesso.",
+                            });
+                          }
+                        })
+                        .catch((err: unknown) => {
+                          if (err instanceof SessionReadError) return;
+                          toast({
+                            variant: "destructive",
+                            title: "Não foi possível entrar",
+                            description:
+                              err instanceof Error ? err.message : "Tente novamente.",
+                          });
+                        })
+                        .finally(() => setSubmitting(false));
+                    }}
+                    data-testid="button-retry-session"
+                  >
+                    Tentar de novo
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={clearSessionError}
+                    data-testid="button-dismiss-session-error"
+                  >
+                    Dispensar
+                  </Button>
+                </div>
+              </div>
+            )}
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField

@@ -37,6 +37,18 @@ export function storedToMasked(stored: string): string {
   return maskWhatsapp(digits);
 }
 
+/**
+ * Onde a lista, a ficha e o passo da arte citavam o WhatsApp do aluno:
+ * o número do responsável, ou a turma. Nunca os dois, nunca o número do aluno.
+ */
+export function studentContactLine(
+  student: { guardian?: { whatsapp?: string } | null },
+  classLabel?: string,
+): string {
+  if (student.guardian?.whatsapp) return storedToMasked(student.guardian.whatsapp);
+  return classLabel || "Sem turma";
+}
+
 /** Valida um número de WhatsApp brasileiro (DDD + 9 dígitos). */
 export function isValidWhatsapp(masked: string): boolean {
   const digits = onlyDigits(masked);

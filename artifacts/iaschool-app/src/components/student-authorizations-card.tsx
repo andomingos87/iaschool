@@ -157,7 +157,7 @@ export function StudentAuthorizationsCard({ student }: { student: Student }) {
               className="flex items-center gap-2 font-medium"
             >
               <ScanFace className="size-4 text-muted-foreground" />
-              {AUTHORIZATION_SCOPE_LABEL.biometric_sorting}
+              Reconhecer o rosto
             </Label>
             <p className="mt-1 text-xs text-muted-foreground">
               {AUTHORIZATION_SCOPE_DESCRIPTION.biometric_sorting}
@@ -188,7 +188,7 @@ export function StudentAuthorizationsCard({ student }: { student: Student }) {
           <div className="min-w-0">
             <Label className="flex items-center gap-2 font-medium">
               <Send className="size-4 text-muted-foreground" />
-              {AUTHORIZATION_SCOPE_LABEL.delivery_whatsapp}
+              Enviar ao responsável
             </Label>
             <p className="mt-1 text-xs text-muted-foreground">
               {AUTHORIZATION_SCOPE_DESCRIPTION.delivery_whatsapp}
@@ -270,9 +270,9 @@ export function StudentAuthorizationsCard({ student }: { student: Student }) {
         <p className="flex items-start gap-2 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" />
           <span>
-            A foto para reconhecimento é declarada por você. Para o envio por
-            WhatsApp, o pedido vai ao responsável e só o aceite dele libera a
-            entrega. Revogar não recupera o material já entregue.
+            Sem reconhecimento, o rosto não é separado. Sem o aceite do
+            responsável, nada é enviado. Na foto que vai para uma família, as
+            outras crianças saem desfocadas.
           </span>
         </p>
       </CardContent>

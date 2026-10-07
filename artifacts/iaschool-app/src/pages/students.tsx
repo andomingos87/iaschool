@@ -77,10 +77,11 @@ import {
   useDeleteStudentsPermanently,
 } from "@/hooks/use-students";
 import { useAuth } from "@/hooks/use-auth";
+import { studentContactLine } from "@/lib/format";
 import { useBiometricReadiness } from "@/hooks/use-reference-faces";
 import type { Student, StudentBiometricReadiness } from "@/lib/data";
 import { TRASH_RETENTION_DAYS, isPlatformAdmin } from "@/lib/data";
-import { ageFromIso, initials, storedToMasked } from "@/lib/format";
+import { ageFromIso, initials } from "@/lib/format";
 
 type ViewMode = "cards" | "list";
 type DeleteMode = "trash" | "permanent";
@@ -366,11 +367,9 @@ export default function StudentsPage() {
 
                 <div className="mt-3 space-y-1.5 border-t border-border pt-3 text-sm text-muted-foreground">
                   <p className="flex items-center gap-2">
-                    <Phone className="size-3.5" /> {storedToMasked(s.whatsapp)}
+                    <Phone className="size-3.5" />{" "}
+                    {studentContactLine(s, s.classId ? classLabels.get(s.classId) : undefined)}
                   </p>
-                  {s.classId && classLabels.get(s.classId) && (
-                    <p className="text-xs">{classLabels.get(s.classId)}</p>
-                  )}
                   {s.enrollmentNumber && (
                     <p className="text-xs">Matrícula {s.enrollmentNumber}</p>
                   )}
@@ -400,7 +399,7 @@ export default function StudentsPage() {
               <TableHead>Aluno</TableHead>
               <TableHead className="hidden md:table-cell">Turma</TableHead>
               <TableHead className="hidden md:table-cell">Matrícula</TableHead>
-              <TableHead className="hidden lg:table-cell">WhatsApp</TableHead>
+              <TableHead className="hidden lg:table-cell">Contato</TableHead>
               <TableHead className="hidden lg:table-cell">
                 {isTrash ? "Expurgo" : "Situação"}
               </TableHead>
@@ -466,7 +465,9 @@ export default function StudentsPage() {
                     )}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
-                    {storedToMasked(s.whatsapp)}
+                    {s.guardian?.whatsapp
+                      ? studentContactLine(s)
+                      : <span className="text-muted-foreground">—</span>}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
                     {isTrash && s.deletedAt ? (

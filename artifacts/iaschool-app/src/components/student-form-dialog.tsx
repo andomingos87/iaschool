@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { Loader2, Save, ShieldCheck } from "lucide-react";
 import {
   Dialog,
@@ -23,130 +23,30 @@ import { Input } from "@workspace/iaschool-ui/components/ui/input";
 import { Textarea } from "@workspace/iaschool-ui/components/ui/textarea";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
 import { Label } from "@workspace/iaschool-ui/components/ui/label";
-import { Checkbox } from "@workspace/iaschool-ui/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/iaschool-ui/components/ui/select";
+import { Combobox } from "@workspace/iaschool-ui/components/ui/combobox";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { MultiUpload } from "@/components/multi-upload";
 import { useCreateStudent, useUpdateStudent } from "@/hooks/use-students";
 import { useClasses } from "@/hooks/use-classes";
 import { GRADE_LABEL } from "@/lib/data";
-import type { Student, StoredImage, StudentInput } from "@/lib/data";
+import type { Student, StoredImage } from "@/lib/data";
 import { BUCKETS } from "@/lib/constants";
 import { ageBracket, AGE_BRACKET_LABEL, requiresGuardianConsent } from "@/lib/eca";
+import { enqueueProfileReference } from "@/lib/enqueue-profile-reference";
 import {
   brDateToIso,
   isoToBrDate,
-  isValidWhatsapp,
   maskDate,
   maskWhatsapp,
   storedToMasked,
-  whatsappToStored,
 } from "@/lib/format";
-
-/** Radix Select não aceita valor vazio; "sem turma" precisa de um sentinela. */
-const NO_CLASS = "__none__";
-
-/**
- * A data de nascimento passa a ser obrigatória: é ela que define qual proteção
- * etária o produto aplica (Lei nº 15.211/2025, art. 10). Para alunos menores
- * de 18 anos, o responsável legal e a autorização de uso de imagem também são
- * obrigatórios (art. 7º, § 2º; LGPD, art. 14, § 1º).
- */
-const schema = z
-  .object({
-    name: z.string().min(2, "Informe o nome do aluno"),
-    whatsapp: z.string().refine(isValidWhatsapp, "WhatsApp inválido — use (11) 99999-9999"),
-    birthDate: z
-      .string()
-      .refine(
-        (v) => ageBracket(brDateToIso(v)) !== null,
-        "Informe uma data de nascimento válida (dd/mm/aaaa)",
-      ),
-    notes: z.string().optional(),
-    enrollmentNumber: z.string().optional(),
-    classId: z.string().optional(),
-    guardianName: z.string().optional(),
-    guardianWhatsapp: z.string().optional(),
-    guardianEmail: z.string().optional(),
-    guardianRelationship: z.string().optional(),
-    guardianConsent: z.boolean().optional(),
-  })
-  .superRefine((v, ctx) => {
-    if (!requiresGuardianConsent(brDateToIso(v.birthDate))) return;
-    if (!v.guardianName || v.guardianName.trim().length < 2) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["guardianName"],
-        message: "Informe o nome do responsável legal",
-      });
-    }
-    if (!v.guardianWhatsapp || !isValidWhatsapp(v.guardianWhatsapp)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["guardianWhatsapp"],
-        message: "WhatsApp do responsável inválido — use (11) 99999-9999",
-      });
-    }
-    if (!v.guardianConsent) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["guardianConsent"],
-        message: "Registre a autorização do responsável",
-      });
-    }
-  });
-type FormValues = z.infer<typeof schema>;
-
-const EMPTY_VALUES: FormValues = {
-  name: "",
-  whatsapp: "",
-  birthDate: "",
-  notes: "",
-  enrollmentNumber: "",
-  classId: NO_CLASS,
-  guardianName: "",
-  guardianWhatsapp: "",
-  guardianEmail: "",
-  guardianRelationship: "",
-  guardianConsent: false,
-};
-
-/**
- * Monta o responsável a partir do formulário.
- * `consentAt` e `whatsappVerifiedAt` são carimbos de tempo: uma vez gravados,
- * só mudam por ação explícita. Desmarcar a autorização revoga o consentimento
- * (LGPD, art. 8º, § 5º) e, com ele, a verificação do canal — o envio volta a
- * ficar bloqueado.
- */
-function buildGuardian(
-  values: FormValues,
-  student: Student | null,
-): Student["guardian"] {
-  if (!requiresGuardianConsent(brDateToIso(values.birthDate))) return undefined;
-  const previous = student?.guardian;
-  const whatsapp = whatsappToStored(values.guardianWhatsapp!);
-  // Trocar o número invalida a verificação anterior.
-  const sameNumber = previous?.whatsapp === whatsapp;
-  const consent = Boolean(values.guardianConsent);
-  return {
-    name: values.guardianName!.trim(),
-    whatsapp,
-    email: values.guardianEmail?.trim() || undefined,
-    relationship: values.guardianRelationship?.trim() || undefined,
-    consentAt: consent
-      ? (previous?.consentAt ?? new Date().toISOString())
-      : undefined,
-    consentRegisteredBy: consent ? previous?.consentRegisteredBy : undefined,
-    whatsappVerifiedAt:
-      consent && sameNumber ? previous?.whatsappVerifiedAt : undefined,
-  };
-}
+import {
+  buildStudentInput,
+  EMPTY_STUDENT_FORM,
+  NO_CLASS,
+  studentFormSchema,
+  type StudentFormValues,
+} from "@/lib/student-form";
 
 interface Props {
   open: boolean;
@@ -157,13 +57,14 @@ interface Props {
 export function StudentFormDialog({ open, onOpenChange, student }: Props) {
   const create = useCreateStudent();
   const update = useUpdateStudent();
+  const queryClient = useQueryClient();
   // Ao editar, as turmas são as da escola do aluno (pode não ser a ativa).
   const classes = useClasses(student?.schoolId);
   const [photos, setPhotos] = useState<StoredImage[]>([]);
 
-  const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: EMPTY_VALUES,
+  const form = useForm<StudentFormValues>({
+    resolver: zodResolver(studentFormSchema),
+    defaultValues: EMPTY_STUDENT_FORM,
   });
 
   useEffect(() => {
@@ -171,7 +72,6 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
     if (student) {
       form.reset({
         name: student.name,
-        whatsapp: storedToMasked(student.whatsapp),
         birthDate: isoToBrDate(student.birthDate),
         notes: student.notes ?? "",
         enrollmentNumber: student.enrollmentNumber ?? "",
@@ -182,11 +82,10 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
           : "",
         guardianEmail: student.guardian?.email ?? "",
         guardianRelationship: student.guardian?.relationship ?? "",
-        guardianConsent: Boolean(student.guardian?.consentAt),
       });
       setPhotos(student.photos ?? []);
     } else {
-      form.reset(EMPTY_VALUES);
+      form.reset(EMPTY_STUDENT_FORM);
       setPhotos([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,24 +98,34 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
   const bracket = ageBracket(birthIso);
   const needsGuardian = requiresGuardianConsent(birthIso);
 
-  async function onSubmit(values: FormValues) {
-    const payload: StudentInput = {
-      name: values.name.trim(),
-      whatsapp: whatsappToStored(values.whatsapp),
-      birthDate: brDateToIso(values.birthDate) || undefined,
-      notes: values.notes?.trim() || undefined,
-      enrollmentNumber: values.enrollmentNumber?.trim() || undefined,
-      classId: values.classId && values.classId !== NO_CLASS ? values.classId : undefined,
-      guardian: buildGuardian(values, student),
-      photos,
-    };
+  async function onSubmit(values: StudentFormValues) {
+    const payload = buildStudentInput(values, student, photos);
     try {
-      if (student) {
-        await update.mutateAsync({ id: student.id, patch: payload });
-        toast({ title: "Aluno atualizado", description: values.name });
-      } else {
-        await create.mutateAsync(payload);
-        toast({ title: "Aluno cadastrado", description: values.name });
+      const saved = student
+        ? await update.mutateAsync({ id: student.id, patch: payload })
+        : await create.mutateAsync(payload);
+      toast({
+        title: student ? "Aluno atualizado" : "Aluno cadastrado",
+        description: values.name,
+      });
+      if (saved.photos[0]) {
+        try {
+          const decision = await enqueueProfileReference(saved);
+          if (decision === "enqueue") {
+            void queryClient.invalidateQueries({ queryKey: ["reference-faces"] });
+            toast({
+              title: "Foto de perfil na fila",
+              description: "Ela entrou como rosto de referência e aguarda o processamento.",
+            });
+          }
+        } catch (err) {
+          toast({
+            variant: "destructive",
+            title: "Aluno salvo, referência não entrou na fila",
+            description:
+              err instanceof Error ? err.message : "Tente de novo na aba Rosto de referência.",
+          });
+        }
       }
       onOpenChange(false);
     } catch (err) {
@@ -234,8 +143,8 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
         <DialogHeader>
           <DialogTitle>{student ? "Editar aluno" : "Novo aluno"}</DialogTitle>
           <DialogDescription>
-            Nome, WhatsApp e data de nascimento são obrigatórios. Alunos
-            menores de 18 anos exigem responsável legal e autorização.
+            Nome e data de nascimento são obrigatórios. Aluno menor de 18
+            anos precisa do responsável, com nome e WhatsApp.
           </DialogDescription>
         </DialogHeader>
 
@@ -250,25 +159,6 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
                     <FormLabel>Nome *</FormLabel>
                     <FormControl>
                       <Input placeholder="Nome completo" data-testid="input-name" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="whatsapp"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>WhatsApp *</FormLabel>
-                    <FormControl>
-                      <Input
-                        inputMode="numeric"
-                        placeholder="(11) 99999-9999"
-                        data-testid="input-whatsapp"
-                        value={field.value}
-                        onChange={(e) => field.onChange(maskWhatsapp(e.target.value))}
-                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -326,24 +216,21 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Turma</FormLabel>
-                  <Select
-                    value={field.value || NO_CLASS}
-                    onValueChange={field.onChange}
-                  >
-                    <FormControl>
-                      <SelectTrigger data-testid="select-student-class">
-                        <SelectValue placeholder="Sem turma" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value={NO_CLASS}>Sem turma</SelectItem>
-                      {(classes.data ?? []).map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {GRADE_LABEL[c.grade] ?? c.grade} · {c.name} ({c.schoolYear})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <Combobox
+                      value={field.value || NO_CLASS}
+                      onValueChange={field.onChange}
+                      placeholder="Sem turma"
+                      data-testid="select-student-class"
+                      options={[
+                        { value: NO_CLASS, label: "Sem turma", pinned: true },
+                        ...(classes.data ?? []).map((c) => ({
+                          value: c.id,
+                          label: `${GRADE_LABEL[c.grade] ?? c.grade} · ${c.name} (${c.schoolYear})`,
+                        })),
+                      ]}
+                    />
+                  </FormControl>
                   {(classes.data?.length ?? 0) === 0 && !classes.isLoading && (
                     <p className="text-xs text-muted-foreground">
                       Nenhuma turma cadastrada ainda. Crie as turmas em
@@ -384,9 +271,9 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
                   <div>
                     <p className="text-sm font-medium">Responsável legal</p>
                     <p className="text-xs text-muted-foreground">
-                      Aluno menor de 18 anos. Sem responsável e autorização
-                      registrados, a geração de imagens fica bloqueada
-                      (Lei nº 15.211/2025, art. 7º, § 2º).
+                      Aluno menor de 18 anos. O WhatsApp do responsável é o
+                      canal de contato. Reconhecimento e envio ficam na ficha,
+                      cada um com o seu aceite (Lei nº 15.211/2025, art. 24).
                     </p>
                   </div>
                 </div>
@@ -469,30 +356,6 @@ export function StudentFormDialog({ open, onOpenChange, student }: Props) {
                     )}
                   />
                 </div>
-                <FormField
-                  control={form.control}
-                  name="guardianConsent"
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex items-start gap-3">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value}
-                            onCheckedChange={(v) => field.onChange(Boolean(v))}
-                            data-testid="checkbox-guardian-consent"
-                          />
-                        </FormControl>
-                        <span className="text-xs leading-relaxed text-muted-foreground">
-                          O responsável autorizou o uso da foto e dos dados do
-                          aluno para gerar imagens de desempenho e recebê-las
-                          por WhatsApp. Desmarcar revoga a autorização e volta a
-                          bloquear a geração.
-                        </span>
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </div>
             )}
 

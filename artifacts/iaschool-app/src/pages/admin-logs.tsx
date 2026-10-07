@@ -22,13 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/iaschool-ui/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/iaschool-ui/components/ui/select";
+import { Combobox } from "@workspace/iaschool-ui/components/ui/combobox";
 import {
   Sheet,
   SheetContent,
@@ -493,39 +487,37 @@ export default function AdminLogsPage() {
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Select
+        <Combobox
+          className="w-40"
           value={status}
           onValueChange={(v) => {
             setStatus(v as StatusFilter);
             setPage(1);
           }}
-        >
-          <SelectTrigger className="w-40" data-testid="select-status">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos os status</SelectItem>
-            <SelectItem value="success">Sucesso</SelectItem>
-            <SelectItem value="error">Erro</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
+          placeholder="Status"
+          data-testid="select-status"
+          options={[
+            { value: "all", label: "Todos os status" },
+            { value: "success", label: "Sucesso" },
+            { value: "error", label: "Erro" },
+          ]}
+        />
+        <Combobox
+          className="w-44"
           value={period}
           onValueChange={(v) => {
             setPeriod(v as PeriodFilter);
             setPage(1);
           }}
-        >
-          <SelectTrigger className="w-44" data-testid="select-period">
-            <SelectValue placeholder="Período" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todo o período</SelectItem>
-            <SelectItem value="24h">Últimas 24 horas</SelectItem>
-            <SelectItem value="7d">Últimos 7 dias</SelectItem>
-            <SelectItem value="30d">Últimos 30 dias</SelectItem>
-          </SelectContent>
-        </Select>
+          placeholder="Período"
+          data-testid="select-period"
+          options={[
+            { value: "all", label: "Todo o período" },
+            { value: "24h", label: "Últimas 24 horas" },
+            { value: "7d", label: "Últimos 7 dias" },
+            { value: "30d", label: "Últimos 30 dias" },
+          ]}
+        />
       </div>
 
       {list.isLoading ? (

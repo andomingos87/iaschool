@@ -56,7 +56,9 @@ create table if not exists public.students (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users (id) on delete cascade,
   name text not null,
-  whatsapp text not null,
+  -- Anulável desde 07/10/2026: o canal é o WhatsApp do responsável.
+  -- Linhas antigas permanecem; cadastro novo grava null.
+  whatsapp text,
   birth_date text,
   notes text,
   photos jsonb not null default '[]'::jsonb,

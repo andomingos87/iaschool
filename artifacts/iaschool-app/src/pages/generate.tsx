@@ -13,7 +13,6 @@ import {
   RotateCcw,
   Wand2,
   Plus,
-  Pencil,
   Loader2,
   ShieldAlert,
   ShieldCheck,
@@ -23,7 +22,6 @@ import { cn } from "@workspace/iaschool-ui/lib/utils";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
 import { Input } from "@workspace/iaschool-ui/components/ui/input";
 import { Textarea } from "@workspace/iaschool-ui/components/ui/textarea";
-import { Checkbox } from "@workspace/iaschool-ui/components/ui/checkbox";
 import { Badge } from "@workspace/iaschool-ui/components/ui/badge";
 import {
   Card,
@@ -46,12 +44,14 @@ import type {
 } from "@/lib/data";
 import { PageHeader } from "@/components/app-shell";
 import { EmptyState, CardsSkeleton, ErrorState } from "@/components/data-state";
-import { SchoolBrandFormDialog } from "@/components/school-brand-form-dialog";
 import { GenerationLoader } from "@/components/generation-loader";
 import { GenerationDetailsSection } from "@/components/generation-details";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { GuardianVerifyDialog } from "@/components/guardian-verify-dialog";
 import { useStudents } from "@/hooks/use-students";
+import { useClassLabels } from "@/hooks/use-classes";
+import { activeByScope, useAuthorizations } from "@/hooks/use-authorizations";
+import { useGuardianConsentStatus } from "@/hooks/use-guardian-consent";
 import { useSchoolBrands } from "@/hooks/use-school-brands";
 import { useReferences } from "@/hooks/use-references";
 import { useCreateGeneratedPost } from "@/hooks/use-generated-posts";
@@ -60,6 +60,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import { iaschool } from "@/config/iaschool";
 import { useAuth } from "@/hooks/use-auth";
+import { isPlatformAdmin } from "@/lib/data";
+import {
+  artWizardSteps,
+  initialArtSchoolId,
+  studentSchoolInSession,
+  type ArtWizardStep,
+} from "@/lib/art-wizard";
 import {
   ageBracket,
   allowedShareTarget,
@@ -69,7 +76,7 @@ import {
   shareBlockers,
 } from "@/lib/eca";
 import { stampAiDisclosure } from "@/lib/watermark";
-import { initials, storedToMasked } from "@/lib/format";
+import { initials, storedToMasked, studentContactLine } from "@/lib/format";
 import {
   AUX_PROMPT_PREFILL_EVENT,
   AUX_PROMPT_PREFILL_KEY,
@@ -77,15 +84,27 @@ import {
 
 type Phase = "form" | "generating" | "result";
 
-const STEP_META = [
-  { key: "aluno", label: "Aluno", icon: Users },
-  { key: "escola", label: "Escola", icon: School },
-  { key: "logo", label: "Logo", icon: School },
-  { key: "modelo", label: "Modelo de arte", icon: Images },
-];
+const STEP_ICON: Record<ArtWizardStep, typeof Users> = {
+  aluno: Users,
+  escola: School,
+  modelo: Images,
+};
+
+const STEP_LABEL: Record<ArtWizardStep, string> = {
+  aluno: "Aluno",
+  escola: "Escola",
+  modelo: "Modelo de arte",
+};
+
+const STEP_TITLE: Record<ArtWizardStep, string> = {
+  aluno: "Selecionar aluno e foto",
+  escola: "Escolher escola",
+  modelo: "Escolher o modelo de arte",
+};
 
 export default function GeneratePage() {
   const students = useStudents();
+  const classLabels = useClassLabels();
   const schoolBrands = useSchoolBrands();
   const references = useReferences();
   const createPost = useCreateGeneratedPost();
@@ -100,13 +119,9 @@ export default function GeneratePage() {
   // seleções
   const [student, setStudent] = useState<Student | null>(null);
   const [photo, setPhoto] = useState<StoredImage | null>(null);
-  // Escola selecionada explicitamente no wizard; null = "Sem escola".
+  // null = ainda não escolheu; cai na escola inicial da sessão.
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
-  // Diálogo de criação/edição de escola dentro do wizard.
-  const [brandDialogOpen, setBrandDialogOpen] = useState(false);
-  const [brandDialogEditing, setBrandDialogEditing] =
-    useState<SchoolBrand | null>(null);
-  const [showSchoolLogo, setShowSchoolLogo] = useState(true);
+  const [outOfSessionName, setOutOfSessionName] = useState<string | null>(null);
   const [reference, setReference] = useState<ReferencePost | null>(null);
   const [auxiliaryPrompt, setAuxiliaryPrompt] = useState("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -155,11 +170,36 @@ export default function GeneratePage() {
     return () => window.removeEventListener(AUX_PROMPT_PREFILL_EVENT, onEvent);
   }, []);
 
-  // Pré-seleciona o aluno vindo da página de detalhes (/gerar?aluno=<id>),
-  // refletindo também nos passos dependentes (foto e time).
+  const platformAdmin = isPlatformAdmin(session?.user.role);
+  const membershipIds = useMemo(
+    () => (session?.user.schools ?? []).map((s) => s.schoolId),
+    [session?.user.schools],
+  );
+  const visibleSchoolIds = useMemo(
+    () => (schoolBrands.data ?? []).map((b) => b.id),
+    [schoolBrands.data],
+  );
+  const steps = useMemo(
+    () => artWizardSteps({ schoolCount: membershipIds.length, platformAdmin }),
+    [membershipIds.length, platformAdmin],
+  );
+  const defaultSchoolId = useMemo(
+    () =>
+      initialArtSchoolId({
+        membershipSchoolIds: membershipIds,
+        visibleSchoolIds,
+        activeSchoolId: session?.activeSchoolId,
+        platformAdmin,
+      }),
+    [membershipIds, visibleSchoolIds, session?.activeSchoolId, platformAdmin],
+  );
+  const brandId = selectedBrandId ?? defaultSchoolId;
+
+  // Pré-seleciona o aluno vindo de /gerar?aluno=<id>. Escola fora da sessão
+  // não avança e não busca a escola por outro caminho.
   const [prefillApplied, setPrefillApplied] = useState(false);
   useEffect(() => {
-    if (prefillApplied || !students.data) return;
+    if (prefillApplied || !students.data || schoolBrands.isLoading) return;
     const params = new URLSearchParams(window.location.search);
     const id = params.get("aluno");
     if (!id) {
@@ -168,50 +208,90 @@ export default function GeneratePage() {
     }
     setPrefillApplied(true);
     const s = students.data.find((x) => x.id === id);
-    if (!s) return;
-    setStudent(s);
-    setPhoto(s.photos?.[0] ?? null);
-    setSelectedBrandId(s.schoolId ?? null);
-    setShowSchoolLogo(true);
-    // Remove o parâmetro para que "Gerar outra imagem" comece limpo.
     const url = new URL(window.location.href);
     url.searchParams.delete("aluno");
     window.history.replaceState(null, "", url.toString());
-  }, [prefillApplied, students.data]);
+    if (!s) return;
+    const inSession = studentSchoolInSession({
+      studentSchoolId: s.schoolId,
+      membershipSchoolIds: membershipIds,
+      visibleSchoolIds,
+      platformAdmin,
+    });
+    if (!inSession) {
+      setOutOfSessionName(s.name);
+      setStudent(null);
+      setPhoto(null);
+      return;
+    }
+    setOutOfSessionName(null);
+    setStudent(s);
+    setPhoto(s.photos?.[0] ?? null);
+    setSelectedBrandId(s.schoolId);
+  }, [
+    prefillApplied,
+    students.data,
+    schoolBrands.isLoading,
+    membershipIds,
+    visibleSchoolIds,
+    platformAdmin,
+  ]);
 
   const schoolBrand: SchoolBrand | undefined = useMemo(
-    () => schoolBrands.data?.find((b) => b.id === selectedBrandId),
-    [schoolBrands.data, selectedBrandId],
+    () => schoolBrands.data?.find((b) => b.id === brandId),
+    [schoolBrands.data, brandId],
   );
-
-  const hasSchoolLogo = !!schoolBrand?.logo;
 
   const loading =
     students.isLoading || schoolBrands.isLoading || references.isLoading;
+
+  const sessionSchools = {
+    membershipSchoolIds: membershipIds,
+    visibleSchoolIds,
+    platformAdmin,
+  };
+
+  const roster = useMemo(
+    () => (students.data ?? []).filter((s) => !!brandId && s.schoolId === brandId),
+    [students.data, brandId],
+  );
 
   // valida cada passo
   /**
    * Impedimentos do ECA Digital para o aluno selecionado.
    * Vazio = liberado. Ver lib/eca.ts para a base legal de cada item.
    */
-  const blockers = student ? generationBlockers(student) : [];
-  const shareIssues = student ? shareBlockers(student) : [];
+  const authorizations = useAuthorizations(student?.id ?? null);
+  const consentStatus = useGuardianConsentStatus(student?.id ?? null);
+  const artCompliance = {
+    biometricSortingActive: activeByScope(authorizations.data).has("biometric_sorting"),
+    deliveryAccepted: consentStatus.data?.state === "accepted",
+  };
+  const blockers = student ? generationBlockers(student, artCompliance) : [];
+  const shareIssues = student ? shareBlockers(student, artCompliance) : [];
+
+  function sameSchool(s: Student): boolean {
+    return (
+      !!brandId &&
+      s.schoolId === brandId &&
+      studentSchoolInSession({ studentSchoolId: s.schoolId, ...sessionSchools })
+    );
+  }
 
   function canAdvance(current: number): boolean {
-    switch (current) {
-      case 0:
-        // Sem conformidade não se avança: a foto do aluno não pode ser
-        // enviada ao modelo antes de a autorização estar registrada.
-        return !!student && !!photo && blockers.length === 0;
-      case 3:
-        return !!reference;
-      default:
-        return true;
+    const key = steps[current];
+    if (key === "aluno") {
+      // Sem conformidade não se avança: a foto do aluno não pode ser
+      // enviada ao modelo antes de a autorização estar registrada.
+      return !!student && !!photo && blockers.length === 0 && sameSchool(student);
     }
+    if (key === "escola") return !!schoolBrand && schoolBrand.id === brandId;
+    if (key === "modelo") return !!reference;
+    return false;
   }
 
   function next() {
-    setStep((s) => Math.min(s + 1, STEP_META.length - 1));
+    setStep((s) => Math.min(s + 1, steps.length - 1));
   }
   function back() {
     setStep((s) => Math.max(s - 1, 0));
@@ -223,7 +303,7 @@ export default function GeneratePage() {
     setStudent(null);
     setPhoto(null);
     setSelectedBrandId(null);
-    setShowSchoolLogo(true);
+    setOutOfSessionName(null);
     setResultPostId(null);
     setReference(null);
     setAuxiliaryPrompt("");
@@ -231,15 +311,51 @@ export default function GeneratePage() {
     setResultDetails(null);
   }
 
-  // Troca a escola selecionada no wizard (null = "Sem escola").
-  function selectSchoolBrand(id: string | null) {
-    if (id === selectedBrandId) return;
+  function selectSchoolBrand(id: string) {
+    if (id === brandId) return;
     setSelectedBrandId(id);
-    setShowSchoolLogo(true);
+    if (student && student.schoolId !== id) {
+      setStudent(null);
+      setPhoto(null);
+    }
+  }
+
+  function pickStudent(s: Student) {
+    if (
+      !studentSchoolInSession({
+        studentSchoolId: s.schoolId,
+        ...sessionSchools,
+      })
+    ) {
+      setOutOfSessionName(s.name);
+      setStudent(null);
+      setPhoto(null);
+      return;
+    }
+    setOutOfSessionName(null);
+    setStudent(s);
+    setPhoto(s.photos?.[0] ?? null);
+    if (steps.includes("escola")) setSelectedBrandId(s.schoolId);
   }
 
   async function generate() {
     if (!student || !photo || !reference) return;
+    if (!schoolBrand) {
+      toast({
+        variant: "destructive",
+        title: "Escola indisponível",
+        description: "Esta conta não tem uma escola na sessão.",
+      });
+      return;
+    }
+    if (student.schoolId !== schoolBrand.id || !sameSchool(student)) {
+      toast({
+        variant: "destructive",
+        title: "Escola diferente do aluno",
+        description: "A arte usa a escola do aluno. Troque o aluno ou a escola.",
+      });
+      return;
+    }
     // Segunda barreira, além do wizard: nenhuma foto de menor sai daqui sem
     // consentimento registrado do responsável (Lei 15.211/2025, art. 7º, § 2º).
     if (blockers.length > 0) {
@@ -254,7 +370,7 @@ export default function GeneratePage() {
       student,
       studentPhoto: photo,
       schoolBrand,
-      showSchoolLogo: hasSchoolLogo && showSchoolLogo,
+      showSchoolLogo: false,
       reference,
       auxiliaryPrompt: auxiliaryPrompt.trim() || undefined,
     };
@@ -368,7 +484,7 @@ export default function GeneratePage() {
       if (issue.code === "canal-nao-verificado") setGuardianDialogOpen(true);
       return;
     }
-    const target = allowedShareTarget(student);
+    const target = allowedShareTarget(student, artCompliance);
     if (!target) {
       toast({
         variant: "destructive",
@@ -583,7 +699,11 @@ export default function GeneratePage() {
   }
 
   // ---- Wizard (form) ----
-  const StepIcon = STEP_META[step].icon;
+  const stepKey = steps[step] ?? steps[steps.length - 1];
+  const StepIcon = STEP_ICON[stepKey];
+  const choosableSchools = (schoolBrands.data ?? []).filter(
+    (b) => platformAdmin || membershipIds.includes(b.id),
+  );
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -594,12 +714,12 @@ export default function GeneratePage() {
 
       {/* stepper */}
       <div className="mb-6 flex items-center gap-1 overflow-x-auto pb-2">
-        {STEP_META.map((s, i) => {
-          const Icon = s.icon;
+        {steps.map((key, i) => {
+          const Icon = STEP_ICON[key];
           const done = i < step;
           const active = i === step;
           return (
-            <div key={s.key} className="flex items-center">
+            <div key={key} className="flex items-center">
               <button
                 type="button"
                 onClick={() => i <= step && setStep(i)}
@@ -610,12 +730,12 @@ export default function GeneratePage() {
                   done && "bg-accent text-accent-foreground",
                   !active && !done && "bg-muted text-muted-foreground",
                 )}
-                data-testid={`step-${s.key}`}
+                data-testid={`step-${key}`}
               >
                 {done ? <Check className="size-3.5" /> : <Icon className="size-3.5" />}
-                <span className="hidden sm:inline">{s.label}</span>
+                <span className="hidden sm:inline">{STEP_LABEL[key]}</span>
               </button>
-              {i < STEP_META.length - 1 && (
+              {i < steps.length - 1 && (
                 <div className="mx-1 h-px w-4 bg-border sm:w-6" />
               )}
             </div>
@@ -627,24 +747,33 @@ export default function GeneratePage() {
         <CardContent className="p-6">
           <div className="mb-4 flex items-center gap-2">
             <StepIcon className="size-5 text-primary" />
-            <h2 className="text-lg font-bold">{stepTitle(step)}</h2>
+            <h2 className="text-lg font-bold">{STEP_TITLE[stepKey]}</h2>
           </div>
 
           <div key={step} className="animate-in fade-in slide-in-from-right-2 duration-300">
             {/* STEP 0 — aluno + foto */}
-            {step === 0 && (
+            {stepKey === "aluno" && (
               <div className="space-y-5">
+                {outOfSessionName && (
+                  <div
+                    className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm"
+                    data-testid="box-school-out-of-session"
+                  >
+                    A escola de {outOfSessionName} não está na sua sessão. O
+                    passo não avança. O acesso à escola não foi ampliado.
+                  </div>
+                )}
+                {roster.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum aluno desta escola.
+                  </p>
+                ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {students.data!.map((s) => (
+                  {roster.map((s) => (
                     <button
                       key={s.id}
                       type="button"
-                      onClick={() => {
-                        setStudent(s);
-                        setPhoto(s.photos?.[0] ?? null);
-                        setSelectedBrandId(s.schoolId ?? null);
-                        setShowSchoolLogo(true);
-                      }}
+                      onClick={() => pickStudent(s)}
                       className={cn(
                         "flex items-center gap-3 rounded-md border p-3 text-left transition-colors",
                         student?.id === s.id
@@ -666,12 +795,13 @@ export default function GeneratePage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium">{s.name}</p>
                         <p className="truncate text-xs text-muted-foreground">
-                          {storedToMasked(s.whatsapp)}
+                          {studentContactLine(s, s.classId ? classLabels.get(s.classId) : undefined)}
                         </p>
                       </div>
                     </button>
                   ))}
                 </div>
+                )}
 
                 {student && blockers.length > 0 && (
                   <div
@@ -740,150 +870,75 @@ export default function GeneratePage() {
               </div>
             )}
 
-            {/* STEP 1 — escola */}
-            {step === 1 && (
+            {stepKey === "escola" && (
               <div className="space-y-5">
                 {schoolBrands.isError ? (
                   <ErrorState onRetry={() => schoolBrands.refetch()} />
                 ) : (
                   <>
                     <p className="text-sm text-muted-foreground">
-                      A escola do aluno já vem selecionada, com o logo e as
-                      cores cadastrados em "Identidade da escola". Você pode
-                      seguir sem escola para gerar sem logo e sem cores.
+                      A escola do aluno já vem marcada. As cores dessa escola
+                      entram na arte. O logo não é colocado. Para mudar o
+                      cadastro, abra a página Escola.
                     </p>
 
-                    {(schoolBrands.data?.length ?? 0) === 0 ? (
+                    {choosableSchools.length === 0 ? (
                       <div className="rounded-md border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
                         Sua conta ainda não está vinculada a nenhuma escola.
                       </div>
                     ) : (
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => selectSchoolBrand(null)}
-                          className={cn(
-                            "flex items-center gap-3 rounded-md border p-3 text-left transition-colors",
-                            selectedBrandId === null
-                              ? "border-primary bg-accent"
-                              : "border-border hover:border-primary/50",
-                          )}
-                          data-testid="select-school-brand-none"
-                        >
-                          <div className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
-                            <School className="size-5 text-muted-foreground" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-medium">Sem escola</p>
-                            <p className="text-xs text-muted-foreground">
-                              Gerar sem logo e sem cores
-                            </p>
-                          </div>
-                        </button>
-                        {schoolBrands.data!.map((b) => (
-                          <div
+                        {choosableSchools.map((b) => (
+                          <button
                             key={b.id}
+                            type="button"
+                            onClick={() => selectSchoolBrand(b.id)}
                             className={cn(
-                              "relative flex items-center gap-3 rounded-md border p-3 transition-colors",
-                              selectedBrandId === b.id
+                              "flex items-center gap-3 rounded-md border p-3 text-left transition-colors",
+                              brandId === b.id
                                 ? "border-primary bg-accent"
                                 : "border-border hover:border-primary/50",
                             )}
+                            data-testid={`select-school-brand-${b.id}`}
                           >
-                            <button
-                              type="button"
-                              onClick={() => selectSchoolBrand(b.id)}
-                              className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                              data-testid={`select-school-brand-${b.id}`}
-                            >
-                              <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-                                {b.logo ? (
-                                  <img
-                                    src={b.logo.url}
-                                    alt={b.name}
-                                    className="h-full w-full object-contain"
-                                  />
-                                ) : (
-                                  <School className="size-5 text-muted-foreground" />
+                            <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
+                              {b.logo ? (
+                                <img
+                                  src={b.logo.url}
+                                  alt=""
+                                  className="h-full w-full object-contain"
+                                />
+                              ) : (
+                                <School className="size-5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">
+                                {b.name}
+                                {student?.schoolId === b.id && (
+                                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                                    (escola do aluno)
+                                  </span>
                                 )}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="truncate font-medium">
-                                  {b.name}
-                                  {student?.schoolId === b.id && (
-                                    <span className="ml-2 text-xs font-normal text-muted-foreground">
-                                      (escola do aluno)
-                                    </span>
-                                  )}
-                                </p>
-                                <p className="truncate text-xs text-muted-foreground">
-                                  {b.logo ? "Logo cadastrado" : "Sem logo"}
-                                </p>
-                              </div>
-                            </button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 shrink-0"
-                              onClick={() => {
-                                setBrandDialogEditing(b);
-                                setBrandDialogOpen(true);
-                              }}
-                              title="Editar escola"
-                              data-testid={`button-edit-school-brand-${b.id}`}
-                            >
-                              <Pencil className="size-4" />
-                            </Button>
-                          </div>
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {b.colors.length === 0
+                                  ? "Sem cores cadastradas"
+                                  : b.colors.length === 1
+                                    ? "1 cor na arte"
+                                    : `${b.colors.length} cores na arte`}
+                              </p>
+                            </div>
+                          </button>
                         ))}
                       </div>
                     )}
-
                   </>
                 )}
               </div>
             )}
 
-            {/* STEP 2 — logo da escola */}
-            {step === 2 && (
-              <div className="space-y-4">
-                {!hasSchoolLogo ? (
-                  <p className="text-sm text-muted-foreground">
-                    {schoolBrand
-                      ? `A escola "${schoolBrand.name}" não tem logo cadastrado.`
-                      : "Nenhuma escola selecionada para esta arte."}{" "}
-                    Você pode seguir para o próximo passo.
-                  </p>
-                ) : (
-                  <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-                    <img
-                      src={schoolBrand!.logo!.url}
-                      alt={schoolBrand!.name}
-                      className="size-20 rounded-md border border-border bg-muted object-contain p-1"
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        variant={showSchoolLogo ? "default" : "outline"}
-                        onClick={() => setShowSchoolLogo(true)}
-                        data-testid="button-school-logo-yes"
-                      >
-                        Exibir logo
-                      </Button>
-                      <Button
-                        variant={!showSchoolLogo ? "default" : "outline"}
-                        onClick={() => setShowSchoolLogo(false)}
-                        data-testid="button-school-logo-no"
-                      >
-                        Não exibir
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* STEP 3 — modelo de arte + instruções */}
-            {step === 3 && (
+            {stepKey === "modelo" && (
               <div className="space-y-5">
                 {(references.data?.length ?? 0) === 0 ? (
                   <div className="rounded-md border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
@@ -953,7 +1008,7 @@ export default function GeneratePage() {
               <ArrowLeft className="size-4" /> Voltar
             </Button>
 
-            {step < STEP_META.length - 1 ? (
+            {step < steps.length - 1 ? (
               <Button
                 onClick={next}
                 disabled={!canAdvance(step)}
@@ -1001,19 +1056,18 @@ export default function GeneratePage() {
       {student && (
         <p className="mt-3 text-center text-xs text-muted-foreground">
           Aluno: <span className="font-medium text-foreground">{student.name}</span>
-          {" · "}WhatsApp: {storedToMasked(student.whatsapp)}
+          {" · "}
+          {studentContactLine(
+            student,
+            student.classId ? classLabels.get(student.classId) : undefined,
+          )}
           {" · "}Escola:{" "}
           <span className="font-medium text-foreground">
-            {schoolBrand?.name ?? "Sem escola"}
+            {schoolBrand?.name ?? "Escola indisponível"}
           </span>
         </p>
       )}
 
-      <SchoolBrandFormDialog
-        open={brandDialogOpen}
-        onOpenChange={setBrandDialogOpen}
-        brand={brandDialogEditing}
-      />
       <GuardianVerifyDialog
         open={guardianDialogOpen}
         onOpenChange={setGuardianDialogOpen}
@@ -1023,11 +1077,4 @@ export default function GeneratePage() {
   );
 }
 
-function stepTitle(step: number): string {
-  return [
-    "Selecionar aluno e foto",
-    "Escolher escola",
-    "Exibir logo da escola?",
-    "Escolher o modelo de arte",
-  ][step];
-}
+

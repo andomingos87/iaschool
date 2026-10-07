@@ -10,7 +10,6 @@ import type { GenerationRequest } from "./data/types";
 export const DEFAULT_PROMPT_TEMPLATE = [
   "Crie uma arte de post para redes sociais de uma escola (1080x1080), seguindo fielmente o estilo, composição, tipografia e clima da PRIMEIRA imagem enviada (a referência).",
   "Use a foto do aluno enviada como imagem principal da arte. Nome do aluno: {{nome_aluno}}.",
-  "{{#logo_escola}}Inclua o logo da escola {{nome_escola}} (imagem enviada) em posição de destaque discreto.{{/logo_escola}}",
   "{{#cores_escola}}Use as cores da identidade visual da escola na composição: {{cores_escola}}.{{/cores_escola}}",
   "{{#prompt_auxiliar}}Instruções adicionais desta geração: {{prompt_auxiliar}}{{/prompt_auxiliar}}",
   "Ambiente escolar, tom acolhedor e adequado a crianças e adolescentes.",
@@ -23,7 +22,7 @@ export const PLACEHOLDER_DOCS: Array<{ token: string; description: string }> = [
   { token: "{{nome_escola}}", description: "Nome da escola do aluno" },
   { token: "{{cores_escola}}", description: "Cores da identidade visual da escola" },
   { token: "{{prompt_auxiliar}}", description: "Instruções extras digitadas na geração" },
-  { token: "{{#logo_escola}}...{{/logo_escola}}", description: "Bloco: só entra se o logo da escola for exibido" },
+  { token: "{{#logo_escola}}...{{/logo_escola}}", description: "Bloco legado. A geração não envia logo, então este trecho não entra no prompt." },
   { token: "{{#cores_escola}}...{{/cores_escola}}", description: "Bloco: só entra se a escola tiver cores cadastradas" },
   { token: "{{^cores_escola}}...{{/cores_escola}}", description: "Bloco invertido: só entra se a escola NÃO tiver cores" },
   { token: "{{#prompt_auxiliar}}...{{/prompt_auxiliar}}", description: "Bloco: só entra se houver instruções extras" },
@@ -268,7 +267,7 @@ export const SAMPLE_CONTEXT: PromptContext = {
     prompt_auxiliar: "Tema do evento: Festa Junina, com bandeirinhas coloridas ao fundo.",
   },
   flags: {
-    logo_escola: true,
+    logo_escola: false,
     cores_escola: true,
     prompt_auxiliar: true,
   },

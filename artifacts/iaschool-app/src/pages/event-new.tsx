@@ -17,13 +17,7 @@ import {
   FormMessage,
 } from "@workspace/iaschool-ui/components/ui/form";
 import { Input } from "@workspace/iaschool-ui/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/iaschool-ui/components/ui/select";
+import { Combobox } from "@workspace/iaschool-ui/components/ui/combobox";
 import { Switch } from "@workspace/iaschool-ui/components/ui/switch";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { PageHeader } from "@/components/app-shell";
@@ -176,21 +170,21 @@ export default function EventNewPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Turma</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-event-class">
-                            <SelectValue placeholder="Toda a escola" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value={NO_CLASS}>Toda a escola</SelectItem>
-                          {classOptions.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              {c.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <Combobox
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder="Toda a escola"
+                          data-testid="select-event-class"
+                          options={[
+                            { value: NO_CLASS, label: "Toda a escola", pinned: true },
+                            ...classOptions.map((c) => ({
+                              value: c.id,
+                              label: c.label,
+                            })),
+                          ]}
+                        />
+                      </FormControl>
                       <FormDescription>
                         Opcional. Ajuda o reconhecimento a buscar só entre os alunos da sala.
                       </FormDescription>
@@ -259,15 +253,15 @@ export default function EventNewPage() {
                       </FormControl>
                       <div className="space-y-1">
                         <FormLabel className="font-medium">
-                          Declaro que a escola possui autorização de uso de imagem dos alunos
-                          presentes neste evento
+                          Declaro que a escola tem autorização para fotografar os alunos neste
+                          evento e subir as fotos aqui. Isso não autoriza reconhecimento nem
+                          envio. Cada aluno é autorizado na ficha dele.
                         </FormLabel>
                         <FormDescription className="flex gap-2">
                           <Info className="mt-0.5 size-4 shrink-0" />
                           <span>
-                            Subir a foto de um aluno já é tratamento de imagem de menor. Esta
-                            declaração fica registrada com seu nome e a data; sem ela o upload
-                            não abre. Ela não substitui o termo assinado pelo responsável.
+                            A declaração fica registrada com seu nome e a data. Sem ela o
+                            upload não abre.
                           </span>
                         </FormDescription>
                       </div>

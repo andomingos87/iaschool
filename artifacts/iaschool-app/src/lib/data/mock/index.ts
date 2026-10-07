@@ -2,6 +2,7 @@
 // Troca futura: substituir createMockDataLayer() por createSupabaseDataLayer()
 // em ../index.ts, mantendo as mesmas interfaces.
 
+import { referenceStoragePath } from "../../reference-from-profile";
 import type {
   ApprovalRepository,
   AuthorizationRepository,
@@ -181,6 +182,14 @@ const auth: AuthService = {
     }
     const session = buildSession(user);
     writeValue("session", session);
+    listeners.forEach((cb) => cb(session));
+    return session;
+  },
+  async retrySession() {
+    const session = currentSession();
+    if (!session) {
+      throw new Error("A sessão expirou. Entre de novo com e-mail e senha.");
+    }
     listeners.forEach((cb) => cb(session));
     return session;
   },
@@ -554,7 +563,13 @@ const referenceFaces: ReferenceFaceRepository = {
       schoolId: input.schoolId,
       studentId: input.studentId,
       authorizationId: input.authorizationId,
-      storagePath: `${input.schoolId}/${input.studentId}/${id}.jpg`,
+      storagePath: referenceStoragePath(
+        input.schoolId,
+        input.studentId,
+        id,
+        input.contentHash,
+        input.fromProfile,
+      ),
       status: "queued",
       attempts: 0,
       createdAt: nowIso(),

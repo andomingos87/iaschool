@@ -52,6 +52,11 @@ export interface AuthService {
   getSession(): Promise<Session | null>;
   /** Equivalente a supabase.auth.signInWithPassword(). */
   signIn(email: string, password: string): Promise<Session>;
+  /**
+   * Relê perfil e escolas da sessão do Auth já existente, sem pedir senha.
+   * Usado quando a senha estava certa e a leitura do perfil falhou.
+   */
+  retrySession(): Promise<Session>;
   /** Equivalente a supabase.auth.signOut(). */
   signOut(): Promise<void>;
   /**
@@ -416,6 +421,10 @@ export interface ReferenceFaceInput {
   authorizationId: string;
   /** JPEG preparado no cliente (`prepareReferencePhoto`). */
   blob: Blob;
+  /** SHA-256 do JPEG preparado. Entra no caminho para o dedupe, sem coluna nova. */
+  contentHash?: string;
+  /** A origem é a foto de perfil, não um upload feito nesta aba. */
+  fromProfile?: boolean;
 }
 
 /**

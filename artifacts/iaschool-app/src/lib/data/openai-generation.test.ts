@@ -142,6 +142,23 @@ describe("createOpenAIGenerationService().generate — detalhes da geração", (
     expect(sent.formData!.get("prompt")).toBe(result.details.prompt);
   });
 
+  it("não oferece logo: escola com imagem e flag falsa não anexa nem cita o logo", async () => {
+    const sent = mockXhr({ status: 200, body: { imageUrl: "data:image/png;base64,ok" } });
+    const service = createOpenAIGenerationService();
+    const request = makeRequest({ showSchoolLogo: false });
+
+    const result = await service.generate(request);
+
+    expect(result.details.images.map((i) => i.role)).toEqual([
+      "Referência",
+      "Foto do aluno",
+    ]);
+    expect(result.details.prompt).not.toContain("Inclua o logo");
+    expect(result.details.prompt).not.toContain("Logo da escola");
+    const files = sent.formData!.getAll("images") as File[];
+    expect(files).toHaveLength(2);
+  });
+
   it("omite o logo da escola quando a opção está desligada", async () => {
     mockXhr({ status: 200, body: { imageUrl: "data:image/png;base64,ok" } });
     const service = createOpenAIGenerationService();

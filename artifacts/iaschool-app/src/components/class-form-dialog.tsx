@@ -21,13 +21,7 @@ import {
 } from "@workspace/iaschool-ui/components/ui/form";
 import { Input } from "@workspace/iaschool-ui/components/ui/input";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/iaschool-ui/components/ui/select";
+import { Combobox } from "@workspace/iaschool-ui/components/ui/combobox";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { useCreateClass, useUpdateClass } from "@/hooks/use-classes";
 import { GRADES, GRADE_LABEL, isGrade } from "@/lib/data";
@@ -129,23 +123,18 @@ export function ClassFormDialog({ open, onOpenChange, schoolClass }: Props) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Ano letivo *</FormLabel>
-                  <Select
-                    value={String(field.value)}
-                    onValueChange={(v) => field.onChange(Number(v))}
-                  >
-                    <FormControl>
-                      <SelectTrigger data-testid="select-class-year">
-                        <SelectValue placeholder="Selecione o ano" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {YEAR_OPTIONS.map((y) => (
-                        <SelectItem key={y} value={String(y)}>
-                          {y}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <Combobox
+                      value={String(field.value)}
+                      onValueChange={(v) => field.onChange(Number(v))}
+                      placeholder="Selecione o ano"
+                      data-testid="select-class-year"
+                      options={YEAR_OPTIONS.map((y) => ({
+                        value: String(y),
+                        label: String(y),
+                      }))}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -156,20 +145,18 @@ export function ClassFormDialog({ open, onOpenChange, schoolClass }: Props) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Série *</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger data-testid="select-class-grade">
-                        <SelectValue placeholder="Selecione a série" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {GRADES.map((g) => (
-                        <SelectItem key={g} value={g}>
-                          {GRADE_LABEL[g]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <Combobox
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      placeholder="Selecione a série"
+                      data-testid="select-class-grade"
+                      options={GRADES.map((g) => ({
+                        value: g,
+                        label: GRADE_LABEL[g],
+                      }))}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

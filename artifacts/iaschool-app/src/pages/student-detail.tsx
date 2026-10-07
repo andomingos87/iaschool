@@ -9,7 +9,6 @@ import {
   Images,
   Maximize2,
   Pencil,
-  Phone,
   School,
   ScanFace,
   ShieldAlert,
@@ -304,15 +303,6 @@ export default function StudentDetailPage() {
               <CardTitle className="text-base">Dados</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <p className="flex items-center gap-2 text-muted-foreground">
-                <Phone className="size-4" />
-                <span
-                  className="text-foreground"
-                  data-testid="text-student-whatsapp"
-                >
-                  {storedToMasked(s.whatsapp)}
-                </span>
-              </p>
               {s.birthDate && (
                 <p className="flex items-center gap-2 text-muted-foreground">
                   <Calendar className="size-4" />
@@ -357,14 +347,6 @@ export default function StudentDetailPage() {
                         {storedToMasked(s.guardian.whatsapp)}
                       </p>
                       <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <Badge
-                          variant={s.guardian.consentAt ? "secondary" : "destructive"}
-                          data-testid="badge-guardian-consent"
-                        >
-                          {s.guardian.consentAt
-                            ? "Autorização registrada"
-                            : "Sem autorização"}
-                        </Badge>
                         <Badge
                           variant={
                             s.guardian.whatsappVerifiedAt ? "secondary" : "destructive"
