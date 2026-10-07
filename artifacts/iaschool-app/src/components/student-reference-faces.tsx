@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
-  Clock,
   ImagePlus,
   Loader2,
   RotateCw,
@@ -40,7 +39,9 @@ import {
   isAcceptedImage,
   prepareReferencePhoto,
 } from "@/lib/upload";
+import { enqueueProfileReference } from "@/lib/enqueue-profile-reference";
 import { formatDateTime, isoToBrDate } from "@/lib/format";
+import { hashFromReferencePath, sha256Hex } from "@/lib/reference-from-profile";
 
 /** URLs assinadas das miniaturas, por caminho no bucket. */
 function useSignedThumbs(paths: string[]): Map<string, string> {
@@ -107,9 +108,43 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
 
   const busy = enqueue.isPending || preparing || cancelJob.isPending || removeFace.isPending;
 
+  async function useProfilePhoto() {
+    setPreparing(true);
+    try {
+      const decision = await enqueueProfileReference(student);
+      if (decision === "enqueue") {
+        void faces.refetch();
+        void jobs.refetch();
+        toast({
+          title: "Foto de perfil na fila",
+          description: "Ela entrou como rosto de referência e aguarda o processamento.",
+        });
+      } else if (decision === "duplicate") {
+        toast({
+          title: "Foto já enviada",
+          description: "A foto de perfil já está na fila ou entre as referências.",
+        });
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Não foi possível usar a foto de perfil",
+        description: err instanceof Error ? err.message : "Tente novamente em instantes.",
+      });
+    } finally {
+      setPreparing(false);
+    }
+  }
+
   async function onPick(files: FileList | null) {
     if (!files || files.length === 0 || !consent) return;
     setPreparing(true);
+    const seen = new Set(
+      [...faceList.map((f) => f.sourcePhotoPath ?? ""), ...jobList.map((j) => j.storagePath)]
+        .map((path) => hashFromReferencePath(path)?.hash)
+        .filter((hash): hash is string => Boolean(hash)),
+    );
+    let sent = 0;
     try {
       for (const file of Array.from(files)) {
         if (!isAcceptedImage(file)) {
@@ -121,18 +156,31 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
           continue;
         }
         const prepared = await prepareReferencePhoto(file);
+        const contentHash = await sha256Hex(prepared.blob);
+        if (seen.has(contentHash)) {
+          toast({
+            title: "Foto já enviada",
+            description: "Essa imagem já está na fila ou entre as referências.",
+          });
+          continue;
+        }
+        seen.add(contentHash);
         await enqueue.mutateAsync({
           studentId: student.id,
           schoolId: student.schoolId,
           authorizationId: consent.id,
           blob: prepared.blob,
+          contentHash,
+        });
+        sent += 1;
+      }
+      if (sent > 0) {
+        toast({
+          title: "Foto de referência enviada",
+          description:
+            "Ela entra na fila do reconhecimento; o rosto ainda não foi processado.",
         });
       }
-      toast({
-        title: "Foto de referência enviada",
-        description:
-          "Ela entra na fila do reconhecimento; o rosto ainda não foi processado.",
-      });
     } catch (err) {
       toast({
         variant: "destructive",
@@ -174,9 +222,9 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
             <ShieldAlert className="size-4" />
             <AlertTitle>Sem autorização de reconhecimento</AlertTitle>
             <AlertDescription>
-              Ligue "Foto para reconhecimento" no cartão de autorizações antes de
-              cadastrar o rosto deste aluno. Sem ela, o cadastro é recusado pelo
-              banco, não só por esta tela.
+              Ligue “Reconhecer o rosto” na ficha antes de cadastrar o rosto deste
+              aluno. Sem o interruptor, a foto de perfil fica só na galeria e nenhum
+              job é criado.
             </AlertDescription>
           </Alert>
         ) : (
@@ -191,6 +239,16 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
                 onChange={(e) => void onPick(e.target.files)}
                 data-testid="input-reference-photo"
               />
+              {student.photos[0] && (
+                <Button
+                  variant="outline"
+                  onClick={() => void useProfilePhoto()}
+                  disabled={busy}
+                  data-testid="button-use-profile-photo"
+                >
+                  Usar a foto de perfil
+                </Button>
+              )}
               <Button
                 onClick={() => inputRef.current?.click()}
                 disabled={busy}
@@ -254,6 +312,13 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
                       <p className="text-[11px] text-muted-foreground">
                         Válida até {isoToBrDate(f.retentionUntil)}
                       </p>
+                      {f.sourcePhotoPath &&
+                        hashFromReferencePath(f.sourcePhotoPath)?.fromProfile &&
+                        !student.photos[0] && (
+                          <p className="text-[11px] text-muted-foreground">
+                            A foto de perfil que originou esta referência foi removida da galeria.
+                          </p>
+                        )}
                       {f.expired && (
                         <Badge variant="destructive" className="text-[10px]">
                           Prazo vencido
@@ -291,18 +356,20 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
                     className="w-32 overflow-hidden rounded-md border border-dashed border-border"
                     data-testid={`reference-job-${j.id}`}
                   >
-                    <div className="relative size-32 bg-muted">
+                    <div className="relative size-32 overflow-hidden bg-muted">
                       {url && (
                         <img
                           src={url}
                           alt={`Foto de referência de ${student.name}`}
-                          className="h-full w-full object-cover opacity-60"
+                          className="h-full w-full object-cover"
                           loading="lazy"
                         />
                       )}
-                      <span className="absolute inset-0 flex items-center justify-center">
-                        <Clock className="size-5 text-muted-foreground" />
-                      </span>
+                      <span
+                        aria-hidden
+                        className="iaschool-reference-scan pointer-events-none absolute inset-x-1"
+                        data-testid="reference-scan"
+                      />
                     </div>
                     <div className="space-y-1 p-2">
                       <p className="text-[11px] text-muted-foreground">
@@ -377,6 +444,25 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
       </CardContent>
 
       <ImageLightbox src={zoom} onClose={() => setZoom(null)} />
+      <style>{`
+        .iaschool-reference-scan {
+          top: 0;
+          height: 2px;
+          background: #fff;
+          box-shadow: 0 1px 0 0 #111, 0 0 10px 1px rgba(255, 255, 255, 0.85);
+          animation: iaschool-reference-scan 1.8s ease-in-out infinite;
+        }
+        @keyframes iaschool-reference-scan {
+          0%, 100% { top: 0; }
+          50% { top: calc(100% - 2px); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .iaschool-reference-scan {
+            animation: none;
+            top: 50%;
+          }
+        }
+      `}</style>
     </Card>
   );
 }

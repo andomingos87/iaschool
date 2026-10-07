@@ -36,6 +36,8 @@ import { LOGS_ADMIN_EMAIL } from '@/lib/constants';
 import { isPlatformAdmin } from '@/lib/data';
 import ApprovalsPage from '@/pages/approvals';
 import PendingApprovalPage from '@/pages/pending-approval';
+import UnlinkedSchoolPage from '@/pages/unlinked-school';
+import { appEntry } from '@/lib/auth-entry';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient({
@@ -117,8 +119,13 @@ function AuthGate() {
   }
 
   // Conta cadastrada mas ainda não aprovada (ou recusada): sem acesso ao app.
-  if (session.user.approvalStatus && session.user.approvalStatus !== 'approved') {
+  if (appEntry(session.user) === 'pending') {
     return <PendingApprovalPage />;
+  }
+
+  // Aprovada sem school_members: explica o vínculo. Não desloga.
+  if (appEntry(session.user) === 'unlinked') {
+    return <UnlinkedSchoolPage />;
   }
 
   // Sessão criada pelo link de recuperação de senha do e-mail:

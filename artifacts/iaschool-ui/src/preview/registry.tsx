@@ -129,6 +129,9 @@ const ScrollAreaDemo = lazyPage(() =>
 const SelectDemo = lazyPage(() =>
   import('./demos/select').then(({ SelectDemo }) => SelectDemo),
 );
+const ComboboxDemo = lazyPage(() =>
+  import('./demos/combobox').then(({ ComboboxDemo }) => ComboboxDemo),
+);
 const SeparatorDemo = lazyPage(() =>
   import('./demos/separator').then(({ SeparatorDemo }) => SeparatorDemo),
 );
@@ -322,6 +325,12 @@ export const NAV_GROUPS: NavGroup[] = [
         name: 'Select',
         description: 'Selection controls, grouped options, and disabled states.',
         Page: SelectDemo,
+      },
+      {
+        id: 'combobox',
+        name: 'Combobox',
+        description: 'Selectable list with search when there are more than seven options.',
+        Page: ComboboxDemo,
       },
       {
         id: 'slider',

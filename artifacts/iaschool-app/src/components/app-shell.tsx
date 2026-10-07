@@ -55,13 +55,7 @@ import { initials } from "@/lib/format";
 import { getDataLayer, isPlatformAdmin } from "@/lib/data";
 import type { AppUser } from "@/lib/data";
 import { LOGS_ADMIN_EMAIL } from "@/lib/constants";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/iaschool-ui/components/ui/select";
+import { Combobox } from "@workspace/iaschool-ui/components/ui/combobox";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 
 /**
@@ -136,29 +130,25 @@ function SchoolSwitcher() {
   const schools = session?.user.schools ?? [];
   if (schools.length < 2) return null;
   return (
-    <Select
+    <Combobox
+      className="h-8 w-[200px]"
       value={session?.activeSchoolId ?? schools[0]!.schoolId}
-      onValueChange={(id) =>
-        setActiveSchool(id).catch((err: unknown) =>
+      onValueChange={(id) => {
+        void setActiveSchool(id).catch((err: unknown) =>
           toast({
             variant: "destructive",
             title: "Não foi possível trocar de escola",
             description: err instanceof Error ? err.message : "Tente novamente.",
           }),
-        )
-      }
-    >
-      <SelectTrigger className="h-8 w-[200px]" data-testid="select-active-school">
-        <SelectValue placeholder="Escola" />
-      </SelectTrigger>
-      <SelectContent>
-        {schools.map((m) => (
-          <SelectItem key={m.schoolId} value={m.schoolId}>
-            {m.schoolName}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+        );
+      }}
+      placeholder="Escola"
+      data-testid="select-active-school"
+      options={schools.map((m) => ({
+        value: m.schoolId,
+        label: m.schoolName,
+      }))}
+    />
   );
 }
 

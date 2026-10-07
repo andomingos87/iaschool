@@ -7,7 +7,13 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { DataLayer } from "../contract";
 import type { ReviewFace } from "../types";
-import { groupReviewByStudent, pendingReviewCount, unassignedFaces } from "../types";
+import {
+  groupReviewByStudent,
+  pendingReviewCount,
+  showReviewDeliveryGate,
+  unassignedFaces,
+} from "../types";
+import type { ReviewCounts } from "../types";
 
 function makeLocalStorageStub() {
   const map = new Map<string, string>();
@@ -134,6 +140,24 @@ describe("faceReview (mock)", () => {
     expect(counts.unassigned).toBe(1);
     expect(counts.studentsPending).toBe(1);
     expect(pendingReviewCount(counts)).toBe(2);
+    expect(showReviewDeliveryGate(counts)).toBe(false);
+  });
+
+  it("a porta de envio só abre com a fila zerada e rosto já confirmado", () => {
+    const base: ReviewCounts = {
+      suggested: 0,
+      unassigned: 0,
+      confirmed: 0,
+      rejected: 0,
+      notAStudent: 0,
+      adultOrStaff: 0,
+      studentsPending: 0,
+    };
+    expect(showReviewDeliveryGate(undefined)).toBe(false);
+    expect(showReviewDeliveryGate(base)).toBe(false);
+    expect(showReviewDeliveryGate({ ...base, suggested: 2 })).toBe(false);
+    expect(showReviewDeliveryGate({ ...base, unassigned: 1, confirmed: 3 })).toBe(false);
+    expect(showReviewDeliveryGate({ ...base, confirmed: 1 })).toBe(true);
   });
 
   it("confirmar exige a autorização de reconhecimento ativa", async () => {

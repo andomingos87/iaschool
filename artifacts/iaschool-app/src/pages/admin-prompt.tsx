@@ -352,8 +352,8 @@ export default function AdminPromptPage() {
               </p>
             )}
             <p className="mt-3 text-xs text-muted-foreground">
-              Exemplo montado com: aluno João da Silva, logo e cores da
-              Escola Horizonte, logo IAschool e instruções extras.
+              Exemplo montado com: aluno João da Silva, cores da Escola
+              Horizonte e instruções extras. O logo da escola não entra.
             </p>
           </CardContent>
         </Card>

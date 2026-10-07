@@ -15,13 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/iaschool-ui/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/iaschool-ui/components/ui/select";
+import { Combobox } from "@workspace/iaschool-ui/components/ui/combobox";
 import { Kbd } from "@workspace/iaschool-ui/components/ui/kbd";
 import { useFaceCandidates } from "@/hooks/use-face-review";
 import type { FaceRejectState, ReviewFace, Student } from "@/lib/data";
@@ -204,18 +198,14 @@ export function ReviewFaceQueue({
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={manual} onValueChange={setManual}>
-              <SelectTrigger className="w-64" data-testid="select-review-student">
-                <SelectValue placeholder="Corrigir para outro aluno" />
-              </SelectTrigger>
-              <SelectContent>
-                {students.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              className="w-64"
+              value={manual}
+              onValueChange={setManual}
+              placeholder="Corrigir para outro aluno"
+              data-testid="select-review-student"
+              options={students.map((s) => ({ value: s.id, label: s.name }))}
+            />
             <Button
               onClick={() => manual && onConfirm(current.id, manual)}
               disabled={pending || !manual}
