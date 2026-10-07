@@ -9,6 +9,8 @@ import {
   type SupabaseClient,
   type Session as SbSession,
 } from "@supabase/supabase-js";
+import { referenceStoragePath } from "../../reference-from-profile";
+import { SessionReadError, authErrorMessage } from "../../auth-messages";
 import type {
   ApprovalRepository,
   AuthorizationRepository,
@@ -205,7 +207,7 @@ function toStudent(r: Row): Student {
   return {
     id: r["id"] as string,
     name: r["name"] as string,
-    whatsapp: r["whatsapp"] as string,
+    whatsapp: (r["whatsapp"] as string | null) ?? null,
     birthDate: (r["birth_date"] as string | null) ?? undefined,
     notes: (r["notes"] as string | null) ?? undefined,
     photos: (r["photos"] as StoredImage[] | null) ?? [],
@@ -226,7 +228,7 @@ function toStudent(r: Row): Student {
 function fromStudent(p: Partial<Omit<Student, "id">>): Row {
   const r: Row = {};
   if ("name" in p) r["name"] = p.name;
-  if ("whatsapp" in p) r["whatsapp"] = p.whatsapp;
+  if ("whatsapp" in p) r["whatsapp"] = p.whatsapp ?? null;
   if ("birthDate" in p) r["birth_date"] = p.birthDate ?? null;
   if ("notes" in p) r["notes"] = p.notes ?? null;
   if ("photos" in p) r["photos"] = p.photos ?? [];
@@ -595,21 +597,64 @@ export function createSupabaseDataLayer(): DataLayer {
   /** Ouvintes do app, para a troca de escola ativa também ser notificada. */
   const authListeners: Array<(s: Session | null) => void> = [];
 
+  // Uma publicação por token: signIn e o listener compartilham a mesma
+  // leitura de perfil. Falha não chama signOut.
+  let inflightProfile: { token: string; promise: Promise<Session | null> } | null =
+    null;
+
+  function notifyAuth(session: Session | null) {
+    for (const cb of authListeners) cb(session);
+  }
+
+  function publishSession(sb: SbSession | null): Promise<Session | null> {
+    if (!sb) {
+      notifyAuth(null);
+      return Promise.resolve(null);
+    }
+    if (inflightProfile?.token === sb.access_token) return inflightProfile.promise;
+    const promise = toSession(sb)
+      .then((session) => {
+        notifyAuth(session);
+        return session;
+      })
+      .catch((err: unknown) => {
+        throw err instanceof SessionReadError
+          ? err
+          : new SessionReadError(
+              err instanceof Error
+                ? err.message
+                : "Não foi possível carregar o perfil.",
+            );
+      })
+      .finally(() => {
+        if (inflightProfile?.promise === promise) inflightProfile = null;
+      });
+    inflightProfile = { token: sb.access_token, promise };
+    return promise;
+  }
+
+  async function readAuthSession(): Promise<Session | null> {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      throw new SessionReadError("Não foi possível ler a sessão. Tente de novo.");
+    }
+    return publishSession(data.session);
+  }
+
   const auth: AuthService = {
     async getAccessToken() {
       const { data } = await supabase.auth.getSession();
       return data.session?.access_token ?? null;
     },
     async getSession() {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) fail("Falha ao recuperar sessão", error);
-      try {
-        return await toSession(data.session);
-      } catch {
-        // Sessão sem perfil válido → tratar como deslogado.
-        await supabase.auth.signOut();
-        return null;
+      return readAuthSession();
+    },
+    async retrySession() {
+      const session = await readAuthSession();
+      if (!session) {
+        throw new Error("A sessão expirou. Entre de novo com e-mail e senha.");
       }
+      return session;
     },
     async signIn(email, password) {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -618,17 +663,14 @@ export function createSupabaseDataLayer(): DataLayer {
       });
       if (error || !data.session) {
         throw new Error(
-          error?.message === "Invalid login credentials"
-            ? "E-mail ou senha inválidos"
-            : (error?.message ?? "Não foi possível entrar"),
+          authErrorMessage(error?.message, "Não foi possível entrar"),
         );
       }
-      try {
-        return (await toSession(data.session))!;
-      } catch (err) {
-        await supabase.auth.signOut();
-        throw err;
+      const session = await publishSession(data.session);
+      if (!session) {
+        throw new SessionReadError("Não foi possível carregar o perfil.");
       }
+      return session;
     },
     async signUp(input) {
       // O trigger handle_new_user (M1) cria o profile pendente a partir dos
@@ -647,9 +689,7 @@ export function createSupabaseDataLayer(): DataLayer {
       });
       if (error) {
         throw new Error(
-          error.message.includes("already registered")
-            ? "Este e-mail já está cadastrado."
-            : `Falha ao criar conta: ${error.message}`,
+          authErrorMessage(error.message, "Não foi possível criar a conta."),
         );
       }
       // Cadastro fica pendente: não manter a sessão criada pelo signUp.
@@ -698,9 +738,10 @@ export function createSupabaseDataLayer(): DataLayer {
     onAuthStateChange(cb) {
       authListeners.push(cb);
       const { data } = supabase.auth.onAuthStateChange((_event, sb) => {
-        void toSession(sb)
-          .then((session) => cb(session))
-          .catch(() => cb(null));
+        void publishSession(sb).catch(() => {
+          // Perfil ou escolas falharam. A sessão do Auth fica. Quem chamou
+          // signIn recebe o erro; aqui não publicamos null.
+        });
       });
       return () => {
         const i = authListeners.indexOf(cb);
@@ -1337,7 +1378,13 @@ export function createSupabaseDataLayer(): DataLayer {
       // Spec §6: `{school_id}/{student_id}/{ref_id}.jpg`. O 1º segmento dá o
       // tenant à policy; o 2º diz de quem é o rosto — e é por ele que o
       // Storage confere o consentimento antes de aceitar o arquivo.
-      const path = `${input.schoolId}/${input.studentId}/${jobId}.jpg`;
+      const path = referenceStoragePath(
+        input.schoolId,
+        input.studentId,
+        jobId,
+        input.contentHash,
+        input.fromProfile,
+      );
 
       const { error: upErr } = await supabase.storage
         .from(STUDENT_REFS_BUCKET)

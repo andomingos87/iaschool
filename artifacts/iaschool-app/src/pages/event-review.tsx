@@ -24,7 +24,7 @@ import {
 } from "@/hooks/use-face-review";
 import { useEvent } from "@/hooks/use-events";
 import { useStudents } from "@/hooks/use-students";
-import { getDataLayer, groupReviewByStudent } from "@/lib/data";
+import { getDataLayer, groupReviewByStudent, showReviewDeliveryGate } from "@/lib/data";
 import type { FaceRejectState, ReviewFace } from "@/lib/data";
 import { isoToBrDate } from "@/lib/format";
 
@@ -236,22 +236,43 @@ export default function EventReviewPage() {
       </Alert>
 
       {pending === 0 ? (
-        <EmptyState
-          icon={<ScanFace className="size-6" />}
-          title={
-            (c?.confirmed ?? 0) > 0 ? "Revisão concluída" : "Nenhum rosto para revisar ainda"
-          }
-          description={
-            (c?.confirmed ?? 0) > 0
-              ? "Todos os rostos deste evento já passaram por uma pessoa. As fotos confirmadas estão na pasta de cada aluno."
-              : "O motor de reconhecimento processa as fotos depois do envio. Enquanto ele não roda, não há sugestão para conferir."
-          }
-          action={
-            <Button asChild variant="outline">
-              <Link href={`/eventos/${e.id}`}>Voltar ao evento</Link>
-            </Button>
-          }
-        />
+        <>
+          <EmptyState
+            icon={<ScanFace className="size-6" />}
+            title={
+              (c?.confirmed ?? 0) > 0 ? "Revisão concluída" : "Nenhum rosto para revisar ainda"
+            }
+            description={
+              (c?.confirmed ?? 0) > 0
+                ? "Todos os rostos deste evento já passaram por uma pessoa. As fotos confirmadas estão na pasta de cada aluno."
+                : "O motor de reconhecimento processa as fotos depois do envio. Enquanto ele não roda, não há sugestão para conferir."
+            }
+            action={
+              <Button asChild variant="outline">
+                <Link href={`/eventos/${e.id}`}>Voltar ao evento</Link>
+              </Button>
+            }
+          />
+          {showReviewDeliveryGate(c) ? (
+            <section
+              className="rounded-lg border border-border bg-card p-4"
+              data-testid="card-review-delivery"
+            >
+              <p className="text-sm">
+                Revisão deste evento concluída. Dá para preparar o envio aos
+                responsáveis que autorizaram.
+              </p>
+              <Button asChild className="mt-3">
+                <Link
+                  href={`/eventos/${e.id}/entregas`}
+                  data-testid="link-prepare-delivery"
+                >
+                  Preparar envio
+                </Link>
+              </Button>
+            </section>
+          ) : null}
+        </>
       ) : (
         <Tabs defaultValue="por-aluno">
           <TabsList>

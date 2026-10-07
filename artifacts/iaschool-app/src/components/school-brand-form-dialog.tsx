@@ -83,11 +83,22 @@ const EMPTY_VALUES: FormValues = {
   responsible: "",
 };
 
+export type SchoolBrandFocus = "cnpj" | "city" | "phone" | "responsible";
+
+const FOCUS_TESTID: Record<SchoolBrandFocus, string> = {
+  cnpj: "input-school-cnpj",
+  city: "input-school-city",
+  phone: "input-school-phone",
+  responsible: "input-school-responsible",
+};
+
 interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   /** Escola a editar. A escola nasce na aprovação do cadastro (M1); aqui não se cria. */
   brand: SchoolBrand | null;
+  /** Campo que a pendência da ficha quer em foco. */
+  focusField?: SchoolBrandFocus | null;
   /** Chamado com a escola atualizada após salvar com sucesso. */
   onSaved?: (brand: SchoolBrand) => void;
 }
@@ -96,6 +107,7 @@ export function SchoolBrandFormDialog({
   open,
   onOpenChange,
   brand,
+  focusField,
   onSaved,
 }: Props) {
   const update = useUpdateSchoolBrand();
@@ -133,6 +145,15 @@ export function SchoolBrandFormDialog({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, brand]);
+
+  useEffect(() => {
+    if (!open || !focusField) return;
+    const testId = FOCUS_TESTID[focusField];
+    const timer = window.setTimeout(() => {
+      document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)?.focus();
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, [open, focusField]);
 
   const saving = update.isPending;
 
@@ -179,7 +200,7 @@ export function SchoolBrandFormDialog({
         <DialogHeader>
           <DialogTitle>Editar escola</DialogTitle>
           <DialogDescription>
-            Dados de cadastro da escola e a identidade visual usada nas artes.
+            Dados de cadastro da escola. As cores entram na arte. O logo não é colocado na arte.
           </DialogDescription>
         </DialogHeader>
 
@@ -405,6 +426,7 @@ export function SchoolBrandFormDialog({
             <Separator />
             <div className="space-y-2">
               <Label>Logo da escola (uma imagem)</Label>
+              <p className="text-xs text-muted-foreground">Não é colocado na arte.</p>
               <MultiUpload
                 bucket={BUCKETS.schoolBrands}
                 value={logo}

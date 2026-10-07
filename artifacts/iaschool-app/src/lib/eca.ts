@@ -70,18 +70,38 @@ export function requiresGuardianAccount(birthDate?: string): boolean {
 }
 
 /**
- * Gerar imagem a partir da foto de menor de 18 e compartilhá-la exige
- * autorização registrada do responsável legal.
- * Base: Lei 15.211/2025, arts. 6º, V e 7º, § 2º; LGPD, art. 14, § 1º.
+ * Menor de 18 precisa de responsável cadastrado (nome e WhatsApp).
+ * Isso é o cadastro de quem responde pela criança, não a autorização
+ * de reconhecimento nem a de envio.
+ * Base: Lei 15.211/2025, art. 24.
  */
 export function requiresGuardianConsent(birthDate?: string): boolean {
   return isMinor(birthDate);
 }
 
-/** Consentimento do responsável registrado (data presente). */
+/**
+ * Carimbo antigo do checkbox de cadastro (`students.guardian.consentAt`).
+ * O formulário não grava mais este campo. A geração olha `biometric_sorting`.
+ */
 export function hasGuardianConsent(student: Pick<Student, "guardian">): boolean {
   return Boolean(student.guardian?.consentAt);
 }
+
+/** O que a geração e o envio precisam saber além da ficha do aluno. */
+export interface ArtCompliance {
+  /** `authorizations.scope = biometric_sorting` ativo. Sem isso, menor não gera. */
+  biometricSortingActive: boolean;
+  /**
+   * Aceite do responsável em `delivery_whatsapp` (estado `accepted`).
+   * Declaração antiga da escola (`school_declared`) não conta.
+   */
+  deliveryAccepted: boolean;
+}
+
+const ART_CLOSED: ArtCompliance = {
+  biometricSortingActive: false,
+  deliveryAccepted: false,
+};
 
 /** WhatsApp do responsável confirmado por código (canal verificado). */
 export function hasVerifiedGuardianChannel(
@@ -95,7 +115,8 @@ export interface ComplianceIssue {
   code:
     | "sem-data-nascimento"
     | "sem-responsavel"
-    | "sem-consentimento"
+    | "sem-reconhecimento"
+    | "sem-aceite-envio"
     | "canal-nao-verificado";
   /** Texto exibido ao professor, em pt-BR. */
   message: string;
@@ -106,9 +127,14 @@ export interface ComplianceIssue {
 /**
  * Impedimentos para **gerar** uma imagem com a foto do aluno.
  * Lista vazia = liberado. A ordem é a de correção pelo usuário.
+ *
+ * Menor de 18: responsável cadastrado e `biometric_sorting` ativo.
+ * `guardian.consentAt` não libera a geração.
+ * Base: Lei 15.211/2025, arts. 6º e 7º, § 2º; LGPD, art. 14, § 1º.
  */
 export function generationBlockers(
   student: Pick<Student, "birthDate" | "guardian">,
+  compliance: Pick<ArtCompliance, "biometricSortingActive"> = ART_CLOSED,
 ): ComplianceIssue[] {
   const issues: ComplianceIssue[] = [];
   if (!student.birthDate) {
@@ -129,11 +155,11 @@ export function generationBlockers(
       legalBasis: "Lei 15.211/2025, art. 24; LGPD, art. 14, § 1º",
     });
   }
-  if (!hasGuardianConsent(student)) {
+  if (!compliance.biometricSortingActive) {
     issues.push({
-      code: "sem-consentimento",
+      code: "sem-reconhecimento",
       message:
-        "Registre a autorização do responsável para uso da imagem e dos dados do aluno.",
+        "Ligue “Reconhecer o rosto” na ficha do aluno. Sem isso a foto não vai para a geração de arte.",
       legalBasis: "Lei 15.211/2025, art. 7º, § 2º; LGPD, art. 14, § 1º",
     });
   }
@@ -142,16 +168,26 @@ export function generationBlockers(
 
 /**
  * Impedimentos para **compartilhar** a imagem gerada.
- * Mais estrito que a geração: além do consentimento, o canal de destino
- * precisa ser um número confirmado do responsável.
+ * Além da geração, o menor exige o aceite de `delivery_whatsapp` feito pelo
+ * responsável e o canal verificado. Não basta `consentAt` nem o interruptor
+ * da escola.
  * Base: Lei 15.211/2025, arts. 6º, V e 7º, § 2º; Decreto 12.880/2026, art. 35.
  */
 export function shareBlockers(
   student: Pick<Student, "birthDate" | "guardian">,
+  compliance: ArtCompliance = ART_CLOSED,
 ): ComplianceIssue[] {
-  const issues = generationBlockers(student);
+  const issues = generationBlockers(student, compliance);
   if (!student.birthDate || !requiresGuardianConsent(student.birthDate)) {
     return issues;
+  }
+  if (!compliance.deliveryAccepted) {
+    issues.push({
+      code: "sem-aceite-envio",
+      message:
+        "O responsável ainda não aceitou o envio no WhatsApp verificado. Sem esse aceite, a arte não sai.",
+      legalBasis: "Lei 15.211/2025, art. 7º, § 2º; Decreto 12.880/2026, art. 35",
+    });
   }
   if (!hasVerifiedGuardianChannel(student)) {
     issues.push({
@@ -167,19 +203,17 @@ export function shareBlockers(
 /**
  * Número de destino permitido para o compartilhamento.
  * Menor de 18: só o WhatsApp verificado do responsável.
- * Maior de 18: o próprio número do aluno.
+ * Maior de 18: sem destino, até uma decisão posterior. O número antigo
+ * em `students.whatsapp` não é usado.
  * Retorna null quando nenhum destino é permitido.
  */
 export function allowedShareTarget(
   student: Pick<Student, "birthDate" | "guardian" | "whatsapp">,
+  compliance: ArtCompliance = ART_CLOSED,
 ): { whatsapp: string; label: string } | null {
   if (!student.birthDate) return null;
-  if (!requiresGuardianConsent(student.birthDate)) {
-    return student.whatsapp
-      ? { whatsapp: student.whatsapp, label: "o próprio aluno" }
-      : null;
-  }
-  if (shareBlockers(student).length > 0) return null;
+  if (!requiresGuardianConsent(student.birthDate)) return null;
+  if (shareBlockers(student, compliance).length > 0) return null;
   const g = student.guardian!;
   return { whatsapp: g.whatsapp, label: `${g.name} (responsável)` };
 }

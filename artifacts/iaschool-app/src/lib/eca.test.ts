@@ -87,6 +87,12 @@ describe("cortes etários", () => {
   });
 });
 
+const RECOGNIZE = { biometricSortingActive: true };
+const RECOGNIZE_AND_SEND = {
+  biometricSortingActive: true,
+  deliveryAccepted: true,
+};
+
 describe("generationBlockers", () => {
   it("bloqueia quando não há data de nascimento", () => {
     const issues = generationBlockers(student(undefined));
@@ -97,23 +103,23 @@ describe("generationBlockers", () => {
     expect(generationBlockers(student(bornYearsAgo(30)))).toEqual([]);
   });
 
-  it("bloqueia menor sem responsável cadastrado", () => {
+  it("bloqueia menor sem responsável e sem reconhecimento", () => {
     const issues = generationBlockers(student(bornYearsAgo(10)));
     expect(issues.map((i) => i.code)).toEqual([
       "sem-responsavel",
-      "sem-consentimento",
+      "sem-reconhecimento",
     ]);
   });
 
-  it("bloqueia menor com responsável mas sem consentimento", () => {
-    const issues = generationBlockers(student(bornYearsAgo(10), {}));
-    expect(issues.map((i) => i.code)).toEqual(["sem-consentimento"]);
-  });
-
-  it("libera menor com responsável e consentimento", () => {
+  it("consentAt antigo não libera a geração", () => {
     const issues = generationBlockers(
       student(bornYearsAgo(10), { consentAt: "2026-08-01T10:00:00.000Z" }),
     );
+    expect(issues.map((i) => i.code)).toEqual(["sem-reconhecimento"]);
+  });
+
+  it("libera menor com responsável e reconhecimento ativo", () => {
+    const issues = generationBlockers(student(bornYearsAgo(10), {}), RECOGNIZE);
     expect(issues).toEqual([]);
   });
 
@@ -125,16 +131,35 @@ describe("generationBlockers", () => {
 });
 
 describe("shareBlockers", () => {
-  it("é mais estrito que a geração: exige canal verificado", () => {
-    const s = student(bornYearsAgo(10), {
-      consentAt: "2026-08-01T10:00:00.000Z",
-    });
-    expect(generationBlockers(s)).toEqual([]);
-    expect(shareBlockers(s).map((i) => i.code)).toEqual(["canal-nao-verificado"]);
+  it("exige aceite de envio e canal verificado, mesmo com reconhecimento", () => {
+    const s = student(bornYearsAgo(10), {});
+    expect(generationBlockers(s, RECOGNIZE)).toEqual([]);
+    expect(shareBlockers(s, { ...RECOGNIZE, deliveryAccepted: false }).map((i) => i.code)).toEqual([
+      "sem-aceite-envio",
+      "canal-nao-verificado",
+    ]);
   });
 
-  it("libera quando consentimento e verificação existem", () => {
-    expect(shareBlockers(student(bornYearsAgo(10), FULL_GUARDIAN))).toEqual([]);
+  it("aceite sem canal verificado continua bloqueado", () => {
+    const s = student(bornYearsAgo(10), {});
+    expect(
+      shareBlockers(s, RECOGNIZE_AND_SEND).map((i) => i.code),
+    ).toEqual(["canal-nao-verificado"]);
+  });
+
+  it("libera só com reconhecimento, aceite do responsável e canal verificado", () => {
+    expect(
+      shareBlockers(student(bornYearsAgo(10), FULL_GUARDIAN), RECOGNIZE_AND_SEND),
+    ).toEqual([]);
+  });
+
+  it("consentAt e canal verificado não substituem o aceite de envio", () => {
+    const s = student(bornYearsAgo(10), FULL_GUARDIAN);
+    expect(
+      shareBlockers(s, { biometricSortingActive: true, deliveryAccepted: false }).map(
+        (i) => i.code,
+      ),
+    ).toEqual(["sem-aceite-envio"]);
   });
 
   it("não exige verificação para maior de 18", () => {
@@ -144,26 +169,26 @@ describe("shareBlockers", () => {
 
 describe("allowedShareTarget", () => {
   it("menor autorizado: destino é o WhatsApp do responsável, nunca o do aluno", () => {
-    const target = allowedShareTarget(student(bornYearsAgo(10), FULL_GUARDIAN));
+    const target = allowedShareTarget(
+      student(bornYearsAgo(10), FULL_GUARDIAN),
+      RECOGNIZE_AND_SEND,
+    );
     expect(target).toEqual({
       whatsapp: "5511911112222",
       label: "Maria Silva (responsável)",
     });
   });
 
-  it("menor sem canal verificado não tem destino permitido", () => {
+  it("menor sem aceite de envio não tem destino permitido", () => {
     const target = allowedShareTarget(
-      student(bornYearsAgo(10), { consentAt: "2026-08-01T10:00:00.000Z" }),
+      student(bornYearsAgo(10), FULL_GUARDIAN),
+      { biometricSortingActive: true, deliveryAccepted: false },
     );
     expect(target).toBeNull();
   });
 
-  it("maior de 18: destino é o próprio aluno", () => {
-    const target = allowedShareTarget(student(bornYearsAgo(30)));
-    expect(target).toEqual({
-      whatsapp: "5511999998888",
-      label: "o próprio aluno",
-    });
+  it("maior de 18 não tem destino, mesmo com número antigo no cadastro", () => {
+    expect(allowedShareTarget(student(bornYearsAgo(30)))).toBeNull();
   });
 
   it("sem data de nascimento não há destino permitido", () => {

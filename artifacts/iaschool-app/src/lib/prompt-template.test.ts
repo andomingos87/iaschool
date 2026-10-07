@@ -422,7 +422,10 @@ describe("Prompt novo do admin", () => {
   });
 
   it("renderiza com escola+cores+logos+instruções (tudo ativo)", () => {
-    const rendered = renderPromptTemplate(ADMIN_PROMPT_NOVO, SAMPLE_CONTEXT);
+    const rendered = renderPromptTemplate(ADMIN_PROMPT_NOVO, {
+      ...SAMPLE_CONTEXT,
+      flags: { ...SAMPLE_CONTEXT.flags, logo_escola: true },
+    });
     expect(rendered).toContain("JOÃO DA SILVA");
     expect(rendered).toContain("Escola Horizonte");
     // bloco normal de cores ativo → menciona as cores
@@ -512,6 +515,25 @@ describe("geração sem cores — bloco {{#cores_escola}} omitido do prompt fina
     );
     expect(prompt).not.toContain("Use as cores da identidade visual");
     expect(prompt).not.toContain("{{#cores_escola}}");
+  });
+
+  it("template padrão não pede logo, mesmo com a flag ligada", () => {
+    expect(DEFAULT_PROMPT_TEMPLATE).not.toContain("Inclua o logo");
+    expect(DEFAULT_PROMPT_TEMPLATE).not.toContain("logo_escola");
+    const prompt = buildGenerationPrompt(
+      makeRequest({
+        showSchoolLogo: true,
+        schoolBrand: {
+          id: "b1",
+          name: "Escola Teste",
+          colors: ["#112233"],
+          createdAt: "",
+          updatedAt: "",
+        },
+      }),
+    );
+    expect(prompt).not.toContain("Inclua o logo");
+    expect(prompt).toContain("#112233");
   });
 
   it("buildGenerationPrompt com cores inclui o bloco", () => {

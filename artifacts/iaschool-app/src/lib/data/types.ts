@@ -82,8 +82,8 @@ export interface Guardian {
    */
   whatsappVerifiedAt?: string;
   /**
-   * ISO do momento em que o responsável autorizou o uso da imagem e dos
-   * dados do menor. Ausente = sem consentimento: a geração fica bloqueada.
+   * Carimbo antigo do checkbox de cadastro. O formulário não grava mais
+   * este campo. A geração olha `biometric_sorting`, não este carimbo.
    */
   consentAt?: string;
   /** Nome de quem registrou a autorização (professor/escola). */
@@ -93,8 +93,11 @@ export interface Guardian {
 export interface Student {
   id: string;
   name: string;
-  /** WhatsApp em dígitos, ex: "5511999998888" (DDI+DDD+número) */
-  whatsapp: string;
+  /**
+   * Número antigo do aluno, em dígitos. Cadastros novos gravam `null`.
+   * A tela não exibe este campo: o canal é o WhatsApp do responsável.
+   */
+  whatsapp?: string | null;
   /**
    * Data de nascimento (ISO "aaaa-mm-dd"). Obrigatória na prática: sem ela o
    * produto não sabe qual proteção etária aplicar (Lei 15.211/2025, art. 10).
@@ -143,8 +146,9 @@ export interface SchoolContact {
 }
 
 /**
- * Cadastro da escola: identidade visual (logo + cores, aplicadas nas artes) e
- * dados administrativos (CNPJ, endereço, contato). Desde o M1 é a própria
+ * Cadastro da escola. As cores entram na arte. O logo fica no cadastro e
+ * não é enviado ao modelo. Também guarda dados administrativos (CNPJ,
+ * endereço, contato). Desde o M1 é a própria
  * linha de `schools`: `id` é o id do tenant, e só aparecem as escolas de que
  * a pessoa é membro.
  */
@@ -906,6 +910,16 @@ export interface ReviewCounts {
 export function pendingReviewCount(counts: ReviewCounts | undefined): number {
   if (!counts) return 0;
   return counts.suggested + counts.unassigned;
+}
+
+/**
+ * Porta da revisão para `/entregas` (spec 11). Só quando a pessoa não tem
+ * mais rosto para decidir e já existe confirmação. Fila zerada sem nenhum
+ * rosto confirmado é evento ainda sem reconhecimento, não revisão pronta.
+ */
+export function showReviewDeliveryGate(counts: ReviewCounts | undefined): boolean {
+  if (!counts) return false;
+  return pendingReviewCount(counts) === 0 && counts.confirmed > 0;
 }
 
 /**

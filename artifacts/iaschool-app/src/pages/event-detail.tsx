@@ -255,10 +255,8 @@ export default function EventDetailPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Subir a foto de um aluno já é tratamento de imagem de menor. Antes de abrir o upload,
-              a escola declara que possui autorização de uso de imagem dos alunos presentes neste
-              evento. A declaração fica registrada com seu nome e a data. Ela não substitui o termo
-              assinado pelo responsável.
+              A declaração fica registrada com seu nome e a data. Sem ela o upload não abre.
+              Ela não autoriza reconhecimento nem envio: cada aluno é autorizado na ficha dele.
             </p>
             <label className="flex items-start gap-3 text-sm">
               <Checkbox
@@ -268,8 +266,9 @@ export default function EventDetailPage() {
                 data-testid="checkbox-declare-image-rights"
               />
               <span>
-                Declaro que a escola possui autorização de uso de imagem dos alunos presentes neste
-                evento.
+                Declaro que a escola tem autorização para fotografar os alunos neste evento e
+                subir as fotos aqui. Isso não autoriza reconhecimento nem envio. Cada aluno é
+                autorizado na ficha dele.
               </span>
             </label>
             <Button

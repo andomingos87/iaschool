@@ -78,7 +78,8 @@ function recipientBadgeVariant(status: DeliveryRecipientStatus) {
 /**
  * Entregas do evento (Fase 5, W3 — `/eventos/:id/entregas`): preflight por
  * responsável, criação do lote, progresso do render, prévia protegida e
- * aprovação por papel. O envio em si chega no W4.
+ * aprovação por papel. O envio em si chega no W4. Enquanto não há sinal de
+ * modo no cliente, esta tela prepara o lote e diz que o WhatsApp está desligado.
  */
 export default function EventDeliveriesPage() {
   const params = useParams<{ id: string }>();
@@ -143,7 +144,7 @@ export default function EventDeliveriesPage() {
           ? {
               title: "Lote aprovado",
               description:
-                `${result.approved} ${result.approved === 1 ? "destinatário entrou" : "destinatários entraram"} na fila de envio` +
+                `${result.approved} ${result.approved === 1 ? "destinatário entrou" : "destinatários entraram"} na fila do servidor. O WhatsApp ainda não está ligado, então nenhuma mensagem sai neste passo` +
                 (result.blocked > 0
                   ? ` · ${result.blocked} bloqueado(s) por número ou aceite.`
                   : "."),
@@ -223,6 +224,10 @@ export default function EventDeliveriesPage() {
           title="Entregas aos responsáveis"
           description="O aluno aparece nítido; as outras crianças, desfocadas. Nada é enviado antes da aprovação de uma pessoa autorizada."
         />
+        <p className="mt-2 text-sm text-muted-foreground" data-testid="text-whatsapp-off">
+          O envio ao WhatsApp ainda não está ligado. Preparar o lote só gera os
+          derivados; nenhuma mensagem sai neste passo.
+        </p>
       </div>
 
       <Card className="border-border" data-testid="card-delivery-preflight">
@@ -327,10 +332,8 @@ export default function EventDeliveriesPage() {
                 >
                   {createBatch.isPending ? (
                     <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Send className="size-4" />
-                  )}
-                  Criar lote para {selected.length}{" "}
+                  ) : null}
+                  Preparar lote para {selected.length}{" "}
                   {selected.length === 1 ? "responsável" : "responsáveis"}
                 </Button>
               )}
