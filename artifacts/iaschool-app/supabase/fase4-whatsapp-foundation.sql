@@ -139,6 +139,31 @@ begin
   if (select count(*) from public.whatsapp_controlled_settings where enabled) <> 1 then
     raise exception 'controlled school configuration invalid';
   end if;
+  -- OTP e o pedido de aceite seguem o número atual do responsável. Trocar o
+  -- WhatsApp no cadastro cria outra linha em guardians; a allowlist não pode
+  -- continuar presa ao número antigo. Sai quem não é mais responsável
+  -- principal de nenhum aluno, e o número novo ocupa o lugar. O teto segue
+  -- em 4. Entrega de foto não entra aqui: continua exigindo a lista.
+  if p_purpose in ('guardian_otp', 'guardian_consent')
+     and not exists (
+       select 1 from public.whatsapp_controlled_allowlist
+        where school_id = v_guardian.school_id
+          and phone_e164 = v_guardian.whatsapp
+     ) then
+    delete from public.whatsapp_controlled_allowlist a
+     where a.school_id = v_guardian.school_id
+       and not exists (
+         select 1
+           from public.students s
+           join public.guardians g on g.id = s.primary_guardian_id
+          where s.school_id = a.school_id
+            and s.deleted_at is null
+            and g.deleted_at is null
+            and g.whatsapp = a.phone_e164
+       );
+    insert into public.whatsapp_controlled_allowlist (school_id, phone_e164)
+    values (v_guardian.school_id, v_guardian.whatsapp);
+  end if;
   if not exists (
     select 1 from public.whatsapp_controlled_allowlist
      where school_id = v_guardian.school_id and phone_e164 = v_guardian.whatsapp

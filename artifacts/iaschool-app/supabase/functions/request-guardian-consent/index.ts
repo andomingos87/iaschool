@@ -114,6 +114,10 @@ Deno.serve(async (req: Request) => {
     p_instance_id: instanceId,
   });
   if (reserveError || !messageId) {
+    const detail = reserveError?.message ?? "";
+    if (detail.includes("controlled allowlist limit reached")) {
+      return json({ error: "Esta escola já tem 4 números autorizados. Edite um responsável que já existe, em vez de acrescentar outro." }, 429);
+    }
     return json({ error: "Envio indisponível para este número ou limite atingido." }, 429);
   }
 

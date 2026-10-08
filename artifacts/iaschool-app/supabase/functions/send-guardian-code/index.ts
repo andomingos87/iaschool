@@ -86,7 +86,12 @@ Deno.serve(async (req: Request) => {
     p_instance_id: Deno.env.get("ZAPI_INSTANCE_ID")!,
   });
   if (reserveError || !messageId) {
-    // Sem detalhes do banco no log ou resposta: podem conter dados operacionais.
+    // Sem o texto cru do banco: pode trazer dado operacional. Só o teto de
+    // 4 números tem mensagem própria; o resto continua genérico.
+    const detail = reserveError?.message ?? "";
+    if (detail.includes("controlled allowlist limit reached")) {
+      return json({ error: "Esta escola já tem 4 números autorizados. Edite um responsável que já existe, em vez de acrescentar outro." }, 429);
+    }
     return json({ error: "Envio indisponível para este número ou limite atingido." }, 429);
   }
 
