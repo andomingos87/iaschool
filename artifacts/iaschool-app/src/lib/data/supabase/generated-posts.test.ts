@@ -66,7 +66,7 @@ const INPUT = {
   imageUrl: "data:image/png;base64,ok",
   details: {
     prompt: "prompt final",
-    model: "gpt-image-2",
+    model: "gpt-image-2.5-flare",
     size: "1024x1024",
     images: [{ role: "Referência", fileName: "referencia.png", sizeBytes: 10 }],
   },

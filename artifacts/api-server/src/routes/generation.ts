@@ -15,6 +15,11 @@ import {
 
 const router: IRouter = Router();
 
+// Id da API. Não existe modelo chamado "gpt-image-2.5": a família 2.5
+// publica flare (uso geral) e sunburst (edição mais precisa, mais lenta).
+const IMAGE_MODEL = "gpt-image-2.5-flare";
+const IMAGE_SIZE = "1024x1024";
+
 const MAX_IMAGES = 6;
 const MAX_PROMPT_CHARS = 4000;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // por imagem, decodificada
@@ -157,8 +162,8 @@ router.post(
       durationMs: Date.now() - startedAt,
       prompt: typeof rawPrompt === "string" ? rawPrompt : null,
       payload: {
-        model: "gpt-image-2",
-        size: "1024x1024",
+        model: IMAGE_MODEL,
+        size: IMAGE_SIZE,
         imageCount: files.length,
         totalImageBytes: files.reduce((sum, f) => sum + f.size, 0),
         ...(clientMeta ? { client: clientMeta } : {}),
@@ -280,10 +285,10 @@ router.post(
     );
 
     const result = await openai.images.edit({
-      model: "gpt-image-2",
+      model: IMAGE_MODEL,
       image: openaiFiles,
       prompt,
-      size: "1024x1024",
+      size: IMAGE_SIZE,
       // gpt-image sempre responde em base64
     });
 
@@ -317,8 +322,8 @@ router.post(
       durationMs: Date.now() - startedAt,
       prompt,
       payload: {
-        model: "gpt-image-2",
-        size: "1024x1024",
+        model: IMAGE_MODEL,
+        size: IMAGE_SIZE,
         imageCount: files.length,
         totalImageBytes: totalBytes,
         ...(clientMeta ? { client: clientMeta } : {}),

@@ -1,5 +1,13 @@
 {
   "mcpServers": {
+    "ai-context": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@ai-coders/context@latest",
+        "mcp"
+      ]
+    },
     "supabase-iaschool": {
       "type": "stdio",
       "command": "sh",

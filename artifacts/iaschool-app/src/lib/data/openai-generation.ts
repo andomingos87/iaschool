@@ -7,7 +7,7 @@ import type { GenerationPayloadImage } from "./types";
 import { buildGenerationPrompt } from "../prompt-template";
 
 // Espelham o payload montado pelo servidor (api-server/routes/generation.ts).
-const GENERATION_MODEL = "gpt-image-2";
+const GENERATION_MODEL = "gpt-image-2.5-flare";
 const GENERATION_SIZE = "1024x1024";
 
 // Acima disso, redimensiona/comprime antes de enviar (payload menor = mais rápido

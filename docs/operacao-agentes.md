@@ -1,0 +1,428 @@
+# Operação do IAschool
+
+Texto que estava na raiz em `AGENTS.md` até 09/10/2026. As regras curtas para
+agentes estão em [`../AGENTS.md`](../AGENTS.md). O estado do produto está em
+[`../BACKLOG.md`](../BACKLOG.md). A tabela de fases abaixo pode estar atrás do
+backlog.
+
+Nome de tabela neste arquivo é `public.<nome>`. O SQL de referência está em
+`artifacts/iaschool-app/supabase/`. O texto abaixo não repete o arquivo em cada
+citação.
+
+# Instruções de colaboração
+
+## Decisões e esclarecimentos
+
+Sempre que uma decisão, aprovação ou esclarecimento do usuário for necessário,
+apresente exatamente três opções mutuamente exclusivas, numeradas como `1`,
+`2` e `3`.
+
+- A opção `1` deve ser a recomendação, quando houver uma alternativa preferível.
+- Cada opção deve ser curta, autoexplicativa e suficiente para que o usuário
+  responda somente com o respectivo número.
+- Interprete uma resposta isolada `1`, `2` ou `3` de acordo com a última
+  pergunta numerada feita pelo agente.
+- Evite perguntas abertas. Quando faltar um detalhe que não possa ser inferido
+  com segurança, converta-o em três alternativas objetivas.
+
+## O que é o IAschool
+
+Plataforma de gestão e distribuição de **fotos escolares**: a escola sobe as
+fotos de um evento, o sistema separa por aluno e entrega ao responsável, com
+autorização e trilha de auditoria.
+
+O produto é resultado de uma **pivotagem** (30/08/2026) a partir de um gerador
+de cards de desempenho para escolinha de futebol (R9 / IAsport). Leia
+[`docs/pivotagem-iaschool.md`](pivotagem-iaschool.md) antes de qualquer
+trabalho de produto — ele define o de-para de vocabulário, o modelo de dados
+alvo e o roadmap por fases.
+
+| Fase | Escopo | Estado |
+| --- | --- | --- |
+| 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
+| 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ✅ M1 concluído (20/09/2026): migration aplicada, OTP por responsável, telas de cadastro da escola e de turmas. Fase 1 completa (CSV, professor da turma, telas do papel `dev`, remoção de `clubs`) segue aberta |
+| 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ✅ M2 (20/09/2026) e M3 (21/09/2026) concluídos: `photos`, `batch_jobs`, buckets, upload em massa no cliente; fila `photo_jobs`, `ingest-worker` (miniaturas WebP, `/health`), galeria virtualizada e progresso por Realtime. `ingest-worker` implantado na Fly em 26/09/2026 |
+| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); ✅ **M4, M5 e M6 concluídos** (21/09/2026): consentimento por escopo, rosto de referência, `face-worker` em Python rodado contra o banco real, `photo_faces`, busca vetorial isolada por escola, pasta do aluno, e a tela de revisão por aluno com trilha `biometric_events` e expurgo diário. Os dois workers rodam na Fly desde 26/09/2026. Faltam as medições de aceite (§12.2) com acervo sintético |
+| 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
+| 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
+
+O detalhe por item, com o que está feito e o que falta em cada fase, está em
+[`BACKLOG.md`](../BACKLOG.md). Esta tabela é o resumo; o backlog é a fonte.
+
+**O que existe hoje**: o núcleo herdado da Fase 0 (cadastro com aprovação,
+autenticação, conformidade ECA, cota de geração e geração **unitária** de arte,
+1 aluno por vez), o M1 — escola como tenant, RLS por escola, responsáveis
+com OTP, cadastro da escola e turmas (`classes`) ligadas ao aluno —, o M2 —
+eventos (`/eventos`), upload em massa no cliente com dedup por hash e retomada,
+tabela `photos` e buckets por escola — e o M3 — fila `photo_jobs`,
+`artifacts/ingest-worker/` (Node 24 + `sharp`: dimensões, miniatura WebP
+320px, `/health`), galeria virtualizada e progresso por Realtime em
+`batch_jobs` —, o M4 — consentimento por escopo (`authorizations`) com os dois
+toggles na ficha do aluno, aba "Rosto de referência" e indicador de prontidão
+na lista de alunos —, o M5 — `artifacts/face-worker/` (Python + InsightFace)
+consumindo as duas filas, `photo_faces` com o vetor bloqueado por privilégio
+de coluna, busca vetorial isolada por escola e a pasta do aluno em
+`/alunos/:id` — e o M6: a tela de revisão (`/eventos/:id/revisao`) com cartão
+por aluno e confirmação em lote, fila individual por teclado, trilha
+`biometric_events` append-only, expurgo diário por `pg_cron` e ZIP da pasta do
+aluno. Desde 26/09/2026 os dois workers rodam na Fly (`iaschool-ingest-worker` e
+`iaschool-face-worker`, org `personal`, região gru, uma máquina cada, escala
+manual por `fly scale count`). Também desde 26/09/2026 o app está publicado
+na Vercel em `https://iaschool-app.vercel.app` (projeto `iaschool-app`, time
+`andomingos87s-projects`, deploy por Git a partir da `main`) e a API de
+geração roda na Fly como `iaschool-api`, alcançada pelo rewrite `/api` do
+`vercel.json`. O domínio é o da Vercel: não há domínio próprio. O que ainda
+**não existe**: as medições de aceite da spec §12.2 com acervo sintético, o
+desfoque na entrega e o envio em lote. O estado da publicação está em
+`BACKLOG.md`, seção "Publicação, CI e higiene".
+
+Ao trabalhar aqui, diferencie sempre protótipo, código local, integração
+configurada e evidência de produção.
+
+## Regra de conformidade desta fase (bloqueante)
+
+Enquanto as pendências de [`docs/pendencias-producao.md`](pendencias-producao.md)
+não estiverem implementadas e ligadas:
+
+- **Nenhuma foto real de criança ou adolescente entra no produto.** Só material
+  de teste ou demonstração.
+- **O fluxo comercial de WhatsApp não é ligado.** A única exceção é o modo
+  `controlled_zapi` aprovado em 29/09/2026: uma escola, de uma a quatro pessoas
+  allowlisted, teto diário, kill switch e somente material sintético ou de
+  adultos. A ponte temporária não autoriza foto real de menor e deve ser trocada
+  pela Meta Cloud API antes do primeiro uso comercial, conforme
+  [`docs/spec-whatsapp-api-oficial-entrega-fotos.md`](spec-whatsapp-api-oficial-entrega-fotos.md),
+  §§9.5, 18.1 e 19.
+
+O banco já tem a estrutura de proteção (consentimento do responsável, canal
+verificado, `share_logs` imutável), mas os mecanismos que a alimentam ainda não
+existem. Rodar com dado real antes disso é tratar imagem de menor sem o canal
+verificado exigido pelo Decreto nº 12.880/2026, art. 35.
+
+Para qualquer tarefa que toque cadastro, foto, WhatsApp, data de nascimento,
+consentimento ou compartilhamento, use a skill `eca-digital`
+(`.claude/skills/eca-digital/`), que traz a Lei nº 15.211/2025, o Decreto nº
+12.880/2026 e o checklist de conformidade aplicado a este produto.
+
+## Setup
+
+- Requisito: Node.js 24 e pnpm 11.17.0 via Corepack.
+- Instale dependências de forma determinística:
+
+  ```bash
+  corepack pnpm install --frozen-lockfile
+  ```
+
+- O workspace aplica uma espera mínima de 1.440 minutos para pacotes novos.
+  Não remova `minimumReleaseAge` de `pnpm-workspace.yaml`; exceções devem ser
+  explícitas e justificadas.
+- Variáveis de ambiente são locais. Copie de [`.env.example`](../.env.example),
+  nunca registre valores de segredos e mantenha `.env*` fora do Git.
+
+## Mapa do workspace
+
+- `artifacts/iaschool-app/` — aplicação web principal (Vite/React) e os scripts
+  SQL do Supabase em `supabase/`.
+- `artifacts/iaschool-ui/` — design system IAschool, tokens, componentes e preview.
+- `artifacts/api-server/` — servidor Express e fluxo de geração de imagens.
+  Implanta na Fly como `iaschool-api` pelo `fly.toml` e pelo `Dockerfile` da
+  **raiz** (`fly deploy --remote-only --ha=false`). O rewrite `/api` em
+  `artifacts/iaschool-app/vercel.json` aponta para esse app: renomear um
+  obriga a mudar o outro no mesmo commit.
+- `artifacts/ingest-worker/` — worker Node 24 + `sharp` que consome
+  `photo_jobs` (miniaturas, dimensões, EXIF de reserva) e expõe `/health`.
+  Desde o M6 também varre `storage_purge_queue`: apagar a linha no banco não
+  apaga o objeto no bucket, e é este laço que remove de fato.
+  `Dockerfile` e `fly.toml` próprios (um app por worker).
+- `artifacts/face-worker/` — worker **Python 3.12** (`onnxruntime` +
+  `insightface`) que consome `photo_jobs` (`kind = 'recognize'`) e
+  `student_reference_jobs`: detecção SCRFD, embedding ArcFace 512-d e
+  atribuição por limiar. Um processo por máquina, `.venv` local (`pnpm
+  --filter @workspace/face-worker run setup`), testes com pytest.
+  `ingest-worker`, `face-worker` e `api-server` são os únicos lugares com
+  `SUPABASE_SERVICE_ROLE_KEY`.
+- `artifacts/mockup-sandbox/` — sandbox para prototipação visual.
+- `lib/api-spec/` — contrato OpenAPI e configuração do Orval.
+- `lib/api-client-react/` — cliente React gerado a partir do contrato.
+- `lib/api-zod/` — schemas e tipos Zod gerados.
+- `lib/db/` — pacote Drizzle **inerte**; ver "Banco de dados" abaixo antes de tocar.
+- `scripts/` — scripts auxiliares e testes de compatibilidade local.
+- `docs/` — documentação de produto e engenharia (índice abaixo).
+- `attached_assets/` — referências visuais e materiais fornecidos para o
+  produto; não trate esses arquivos como código-fonte executável.
+
+## Documentação
+
+| Documento | Para quê |
+| --- | --- |
+| [`BACKLOG.md`](../BACKLOG.md) | **Backlog oficial**, por fase: feito, em andamento, a fazer, bloqueado. Único lugar de rastreio |
+| [`docs/pivotagem-iaschool.md`](pivotagem-iaschool.md) | Plano da pivotagem, roadmap por fases, decisões em aberto |
+| [`docs/pendencias-producao.md`](pendencias-producao.md) | O que falta para rodar com dado real (domínio, Resend, OTP) |
+| [`docs/spec-upload-massa-reconhecimento-facial.md`](spec-upload-massa-reconhecimento-facial.md) | Spec das Fases 2 e 3: upload em massa, biometria, fila de revisão, pasta do aluno |
+| [`docs/spike-reconhecimento-facial.md`](spike-reconhecimento-facial.md) | Spike M0: números medidos do motor facial, limiares calibrados e o que ficou sem medir |
+| [`docs/estimativa-custos-por-aluno.md`](estimativa-custos-por-aluno.md) | Custo operacional por cenário de escala e por aluno, base para precificar; recalculável por `../scripts/custos-por-aluno.py` |
+| [`docs/diagnostico-geracao-imagens.md`](diagnostico-geracao-imagens.md) | Diagnóstico da falha de geração de imagens |
+| [`docs/referencia-zapi.md`](referencia-zapi.md) | Referência da Z-API: autenticação, `send-text`, webhook de status, filtros e gotchas |
+| [`docs/diagnostico-webhook-zapi.md`](diagnostico-webhook-zapi.md) | Registro da depuração: tentativas, erros e descobertas do webhook Z-API |
+| [`artifacts/iaschool-app/SUPABASE.md`](../artifacts/iaschool-app/SUPABASE.md) | Integração Supabase: variáveis, tabelas, RLS, buckets |
+| [`docs/development/cross-platform-web.md`](development/cross-platform-web.md) | Compatibilidade macOS/Linux/Windows |
+| `artifacts/iaschool-ui/docs/` | Guias de consumo e migração do design system |
+
+## Comandos de desenvolvimento
+
+Na raiz:
+
+```bash
+pnpm run typecheck
+pnpm run build
+pnpm run verify:native
+pnpm run smoke:web
+pnpm run test:compat
+```
+
+Para executar o build completo localmente, defina as variáveis exigidas pelos
+apps Vite:
+
+```bash
+PORT=5000 BASE_PATH=/ pnpm run build
+```
+
+Para iniciar superfícies específicas:
+
+```bash
+pnpm --filter @workspace/iaschool-app run dev
+pnpm --filter @workspace/api-server run dev
+pnpm --filter @workspace/ingest-worker run dev
+pnpm --filter @workspace/face-worker run dev
+pnpm --filter @workspace/iaschool-ui run dev
+pnpm --filter @workspace/mockup-sandbox run dev
+```
+
+O servidor da API usa a porta 5000 quando iniciado pelo fluxo documentado; o
+`ingest-worker` responde `/health` na 8080 e precisa de `SUPABASE_URL` e
+`SUPABASE_SERVICE_ROLE_KEY` exportadas. Confirme a porta real no ambiente
+antes de compartilhar uma URL.
+
+## Testes e validação
+
+- Para testes autenticados de aceitação, use exclusivamente a conta de QA
+  configurada localmente nas variáveis `IASPORT_TEST_EMAIL` e
+  `IASPORT_TEST_PASSWORD`. Os nomes mantêm o prefixo antigo de propósito: são
+  variáveis da máquina do desenvolvedor, renomeá-las quebra o ambiente local.
+  Nunca grave os valores dessas variáveis no repositório, em `AGENTS.md`, nos
+  logs, capturas de tela ou commits.
+- Testes dos scripts de compatibilidade: `pnpm run test:compat`.
+- Typecheck completo: `pnpm run typecheck`.
+- Build completo: `pnpm run build`.
+- Testes do servidor: `pnpm --filter @workspace/api-server run test`.
+- Testes do worker: `pnpm --filter @workspace/ingest-worker run test` (sem
+  rede, imagens sintéticas geradas pelo `sharp`).
+- Testes do `face-worker`: `pnpm --filter @workspace/face-worker run test`
+  (pytest, sem rede; o caso que carrega o `buffalo_l` é pulado quando os
+  modelos não estão na máquina). A verificação ponta a ponta contra o banco é
+  `artifacts/face-worker/scripts/live_check.py` — ela usa material de teste de
+  **adultos** (LFW), nunca foto de criança.
+- Testes de integração do app contra o banco real (`tests/*.integration.test.ts`)
+  exigem `SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY`
+  exportadas; `pnpm --filter @workspace/iaschool-app run test` roda tudo junto.
+- Testes de um pacote devem ser executados com `pnpm --filter <pacote>`.
+- Os checks locais não provam que uma implantação ou produção esteja funcionando.
+- Sempre informe separadamente checks não executados por falta de dependência,
+  serviço, credencial, navegador, hardware ou ambiente remoto.
+
+## Design system IAschool
+
+- A fonte de verdade visual é `artifacts/iaschool-ui/tokens.json`.
+- Edite tokens e regenere os arquivos com `pnpm --filter @workspace/iaschool-ui run tokens`.
+- Não edite manualmente `src/index.css` ou `src/generated/tokens.tsx`.
+- Use os componentes e tokens de `@workspace/iaschool-ui`; não copie valores ou
+  componentes para uma aplicação consumidora.
+- Cada componente web relevante deve manter sua história em
+  `artifacts/iaschool-ui/src/preview/demos/` e seu registro em
+  `artifacts/iaschool-ui/src/preview/registry.tsx`.
+- Siga os guias específicos antes de alterar UI:
+  - Web: `artifacts/iaschool-ui/docs/consuming-web.md`.
+  - Expo: `artifacts/iaschool-ui/docs/consuming-expo.md`.
+  - Migração web: `artifacts/iaschool-ui/docs/migrating-web.md`.
+  - Migração Expo: `artifacts/iaschool-ui/docs/migrating-expo.md`.
+
+## Banco de dados
+
+O banco é um **projeto Supabase** (PostgreSQL gerenciado, com Auth, RLS e
+Storage). Foi provisionado do zero em 30/08/2026 por 7 migrations aplicadas via
+MCP; a oitava e a nona são do M1 (20/09/2026).
+
+Tabelas atuais em `public`: `profiles`, `students`, `clubs`, `reference_posts`,
+`generated_posts`, `prompt_settings`, `prompt_template_versions`,
+`generation_usage`, `generation_logs`, `guardian_verification_codes`,
+`share_logs`, desde o M1 `schools`, `school_members`, `classes`, `guardians`
+e `events`, desde o M2 `photos` e `batch_jobs`, desde o M3 `photo_jobs`
+(sem policy: só `service_role` e RPCs), desde o M4 `authorizations`,
+`student_reference_faces` (idem, sem policy) e `student_reference_jobs`
+(a fila do rosto de referência, essa visível para a escola: não guarda vetor)
+desde o M5 `photo_faces` (legível pelo membro, **menos a coluna
+`embedding`**, bloqueada por privilégio de coluna) e
+`face_recognition_settings`, desde o M6 `biometric_events` (trilha
+append-only: só select, escrita por trigger e RPC) e `storage_purge_queue`
+(sem policy), e desde a fase 4 (02/10/2026) `whatsapp_controlled_settings`,
+`whatsapp_controlled_allowlist`, `whatsapp_messages` e
+`whatsapp_webhook_events` (sem policy: só `service_role` e RPCs) — todas com
+RLS habilitada.
+A migration do M1 (`iaschool_fase1_schools_members_classes`, referência em
+`supabase/fase1-min-schools-events.sql`) foi **aplicada em 20/09/2026**: a
+escola é o tenant, `profiles.role` é papel global (`dev`/`super_admin`/`user`)
+e o vínculo vive em `school_members`. A do M2
+(`iaschool_fase2_photos_batch_jobs_buckets`, referência em
+`supabase/fase2-photos-upload.sql`) foi **aplicada em 20/09/2026**: `photos`
+com `unique (event_id, content_hash)`, `batch_jobs`, buckets `event-photos`,
+`event-thumbs`, `event-originals`. As do M3 (`iaschool_fase2_photo_jobs_queue`
+e `iaschool_fase2_batch_progress_rpcs`, referência em
+`supabase/fase2-photo-jobs-worker.sql`) foram **aplicadas em 21/09/2026**:
+fila `photo_jobs`, `photos.batch_id`, RPCs de progresso e view
+`stalled_batch_jobs`. As do M4 (`iaschool_fase3_authorizations_reference_faces`,
+`iaschool_fase3_has_active_authorization_tenant_check`,
+`iaschool_fase3_reference_face_jobs` e
+`iaschool_fase3_reference_job_revoked_guard`, referência em
+`supabase/fase3-authorizations-reference-faces.sql`) foram **aplicadas em
+21/09/2026**: extensão `vector`, consentimento por escopo em `authorizations`
+(indelével: revogar é `revoked_at`), `student_reference_faces`, o bucket
+`student-refs` e a fila `student_reference_jobs`, que liga a tela ao motor
+facial. As do M5 (`iaschool_fase3_photo_faces_recognition` e
+`iaschool_fase3_permanent_job_failure`, referência em
+`supabase/fase3-face-recognition.sql`) também foram **aplicadas em
+21/09/2026**: `face_recognition_settings`, `photo_faces` (com o `embedding`
+bloqueado por privilégio de coluna), `match_reference_faces`,
+`complete_recognize_job`, o bucket `face-crops` e `student_photos`. As cinco
+do M6 (`iaschool_fase3_biometric_events`,
+`iaschool_fase3_storage_purge_queue`, `iaschool_fase3_review_rpcs`,
+`iaschool_fase3_purge_expired_biometrics` e `iaschool_fase3_purge_cron`,
+referência em `supabase/fase3-review-audit-purge.sql`) foram **aplicadas em
+21/09/2026**: trilha `biometric_events`, fila de expurgo do Storage, o CHECK
+que impede rosto confirmado sem revisor, as RPCs da revisão e
+`purge_expired_biometrics()` agendada no `pg_cron`.
+Em 26/09/2026 entraram mais duas:
+`iaschool_fase3_audit_tolerates_cascade_delete` (a trilha deixou de derrubar
+o delete de escola ou aluno com rosto de referência) e
+`iaschool_revoke_definer_helpers_from_anon` (referência em
+`fase1-min-schools-events.sql` e `fase3-review-audit-purge.sql`).
+A da fundação WhatsApp (`iaschool_fase4_whatsapp_foundation`, referência em
+`supabase/fase4-whatsapp-foundation.sql`) foi **aplicada em 02/10/2026** pelo
+MCP `supabase-iaschool`: allowlist de 1–4 números, teto diário e kill switch
+em `whatsapp_controlled_settings`/`whatsapp_controlled_allowlist`; trilha em
+`whatsapp_messages`/`whatsapp_webhook_events` com as RPCs
+`reserve_whatsapp_send`, `complete_whatsapp_send` e
+`record_whatsapp_provider_status`; e o OTP trocou
+`guardian_verification_codes.code` por `code_hash`/`phone_hash` (bcrypt), com
+`confirm_guardian_code` passando a retornar `boolean`. As Edge Functions
+`send-guardian-code` (v4) e `provider-webhook` (v2) foram **publicadas em
+02/10/2026** e falham fechado (`503`) enquanto `WHATSAPP_MODE` não existir.
+Sem secrets, sem instância Z-API, sem envio real. Estado em `BACKLOG.md`, M1 a
+M6 e fase 4.
+
+**Função nova em `public` nasce executável por `anon`.** O Supabase concede
+`execute` a `anon`, `authenticated` e `service_role` por default privileges, e
+`revoke ... from public` não tira esse grant explícito. Toda função que o
+visitante sem login não deve chamar precisa de `revoke execute ... from
+public, anon` na própria migration — foi o que deixou 8 helpers `security
+definer` abertos a `anon` até 26/09/2026.
+
+**Como alterar o schema:** exclusivamente por `apply_migration` do servidor MCP
+`supabase-iaschool` (seção abaixo). Não use o SQL Editor do painel para mudança
+de schema — o que não passa por migration não fica registrado no histórico.
+
+Os scripts em `artifacts/iaschool-app/supabase/*.sql` são a referência legível
+do schema (`setup.sql`, `eca-digital.sql`, `generation-quota.sql`,
+`generation-logs.sql`, `pivot-fase0.sql`, `fase1-min-schools-events.sql`,
+`fase2-photos-upload.sql`, `fase2-photo-jobs-worker.sql`,
+`fase3-authorizations-reference-faces.sql`, `fase3-face-recognition.sql`,
+`fase3-review-audit-purge.sql`). Ao aplicar uma migration, mantenha o
+SQL de referência correspondente atualizado no mesmo commit.
+
+> ⚠️ `lib/db/` é um **pacote Drizzle inerte**: `lib/db/src/schema/index.ts` é um
+> stub vazio e **não representa nenhuma tabela deste produto**. Não trate esse
+> diretório como fonte de verdade do banco e **não execute
+> `pnpm --filter @workspace/db run push`** — o comando aponta `drizzle-kit` para
+> a `DATABASE_URL` e tentaria alinhar o banco real a um schema vazio. O pacote só
+> deve ser usado se e quando o schema for de fato migrado para Drizzle, o que é
+> uma decisão em aberto.
+
+## MCP do Supabase — regra obrigatória
+
+**Sempre use o servidor MCP declarado em `.mcp.json` na raiz deste repositório.
+Nunca use o conector Supabase do Claude Code / claude.ai.**
+
+O conector pessoal enxerga todos os projetos da conta e não tem vínculo com
+este repositório — usá-lo aqui é como operar o banco errado por engano. O
+servidor de projeto está travado no ref correto e é a única forma autorizada
+de tocar no banco do IAschool.
+
+- Servidor: `supabase-iaschool` (declarado em [`.mcp.json`](../.mcp.json)).
+- Escopo: `--project-ref=jtyyauivokutperouqyh`. As ferramentas de conta
+  (`list_projects`, `create_project`, `pause_project`…) **não existem** aqui,
+  de propósito.
+- Ferramentas: todas as de projeto, com escrita habilitada — `docs`,
+  `database`, `debugging`, `development`, `functions`, `branching`, `storage`
+  (23 ferramentas, sem `--read-only`).
+- Credencial: `SUPABASE_ACCESS_TOKEN` lido de `.env.local` em tempo de
+  execução. O token nunca entra no `.mcp.json`, na linha de comando, no Git,
+  em logs ou em mensagens.
+
+Como identificar qual está em uso: as ferramentas do servidor de projeto
+aparecem com o prefixo `mcp__supabase-iaschool__`. Qualquer outro prefixo
+(hash aleatório) é o conector pessoal — **não use**.
+
+Se o servidor não subir, ele falha com mensagem explícita: `.env.local`
+ausente (rode o Claude Code a partir da raiz do repo) ou
+`SUPABASE_ACCESS_TOKEN` vazio (gere um Personal Access Token em
+Supabase → Account → Access Tokens). Não contorne o erro caindo no conector.
+
+> `apply_migration` e `execute_sql` escrevem no banco real deste produto, que
+> guarda dados de crianças e adolescentes. Valem as mesmas regras da seção
+> "Estilo e segurança": só com autorização explícita e ambiente confirmado.
+
+## API e geração de código
+
+- O contrato está em `lib/api-spec/openapi.yaml`.
+- Depois de alterar o contrato, regenere clientes e schemas com:
+
+  ```bash
+  pnpm --filter @workspace/api-spec run codegen
+  ```
+
+- `lib/api-client-react/src/generated/` e `lib/api-zod/src/generated/` são
+  gerados; não edite à mão.
+- Não declare migrations aplicadas, dados existentes ou integração remota
+  comprovada sem uma verificação correspondente.
+
+## Compatibilidade multiplataforma
+
+Consulte `docs/development/cross-platform-web.md`. A sequência recomendada
+é:
+
+1. `pnpm run verify:native` para validar ferramentas nativas.
+2. `pnpm run smoke:web` para iniciar e verificar a aplicação web.
+3. `pnpm run test:compat` para os testes automatizados.
+
+A documentação operacional atual deve ficar consistente com os scripts reais.
+
+## Estilo e segurança
+
+- Use TypeScript, imports explícitos e a organização já existente no pacote.
+- Preserve o package manager pnpm; não gere `package-lock.json` ou `yarn.lock`.
+- Rode typecheck e testes relevantes após mudanças.
+- Nunca exponha credenciais no browser, em logs, commits, Markdown ou exemplos.
+- Mantenha fronteiras browser → servidor → banco; privilégios e segredos ficam
+  no servidor.
+- Não faça reset, descarte ou sobrescrita de trabalho local sem autorização.
+- Ao escrever copy, use vocabulário escolar (aluno, escola, turma, responsável,
+  arte, evento). Termos do domínio antigo — atleta, escolinha, clube, brasão,
+  uniforme, posição, métrica, R9, IAsport — não devem entrar em código novo.
+
+## Pull requests e entrega
+
+- Descreva escopo, arquivos alterados, validações executadas e limitações.
+- Diferencie evidência local de CI, preview, deploy e produção.
+- Antes de concluir uma implementação, liste arquivos alterados, edge functions
+  a publicar e migrations a aplicar. Quando não existirem, declare isso
+  explicitamente.
+- Sugira um próximo passo concreto, sem afirmar que ele já foi executado.
