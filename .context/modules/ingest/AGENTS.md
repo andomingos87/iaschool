@@ -4,9 +4,9 @@ Worker Node que processa arquivo depois do upload. Um processo, `/health` na por
 
 ## Entrada
 - Pacote `@workspace/ingest-worker`. Arranque: `src/index.ts`.
-- Consome `photo_jobs` (`kind = 'ingest'`): dimensões, miniatura WebP 320px, EXIF de reserva.
-- Consome `delivery_render_jobs`: derivado desfocado por destinatário no bucket `delivery-assets`.
-- Varre `storage_purge_queue`: apagar a linha no banco não apaga o objeto; este laço remove o arquivo.
+- Consome a tabela `public.photo_jobs` (`artifacts/iaschool-app/supabase/fase2-photo-jobs-worker.sql`) com `kind = 'ingest'`: dimensões, miniatura WebP 320px, EXIF de reserva.
+- Consome a tabela `public.delivery_render_jobs` (`artifacts/iaschool-app/supabase/fase5-delivery-batches.sql`): derivado desfocado por destinatário no bucket `delivery-assets`.
+- Varre a tabela `public.storage_purge_queue` (`artifacts/iaschool-app/supabase/fase3-review-audit-purge.sql`): apagar a linha no banco não apaga o objeto; este laço remove o arquivo.
 - `Dockerfile` e `fly.toml` próprios. App na Fly: `iaschool-ingest-worker`.
 
 ## Depende de

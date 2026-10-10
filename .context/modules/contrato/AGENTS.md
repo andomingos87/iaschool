@@ -22,3 +22,4 @@ Contrato HTTP da geração de imagem e os clientes gerados a partir dele.
 
 ## Fora deste módulo
 - Upload, evento, biometria e WhatsApp não têm operação neste contrato. Eles falam com o Supabase direto do app.
+- `POST /generation/post-image`, a cota e o log de arte também não estão no `openapi.yaml`. O mapa desses caminhos é `.context/modules/geracao-arte/AGENTS.md`.

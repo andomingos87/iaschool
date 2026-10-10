@@ -9,6 +9,6 @@ Rodar com dado real antes do canal verificado trata imagem de menor sem o exigid
 
 O banco deste produto só se opera pelo MCP `supabase-iaschool` do `.mcp.json` da raiz. `apply_migration` e `execute_sql` escrevem no banco real e exigem autorização explícita.
 
-`SUPABASE_SERVICE_ROLE_KEY` existe só na API, no ingest-worker e no face-worker. A coluna `photo_faces.embedding` não é legível pelo cliente. Função nova em `public` nasce executável por `anon`; a que o visitante não deve chamar leva `revoke execute ... from public, anon` na própria migration.
+`SUPABASE_SERVICE_ROLE_KEY` existe só na API, no ingest-worker e no face-worker. A coluna `public.photo_faces.embedding` (`artifacts/iaschool-app/supabase/fase3-face-recognition.sql`) não é legível pelo cliente. Função nova em `public` nasce executável por `anon`; a que o visitante não deve chamar leva `revoke execute ... from public, anon` na própria migration.
 
 Verificação ponta a ponta do reconhecimento usa material de adultos (LFW), nunca foto de criança.

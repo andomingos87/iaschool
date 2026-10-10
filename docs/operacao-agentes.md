@@ -5,6 +5,10 @@ agentes estão em [`../AGENTS.md`](../AGENTS.md). O estado do produto está em
 [`../BACKLOG.md`](../BACKLOG.md). A tabela de fases abaixo pode estar atrás do
 backlog.
 
+Nome de tabela neste arquivo é `public.<nome>`. O SQL de referência está em
+`artifacts/iaschool-app/supabase/`. O texto abaixo não repete o arquivo em cada
+citação.
+
 # Instruções de colaboração
 
 ## Decisões e esclarecimentos

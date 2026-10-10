@@ -9,7 +9,7 @@ Aplicação web da escola: cadastro, eventos, upload, galeria, revisão, pasta d
 
 ## Depende de
 - `design-system` para componente e token.
-- `contrato` para a API de geração.
+- `contrato` para o que estiver no OpenAPI. A geração de arte chama a API na mão. O fluxo está em `.context/modules/geracao-arte/AGENTS.md`.
 - Supabase (Auth, RLS, Storage, Realtime) direto do browser, com a chave anon.
 
 ## Quem depende

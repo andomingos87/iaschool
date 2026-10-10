@@ -119,7 +119,7 @@ describe("createOpenAIGenerationService().generate — detalhes da geração", (
     const result = await service.generate(request);
 
     expect(result.imageUrl).toBe("data:image/png;base64,ok");
-    expect(result.details.model).toBe("gpt-image-2");
+    expect(result.details.model).toBe("gpt-image-2.5-flare");
     expect(result.details.size).toBe("1024x1024");
     // Sem template do admin, o prompt final é o do template padrão embutido.
     expect(result.details.prompt).toBe(buildGenerationPrompt(request, null));

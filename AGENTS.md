@@ -10,6 +10,7 @@ A escola sobe as fotos de um evento; o sistema separa por aluno e entrega ao res
 - SEMPRE altere só o que foi pedido — mudança mínima.
 - SEMPRE que a mudança tocar lógica de domínio (rota, serviço, RPC, fila ou regra de consentimento), escreva ou atualize teste.
 - SEMPRE que mudar comportamento, atualize o doc do módulo (`.context/modules/<modulo>/AGENTS.md`).
+- SEMPRE que a doc de contexto citar tabela ou coluna do banco, escreva `public.<tabela>` ou `public.<tabela>.<coluna>` e o arquivo SQL em `artifacts/iaschool-app/supabase/`. Nome solto não identifica a tabela.
 - SEMPRE entregue estados de erro, vazio e carregando, validação e o caso de borda que a mudança afeta.
 - SEMPRE consulte a doc atualizada da lib (via MCP) antes de escrever código que usa terceiro.
 - SEMPRE use vocabulário escolar em código novo: aluno, escola, turma, responsável, arte, evento.
@@ -69,6 +70,7 @@ Gates completos: skill `aurea-standards`.
 
 ## Camada de contexto
 - Módulos: `app`, `design-system`, `api`, `ingest`, `face`, `contrato`. Doc em `.context/modules/<modulo>/AGENTS.md`.
+- `geracao-arte` é índice de domínio, sem pasta de código. Os arquivos continuam nos três módulos acima.
 - Convenções: [.context/conventions.md](.context/conventions.md). Segurança: [.context/security.md](.context/security.md).
 - Decisões: `.context/decisions/`. Lições: `.context/lessons/`.
 - Skills pelo nome: `aurea-standards`, `convention-detection`, `project-onboarding`, `agents-md`, `eca-digital`.

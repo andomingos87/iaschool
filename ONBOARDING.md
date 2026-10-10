@@ -30,7 +30,8 @@ Não há script de lint. Variáveis sem valor de exemplo: [.env.example](.env.ex
 - **api** — geração de imagem, cota e log. Entrada: `artifacts/api-server/src/routes/index.ts`. O `Dockerfile` e o `fly.toml` da raiz são deste módulo.
 - **ingest** — miniatura, derivado desfocado da entrega e apagamento do arquivo no bucket. Entrada: `artifacts/ingest-worker/src/index.ts`.
 - **face** — detecção e embedding. Entrada: `artifacts/face-worker/src/face_worker/__main__.py`.
-- **contrato** — OpenAPI da geração e os clientes gerados. Entrada: `lib/api-spec/openapi.yaml`.
+- **contrato** — OpenAPI e os clientes gerados. Entrada: `lib/api-spec/openapi.yaml`. Hoje o arquivo só descreve `/healthz`.
+- **geracao-arte** — índice da geração unitária de arte, sem pasta de código. Entrada: `.context/modules/geracao-arte/AGENTS.md`. A tela fica no `app` e a chamada ao modelo fica no `api`.
 
 Doc de cada um: `.context/modules/<modulo>/AGENTS.md`.
 
@@ -38,7 +39,7 @@ Doc de cada um: `.context/modules/<modulo>/AGENTS.md`.
 
 - Tela, aluno, turma, evento, galeria, revisão ou entrega: módulo `app`, a partir de `src/App.tsx`. Componente visual compartilhado: `design-system`.
 - Visual de token ou componente: `design-system`, edite `tokens.json` e rode `pnpm --filter @workspace/iaschool-ui run tokens`.
-- Geração de imagem: primeiro `lib/api-spec/openapi.yaml`, depois `pnpm --filter @workspace/api-spec run codegen`, depois as rotas em `api`.
+- Geração de arte: comece por `.context/modules/geracao-arte/AGENTS.md`. A tela é `/gerar`, no `app`. A chamada ao modelo é `artifacts/api-server/src/routes/generation.ts`. O OpenAPI ainda não descreve essas rotas.
 - Miniatura, fila de arquivo ou desfoque da entrega: `ingest`.
 - Reconhecimento: `face`. O schema que ele consome está no SQL do `app`.
 - Tabela, policy, RPC ou bucket: SQL em `artifacts/iaschool-app/supabase/` e migration pelo servidor `supabase-iaschool` do `.mcp.json`. Quem mexe nisso revisa [artifacts/iaschool-app/SUPABASE.md](artifacts/iaschool-app/SUPABASE.md) e [.context/security.md](.context/security.md).

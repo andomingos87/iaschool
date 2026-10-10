@@ -13,7 +13,7 @@ Servidor Express da geração unitária de imagem, cota e log. Não serve a UI.
 - Supabase com `SUPABASE_SERVICE_ROLE_KEY` e `OPENAI_API_KEY`, só no servidor.
 
 ## Quem depende
-- A tela de geração do `app`.
+- A tela de geração do `app`. O fluxo, o portão do menor e o que esta API não confere estão em `.context/modules/geracao-arte/AGENTS.md`.
 
 ## Sensível
 - A service role não volta em resposta, log ou variável `VITE_`.

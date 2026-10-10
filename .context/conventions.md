@@ -42,5 +42,6 @@ Confirmadas em 09/10/2026 no init da camada de contexto.
 - Camadas: sem camada unica. App em `pages` / `components` / `hooks` / `lib`. API em `routes` / `middlewares` / `lib`. Workers em loop e handlers. Banco em SQL, RLS e RPC. Nao ha repository.
 - Erro: sem tipo unico na API. A definir.
 - Validacao: Zod nos formularios do app e no contrato `lib/api-zod`. O banco valida com CHECK e trigger.
-- Auth: Supabase Auth no app. JWT no middleware da API. `profiles.role` e papel global (`dev` / `super_admin` / `user`). O vinculo com a escola vive em `school_members`. RLS por escola.
+- Auth: Supabase Auth no app. JWT no middleware da API. `public.profiles.role` (`artifacts/iaschool-app/supabase/setup.sql`) e papel global (`dev` / `super_admin` / `user`). O vinculo com a escola vive em `public.school_members` (`artifacts/iaschool-app/supabase/fase1-min-schools-events.sql`). RLS por escola.
+- Doc de contexto: tabela e coluna saem como `public.<tabela>` ou `public.<tabela>.<coluna>`, com o arquivo SQL em `artifacts/iaschool-app/supabase/`. Nome solto nao identifica a tabela.
 - Nunca: foto real de crianca ou adolescente antes de `docs/pendencias-producao.md`; WhatsApp comercial fora do modo `controlled_zapi`; `pnpm --filter @workspace/db run push`; MCP de Supabase que nao seja `supabase-iaschool`; migration pelo SQL Editor; `package-lock.json` ou `yarn.lock`; editar token, cliente ou Zod gerado; `SUPABASE_SERVICE_ROLE_KEY` no browser; vocabulario de futebol em codigo novo.
