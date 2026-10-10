@@ -1,0 +1,4 @@
+/git-state.json
+/.update.lock
+/.git-state-*.tmp
+__pycache__/

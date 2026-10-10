@@ -182,3 +182,30 @@ Os números deste documento saíram dele em 21/09/2026.
 2. Confirmar preço e qualidade padrão de `gpt-image-2` na tabela da OpenAI.
 3. Confirmar categoria do template de entrega na Meta (utilidade × marketing).
 4. Decidir se a arte gerada por IA continua no produto ou vira módulo à parte.
+
+## 10. Precificação a R$ 5,50 por aluno/mês (26/09/2026)
+
+Preço cobrado da escola por aluno matriculado, com nota fiscal. Imposto pelo
+**Simples Nacional**, alíquota efetiva pela faixa de receita bruta acumulada
+em 12 meses. Software/SaaS cai no **Anexo V**, salvo Fator R ≥ 28% (folha ÷
+receita), que leva ao **Anexo III**; confirmar com o contador. Taxa de
+cobrança e inadimplência entram como 0% (boleto/Pix é por escola, não por
+aluno). Lucro **antes de pessoas, jurídico e pró-labore**.
+
+| Cenário | Alunos | Receita/mês | Alíquota (III / V) | Imposto NF (III / V) | Custo/mês | **Lucro/mês (III / V)** | Margem | Lucro por aluno/mês |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A — Piloto | 200 | R$ 1.100 | 6,0% / 15,5% | R$ 66 / R$ 170 | R$ 361 | **R$ 673 / R$ 569** | 61% / 52% | R$ 3,37 / R$ 2,84 |
+| B — Tração | 3.000 | R$ 16.500 | 6,5% / 15,7% | R$ 1.068 / R$ 2.595 | R$ 625 | **R$ 14.807 / R$ 13.280** | 90% / 80% | R$ 4,94 / R$ 4,43 |
+| C — Escala | 15.000 | R$ 82.500 | 12,4% / 18,8% | R$ 10.230 / R$ 15.487 | R$ 1.662 | **R$ 70.608 / R$ 65.350** | 86% / 79% | R$ 4,71 / R$ 4,36 |
+
+Ponto de equilíbrio (custo fixo ÷ preço líquido): 69 / 97 / 201 alunos por
+cenário no Anexo III. Com arte IA em qualidade alta (1 por evento) o lucro
+cai R$ 94 (A), R$ 1.403 (B) e R$ 7.013 (C) por mês.
+
+O que muda a conta: a alíquota sobe por faixa (o cenário C já paga o dobro do
+piloto em percentual); Anexo V tira mais 8 a 10 pontos de margem; e o custo de
+gente, que não está aqui, é o que de fato consome a margem no piloto.
+
+A aba `Precificacao` da planilha (Google Sheets) tem preço, anexo e taxas
+editáveis e as faixas do Simples como tabela; `scripts/custos-por-aluno-xlsx.py`
+gera o arquivo.
