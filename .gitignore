@@ -47,6 +47,8 @@ Thumbs.db
 # Local caches
 .cache/
 .local/
+.grok/
+**/.temp/
 
 # Local environment and validation evidence
 .env

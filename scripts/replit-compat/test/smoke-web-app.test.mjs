@@ -29,13 +29,17 @@ async function runTemporaryProcess(statusCode, { ignoreSigterm = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'iaschool-smoke-'));
   const marker = join(directory, 'terminated');
   const ready = join(directory, 'ready');
+  // O handler vai ANTES do marcador `ready`: o pai dispara SIGTERM assim que
+  // enxerga o arquivo. Se o sinal chegasse na janela entre o write e o
+  // process.on, o filho morreria pela disposição padrão (signal 'SIGTERM') em
+  // vez de ser escalado para 'SIGKILL' — o que fazia o teste oscilar no macOS.
   const source = [
     "const fs = require('node:fs');",
     `const marker = ${JSON.stringify(marker)};`,
-    `fs.writeFileSync(${JSON.stringify(ready)}, 'ready');`,
     ignoreSigterm
       ? "process.on('SIGTERM', () => {});"
       : "process.on('SIGTERM', () => { fs.writeFileSync(marker, 'terminated'); process.exit(0); });",
+    `fs.writeFileSync(${JSON.stringify(ready)}, 'ready');`,
     'setInterval(() => {}, 1_000);',
   ].join(' ');
 
