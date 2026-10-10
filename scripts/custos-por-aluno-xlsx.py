@@ -185,6 +185,76 @@ crow("wa_mkt", "Por aluno por mês se WhatsApp for marketing (R$)", each(lambda 
 crow("ano", "Por aluno por ano, base (R$)", each(lambda c: f"={cr('alu_brl',c)}*12"), BRL, OUTPUT_BG)
 widths(C, [46, 17, 17, 17, 46]); C.freeze_panes = "B5"
 
+# ================= Precificacao =================
+Pr = wb.create_sheet("Precificacao")
+title(Pr, "Precificação e lucro", "Preço por aluno, imposto da nota fiscal (Simples Nacional, alíquota efetiva pela faixa de receita) e o que sobra por cenário. Amarelo = entrada.", 5)
+header(Pr, 4, ["", "A — Piloto", "B — Tração", "C — Escala", "Observação"], aligns=True)
+PR = {}; r = 5
+def psec(text):
+    global r; section(Pr, r, text, 5); r += 1
+def prow(key, label, vals, fmt, bg, obs="", bold=False):
+    global r
+    PR[key] = r
+    body(Pr.cell(row=r, column=1, value=label), bold=bold)
+    for j, val in enumerate(vals, 2):
+        body(Pr.cell(row=r, column=j, value=val), fmt, bg, bold=bold, align=RIGHT)
+    o = Pr.cell(row=r, column=5, value=obs); body(o); o.font = f(9, color=MUTED)
+    if bold:
+        for j in range(1, 6): Pr.cell(row=r, column=j).fill = fill("DCE6F0")
+    Pr.row_dimensions[r].height = 20; r += 1
+def pin(key, label, val, fmt, obs):
+    global r
+    PR[key] = r
+    body(Pr.cell(row=r, column=1, value=label))
+    body(Pr.cell(row=r, column=2, value=val), fmt, INPUT_BG, align=RIGHT)
+    Pr.merge_cells(start_row=r, start_column=3, end_row=r, end_column=5)
+    o = Pr.cell(row=r, column=3, value=obs); body(o); o.font = f(9, color=MUTED)
+    Pr.row_dimensions[r].height = 20; r += 1
+PCT = '0.0%'
+psec("Entradas")
+pin("preco", "Preço por aluno por mês", 5.50, BRL, "Valor cobrado da escola, por aluno matriculado")
+pin("anexo", "Anexo do Simples Nacional (III ou V)", "III", None, "Software/SaaS cai no Anexo V, salvo Fator R ≥ 28% (folha ÷ receita), que leva ao Anexo III. Confirmar com o contador")
+pin("taxa", "Taxa de cobrança / meio de pagamento", 0.0, PCT, "Boleto ou Pix é cobrado por escola, não por aluno; por isso quase zero. Cartão: 2 a 4%")
+pin("inad", "Inadimplência", 0.0, PCT, "Percentual da receita que não entra")
+psec("Tabela do Simples Nacional (receita bruta acumulada em 12 meses)")
+hdr = r
+for j, l in enumerate(["Faixa (a partir de)", "Anexo III · alíquota", "Anexo III · dedução", "Anexo V · alíquota", "Anexo V · dedução"], 1):
+    c = Pr.cell(row=r, column=j, value=l); c.font = f(9, True, NAVY2); c.border = BOX; c.alignment = CENTER
+r += 1
+faixas = [(0, 0.06, 0, 0.155, 0), (180000, 0.112, 9360, 0.18, 4500), (360000, 0.135, 17640, 0.195, 9900),
+          (720000, 0.16, 35640, 0.205, 17100), (1800000, 0.21, 125640, 0.23, 62100), (3600000, 0.33, 648000, 0.305, 540000)]
+t0 = r
+for fx_ in faixas:
+    for j, val in enumerate(fx_, 1):
+        body(Pr.cell(row=r, column=j, value=val), BRL0 if j in (1, 3, 5) else PCT, INPUT_BG, align=RIGHT)
+    r += 1
+t1 = r - 1
+TF = f"$A${t0}:$A${t1}"; A3 = f"$B${t0}:$B${t1}"; D3 = f"$C${t0}:$C${t1}"; A5 = f"$D${t0}:$D${t1}"; D5 = f"$E${t0}:$E${t1}"
+def pr(key, col): return f"{col}{PR[key]}"
+def each3(fn): return [fn(c) for c in "BCD"]
+preco = f"$B${PR['preco']}"; anexo = f"$B${PR['anexo']}"; taxa = f"$B${PR['taxa']}"; inad = f"$B${PR['inad']}"
+psec("Receita e imposto (por mês)")
+prow("alu", "Alunos", each3(lambda c: f"=Cenarios!{c}{CR['alu']}"), INT, None)
+prow("rec", "Receita bruta mensal", each3(lambda c: f"={preco}*{pr('alu',c)}"), BRL0, None, "preço × alunos")
+prow("rbt", "Receita bruta em 12 meses (RBT12)", each3(lambda c: f"={pr('rec',c)}*12"), BRL0, None, "define a faixa do Simples")
+prow("aliq", "Alíquota efetiva do Simples", each3(lambda c: f"=IF({anexo}=\"V\",(LOOKUP({pr('rbt',c)},{TF},{A5})*{pr('rbt',c)}-LOOKUP({pr('rbt',c)},{TF},{D5}))/{pr('rbt',c)},(LOOKUP({pr('rbt',c)},{TF},{A3})*{pr('rbt',c)}-LOOKUP({pr('rbt',c)},{TF},{D3}))/{pr('rbt',c)})"), PCT, OUTPUT_BG, "(alíquota nominal × RBT12 − dedução) ÷ RBT12")
+prow("imp", "Imposto destacado na nota fiscal", each3(lambda c: f"={pr('rec',c)}*{pr('aliq',c)}"), BRL0, None)
+prow("tx", "Taxa de cobrança + inadimplência", each3(lambda c: f"={pr('rec',c)}*({taxa}+{inad})"), BRL0, None)
+prow("liq", "Receita líquida", each3(lambda c: f"={pr('rec',c)}-{pr('imp',c)}-{pr('tx',c)}"), BRL0, None, bold=True)
+psec("Custos (por mês, em R$)")
+prow("plat", "Plataforma (aba Cenarios)", each3(lambda c: f"=Cenarios!{c}{CR['plat_brl']}"), BRL0, None, "Supabase, Vercel, Fly, domínio e excedentes")
+prow("wa", "WhatsApp (OTP + entregas)", each3(lambda c: f"={pr('alu',c)}*{v('wa')}*{p('fx')}"), BRL0, None)
+prow("custo", "Custo total", each3(lambda c: f"={pr('plat',c)}+{pr('wa',c)}"), BRL0, None, bold=True)
+psec("Resultado")
+prow("lucro", "Lucro mensal", each3(lambda c: f"={pr('liq',c)}-{pr('custo',c)}"), BRL0, OUTPUT_BG, "antes de pessoas, jurídico e pró-labore", bold=True)
+prow("margem", "Margem sobre a receita bruta", each3(lambda c: f"={pr('lucro',c)}/{pr('rec',c)}"), PCT, OUTPUT_BG)
+prow("lpa", "Lucro por aluno por mês", each3(lambda c: f"={pr('lucro',c)}/{pr('alu',c)}"), BRL, OUTPUT_BG, bold=True)
+prow("lano", "Lucro em 12 meses", each3(lambda c: f"={pr('lucro',c)}*12"), BRL0, OUTPUT_BG)
+prow("lam", "Lucro mensal se houver arte IA média (1 por evento)", each3(lambda c: f"={pr('lucro',c)}-{pr('alu',c)}*{v('arte_m')}*{p('fx')}"), BRL0, OUTPUT_BG)
+prow("lah", "Lucro mensal se houver arte IA alta (1 por evento)", each3(lambda c: f"={pr('lucro',c)}-{pr('alu',c)}*{v('arte_h')}*{p('fx')}"), BRL0, OUTPUT_BG)
+prow("be", "Ponto de equilíbrio (alunos)", each3(lambda c: f"=Cenarios!{c}{CR['fixo']}*{p('fx')}/({preco}*(1-{pr('aliq',c)}-{taxa}-{inad})-{v('wa')}*{p('fx')})"), INT, OUTPUT_BG, "custo fixo ÷ (preço líquido − WhatsApp por aluno); ignora excedentes de storage")
+widths(Pr, [46, 17, 17, 17, 46]); Pr.freeze_panes = "B5"
+
 # ================= Resumo (primeira aba) =================
 S = wb.create_sheet("Resumo", 0)
 title(S, "IAschool · Estimativa de custo operacional por aluno", "21/09/2026 · base para precificação · preços de lista, nada confirmado em fatura · edite Parâmetros e Cenários; esta aba só lê", 8)
@@ -201,6 +271,19 @@ for i, (name, cc) in enumerate([("A — Piloto", "B"), ("B — Tração", "C"), 
     body(S.cell(row=i, column=8, value=f"=Cenarios!{cc}{CR['ano']}"), BRL)
     S.row_dimensions[i].height = 24
 r = 9
+section(S, r, "Cobrando o preço da aba Precificacao por aluno/mês, com nota fiscal (Simples Nacional)", 8); r += 1
+header(S, r, ["Cenário", "Alunos", "Receita\nR$/mês", "Imposto NF\nR$/mês", "Custo total\nR$/mês", "Lucro\nR$/mês", "Margem", "Lucro por aluno\nR$/mês"], aligns=True); S.row_dimensions[r].height = 36; r += 1
+for name, cc in [("A — Piloto", "B"), ("B — Tração", "C"), ("C — Escala", "D")]:
+    body(S.cell(row=r, column=1, value=name), bold=True)
+    body(S.cell(row=r, column=2, value=f"=Precificacao!{cc}{PR['alu']}"), INT)
+    body(S.cell(row=r, column=3, value=f"=Precificacao!{cc}{PR['rec']}"), BRL0)
+    body(S.cell(row=r, column=4, value=f"=Precificacao!{cc}{PR['imp']}"), BRL0)
+    body(S.cell(row=r, column=5, value=f"=Precificacao!{cc}{PR['custo']}"), BRL0)
+    body(S.cell(row=r, column=6, value=f"=Precificacao!{cc}{PR['lucro']}"), BRL0, OUTPUT_BG, bold=True)
+    body(S.cell(row=r, column=7, value=f"=Precificacao!{cc}{PR['margem']}"), '0%')
+    body(S.cell(row=r, column=8, value=f"=Precificacao!{cc}{PR['lpa']}"), BRL, OUTPUT_BG, bold=True)
+    S.row_dimensions[r].height = 24; r += 1
+note(S, r, "Lucro antes de pessoas, jurídico e pró-labore. Preço, anexo do Simples e taxas são editáveis na aba Precificacao.", 8); r += 2
 section(S, r, "O que isso diz sobre a precificação", 8); r += 1
 for t in [
  "1 · Abaixo de ~1.000 alunos o custo é quase todo fixo (Supabase, Vercel, duas máquinas de worker). Precifique com mínimo por escola + valor por aluno; só \"por aluno\" faz o piloto dar prejuízo.",
@@ -264,5 +347,7 @@ for row in [
     zebra(Se, r, 3, (r % 2 == 0)); Se.row_dimensions[r].height = 22; r += 1
 widths(Se, [46, 50, 50]); Se.freeze_panes = "A5"
 
-wb.save("IAschool - Estimativa de custos por aluno.xlsx")
+import os, sys
+out = sys.argv[1] if len(sys.argv) > 1 else "IAschool - Estimativa de custos por aluno.xlsx"
+wb.save(out)
 print("ok", [ws.title for ws in wb.worksheets])

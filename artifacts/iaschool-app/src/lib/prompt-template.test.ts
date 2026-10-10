@@ -533,17 +533,18 @@ describe("geração sem cores — bloco {{#cores_escola}} omitido do prompt fina
       }),
     );
     expect(prompt).not.toContain("Inclua o logo");
-    expect(prompt).toContain("#112233");
+    expect(prompt).not.toContain("#112233");
+    expect(prompt).toContain("Não invente textos e logos");
   });
 
-  it("buildGenerationPrompt com cores inclui o bloco", () => {
+  it("template padrão omite cores mesmo quando a escola tem cores", () => {
     const prompt = buildGenerationPrompt(
       makeRequest({
         schoolBrand: { ...escolaSemCores, colors: ["#ff0000"] },
       }),
     );
-    expect(prompt).toContain("Use as cores da identidade visual");
-    expect(prompt).toContain("#ff0000");
+    expect(prompt).not.toContain("Use as cores da identidade visual");
+    expect(prompt).not.toContain("#ff0000");
   });
 
   it("template personalizado também omite o bloco quando não há cores", () => {

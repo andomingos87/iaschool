@@ -8,12 +8,10 @@
 import type { GenerationRequest } from "./data/types";
 
 export const DEFAULT_PROMPT_TEMPLATE = [
-  "Crie uma arte de post para redes sociais de uma escola (1080x1080), seguindo fielmente o estilo, composição, tipografia e clima da PRIMEIRA imagem enviada (a referência).",
+  "Crie uma arte de post para redes sociais de uma escola (1080x1080), seguindo fielmente o estilo, composição e clima da PRIMEIRA imagem enviada (a referência).",
   "Use a foto do aluno enviada como imagem principal da arte. Nome do aluno: {{nome_aluno}}.",
-  "{{#cores_escola}}Use as cores da identidade visual da escola na composição: {{cores_escola}}.{{/cores_escola}}",
   "{{#prompt_auxiliar}}Instruções adicionais desta geração: {{prompt_auxiliar}}{{/prompt_auxiliar}}",
-  "Ambiente escolar, tom acolhedor e adequado a crianças e adolescentes.",
-  "Texto em português do Brasil, sem erros de ortografia. Resultado profissional, pronto para publicação.",
+  "Não invente textos e logos que não existam na referencia da imagem. Não use marcas de água, assinaturas ou logos de bancos de imagens.",
 ].join("\n");
 
 /** Legenda dos placeholders exibida na tela de admin. */
@@ -26,7 +24,7 @@ export const PLACEHOLDER_DOCS: Array<{ token: string; description: string }> = [
   { token: "{{#cores_escola}}...{{/cores_escola}}", description: "Bloco: só entra se a escola tiver cores cadastradas" },
   { token: "{{^cores_escola}}...{{/cores_escola}}", description: "Bloco invertido: só entra se a escola NÃO tiver cores" },
   { token: "{{#prompt_auxiliar}}...{{/prompt_auxiliar}}", description: "Bloco: só entra se houver instruções extras" },
-  { token: "{{^nome}}...{{/nome}}", description: "Bloco invertido: só entra quando a condição do bloco NÃO está ativa" },
+  { token: "{{^nome_aluno}}...{{/nome_aluno}}", description: "Bloco invertido: só entra quando a condição do bloco NÃO está ativa" },
 ];
 
 /** Placeholders simples reconhecidos pelo motor. */
