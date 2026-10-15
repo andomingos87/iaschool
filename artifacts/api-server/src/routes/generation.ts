@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
+import sharp from "sharp";
 import { OpenAI, toFile } from "openai";
 import { requireSupabaseUser } from "../middlewares/supabase-auth";
 import { consumeDailyQuota, getDailyQuotaUsage } from "../lib/generation-quota";
@@ -9,6 +10,9 @@ import {
   type GenerationLogEntry,
   type LogAttachment,
 } from "../lib/generation-log";
+import { ensureProtectionRule, personEditConflict, photoPromptInstructions } from "../lib/art-protection";
+import { createHash } from "node:crypto";
+import { backgroundPrompt, prepareOriginal, composeOriginal, COMPOSITION_VERSION } from "../lib/original-composition";
 
 // Geração da arte de post escolar (IAschool) com a OpenAI GPT Image.
 // A chave OPENAI_API_KEY fica somente no backend — nunca no navegador.
@@ -114,6 +118,7 @@ router.post(
   const logId = newLogId();
   const rawPrompt = (req.body as { prompt?: unknown })?.["prompt"];
   const files = (req.files ?? []) as Express.Multer.File[];
+  const simpleMode = req.body?.mode === "photo_prompt";
 
   // Metadados opcionais enviados pelo app (aluno, flags, métricas...).
   let clientMeta: Record<string, unknown> | null = null;
@@ -128,18 +133,12 @@ router.post(
       // meta inválido é ignorado — não impede a geração
     }
   }
-  const metaImages = Array.isArray(clientMeta?.["images"])
-    ? (clientMeta["images"] as Array<{ role?: unknown }>)
-    : [];
   const attachments: LogAttachment[] = files.map((f, i) => ({
-    role:
-      typeof metaImages[i]?.role === "string"
-        ? (metaImages[i]!.role as string)
-        : `Imagem ${i + 1}`,
-    fileName: f.originalname || `imagem-${i + 1}`,
+    role: simpleMode ? "Foto de referência" : i === 0 ? "Modelo de estilo" : "Original para composição",
+    fileName: `imagem-${i + 1}`,
     mimeType: f.mimetype,
     sizeBytes: f.size,
-    buffer: f.buffer,
+    // No photo bytes or original names in audit metadata.
   }));
 
   let openaiResponse: Record<string, unknown> | null = null;
@@ -154,25 +153,26 @@ router.post(
       userEmail: null, // resolvido pelo perfil na gravação
       userName: null,
       schoolName: null,
-      studentName:
-        typeof clientMeta?.["studentName"] === "string"
-          ? (clientMeta["studentName"] as string)
-          : null,
+      studentName: null,
       status: status >= 200 && status < 300 ? "success" : "error",
       durationMs: Date.now() - startedAt,
-      prompt: typeof rawPrompt === "string" ? rawPrompt : null,
+      prompt: null,
       payload: {
         model: IMAGE_MODEL,
         size: IMAGE_SIZE,
         imageCount: files.length,
         totalImageBytes: files.reduce((sum, f) => sum + f.size, 0),
-        ...(clientMeta ? { client: clientMeta } : {}),
+        compositionVersion: simpleMode ? null : COMPOSITION_VERSION,
+        protectionVersion: simpleMode ? "photo-prompt-identity-v1" : "original-no-model-v1",
+        templateSource: clientMeta?.["templateSource"] === "saved" ? "saved" : "fallback",
+        templateHash: typeof clientMeta?.["template"] === "string" ? createHash("sha256").update(clientMeta["template"]).digest("hex") : null,
+        promptHash: typeof rawPrompt === "string" ? createHash("sha256").update(rawPrompt).digest("hex") : null,
       },
       attachments,
       openaiResponse,
       serverStatus: status,
       serverResponse: body,
-      resultB64,
+      resultB64: null,
     };
     void writeGenerationLog(entry);
   }
@@ -187,8 +187,62 @@ router.post(
       return;
     }
 
-    const prompt = rawPrompt;
+    if (typeof rawPrompt !== "string" || !rawPrompt.trim()) {
+      respond(400, { error: "Campo 'prompt' é obrigatório." });
+      return;
+    }
+    // Regra fixa de preservação da pessoa (ART-05): aplicada aqui, e não só na
+    // tela, para valer também em chamadas diretas ao endpoint.
+    if (!simpleMode && personEditConflict(rawPrompt)) {
+      respond(400, { error: "As instruções pedem mudar a pessoa original. Remova pedidos de trocar roupa, corpo, expressão ou aparência; os ajustes podem alterar somente os elementos da arte." });
+      return;
+    }
+    const normalizedPrompt = rawPrompt.replace(/\b\d{3,4}\s*[x×]\s*\d{3,4}\b/g, IMAGE_SIZE);
+    const prompt = simpleMode ? photoPromptInstructions(normalizedPrompt) : ensureProtectionRule(normalizedPrompt);
+    if (prompt.length > MAX_PROMPT_CHARS) {
+      respond(400, { error: "Prompt longo demais." });
+      return;
+    }
+    if (files.length !== (simpleMode ? 1 : 2)) {
+      respond(400, {
+        error: simpleMode ? "Envie uma foto de referência." : "Envie exatamente o modelo de arte e a foto original do aluno.",
+      });
+      return;
+    }
+    if (files.length > MAX_IMAGES) {
+      respond(400, { error: `No máximo ${MAX_IMAGES} imagens por geração.` });
+      return;
+    }
 
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      respond(400, { error: "Imagens grandes demais no total (máx. 24 MB)." });
+      return;
+    }
+
+    let composition: unknown;
+    let originalCut: Buffer | undefined;
+    let referencePhoto: Buffer | undefined;
+    try {
+      if (simpleMode) {
+        const input = sharp(files[0]!.buffer, { limitInputPixels: 40_000_000, failOn: "warning" });
+        const metadata = await input.metadata();
+        if (!metadata.width || !metadata.height || !["png", "jpeg", "webp"].includes(metadata.format ?? "")) throw new Error("invalid photo");
+        // Decodifica antes de consumir cota; metadata() sozinho só lê cabeçalhos.
+        // Mesma foto sem recorte: corrige orientação e não exporta EXIF/GPS à IA.
+        referencePhoto = await input.autoOrient().png().toBuffer();
+        if (referencePhoto.length > MAX_IMAGE_BYTES) {
+          respond(400, { error: "A foto normalizada ultrapassa 8 MB. Envie uma foto menor. Nenhuma geração foi consumida." });
+          return;
+        }
+      } else {
+        composition = JSON.parse(String(req.body.composition ?? "null"));
+        originalCut = await prepareOriginal(files[1]!.buffer, composition);
+      }
+    } catch {
+      respond(400, { error: simpleMode ? "Não foi possível ler a foto. Envie outra imagem em PNG, JPEG ou WebP. Nenhuma geração foi consumida." : "Recorte não conferido ou região da cabeça/pescoço cortada. Ajuste o contorno, confirme a prévia ou escolha outra foto. Nenhuma geração foi consumida." });
+      return;
+    }
     // Rajada: por usuário autenticado; sem usuário (modo dev), por IP.
     const burstKey = req.supabaseUserId
       ? `burst:user:${req.supabaseUserId}`
@@ -248,38 +302,13 @@ router.post(
       }
     }
 
-    if (!prompt || typeof prompt !== "string") {
-      respond(400, { error: "Campo 'prompt' é obrigatório." });
-      return;
-    }
-    if (prompt.length > MAX_PROMPT_CHARS) {
-      respond(400, { error: "Prompt longo demais." });
-      return;
-    }
-    if (files.length === 0) {
-      respond(400, {
-        error: "Envie ao menos uma imagem (referência e foto do aluno).",
-      });
-      return;
-    }
-    if (files.length > MAX_IMAGES) {
-      respond(400, { error: `No máximo ${MAX_IMAGES} imagens por geração.` });
-      return;
-    }
-
-    const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
-    if (totalBytes > MAX_TOTAL_BYTES) {
-      respond(400, { error: "Imagens grandes demais no total (máx. 24 MB)." });
-      return;
-    }
-
-    const openai = new OpenAI({ apiKey });
+    const openai = new OpenAI({ apiKey, maxRetries: 0, timeout: 150_000 });
 
     const openaiFiles = await Promise.all(
-      files.map((f, i) => {
-        const ext = f.mimetype.split("/")[1] ?? "png";
-        return toFile(f.buffer, f.originalname || `imagem-${i + 1}.${ext}`, {
-          type: f.mimetype,
+      files.slice(0, 1).map((f, i) => {
+        const ext = simpleMode ? "png" : f.mimetype.split("/")[1] ?? "png";
+        return toFile(simpleMode ? referencePhoto! : f.buffer, `${simpleMode ? "foto-referencia" : "modelo-estilo"}.${ext}`, {
+          type: simpleMode ? "image/png" : f.mimetype,
         });
       }),
     );
@@ -287,7 +316,7 @@ router.post(
     const result = await openai.images.edit({
       model: IMAGE_MODEL,
       image: openaiFiles,
-      prompt,
+      prompt: simpleMode ? prompt : backgroundPrompt(prompt),
       size: IMAGE_SIZE,
       // gpt-image sempre responde em base64
     });
@@ -305,44 +334,49 @@ router.post(
       return;
     }
 
-    resultB64 = b64;
+    const generated = Buffer.from(b64, "base64");
+    const composed = simpleMode
+      ? await sharp(generated, { limitInputPixels: 40_000_000 }).png().toBuffer()
+      : await composeOriginal(generated, originalCut!);
+    resultB64 = composed.toString("base64");
     // O corpo real leva a imagem; o log guarda só um resumo (ver respond()).
-    res.json({ imageUrl: `data:image/png;base64,${b64}`, logId });
+    res.json({ imageUrl: `data:image/png;base64,${resultB64}`, logId });
     const entry: GenerationLogEntry = {
       id: logId,
       userId: req.supabaseUserId ?? null,
       userEmail: null,
       userName: null,
       schoolName: null,
-      studentName:
-        typeof clientMeta?.["studentName"] === "string"
-          ? (clientMeta["studentName"] as string)
-          : null,
+      studentName: null,
       status: "success",
       durationMs: Date.now() - startedAt,
-      prompt,
+      prompt: null,
       payload: {
         model: IMAGE_MODEL,
         size: IMAGE_SIZE,
         imageCount: files.length,
         totalImageBytes: totalBytes,
-        ...(clientMeta ? { client: clientMeta } : {}),
+        compositionVersion: simpleMode ? null : COMPOSITION_VERSION,
+        protectionVersion: simpleMode ? "photo-prompt-identity-v1" : "original-no-model-v1",
+        templateSource: clientMeta?.["templateSource"] === "saved" ? "saved" : "fallback",
+        templateHash: typeof clientMeta?.["template"] === "string" ? createHash("sha256").update(clientMeta["template"]).digest("hex") : null,
+        promptHash: typeof rawPrompt === "string" ? createHash("sha256").update(rawPrompt).digest("hex") : null,
       },
       attachments,
       openaiResponse,
       serverStatus: 200,
       serverResponse: {
-        imageUrl: `data:image/png;base64,<${Math.floor((b64.length * 3) / 4)} bytes>`,
+        imageUrl: `data:image/png;base64,<${composed.length} bytes>`,
         logId,
       },
-      resultB64,
+      resultB64: null,
     };
     void writeGenerationLog(entry);
   } catch (err) {
-    req.log.error({ err }, "Falha na geração de imagem");
+    req.log.error({ errorType: err instanceof Error ? err.name : "unknown" }, "Falha na geração de imagem");
     const message =
       err instanceof OpenAI.APIError
-        ? `OpenAI: ${err.message}`
+        ? "O serviço de imagem não concluiu a geração. Confira as instruções ou tente novamente."
         : err instanceof Error
           ? err.message
           : "Erro inesperado na geração.";
@@ -353,7 +387,7 @@ router.post(
         status: err.status ?? null,
         code: (err as { code?: unknown }).code ?? null,
         type: (err as { type?: unknown }).type ?? null,
-        message: err.message,
+
       };
     }
     respond(status >= 400 && status < 600 ? status : 500, {
