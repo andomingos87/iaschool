@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { ArrowLeft, CalendarDays, ScanFace, ShieldCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@workspace/iaschool-ui/components/ui/alert";
@@ -48,6 +48,7 @@ export default function EventReviewPage() {
   const students = useStudents();
   const confirm = useConfirmFaces(eventId);
   const reject = useRejectFace(eventId);
+  const confirmingGroup = useRef(false);
 
   const [cropUrls, setCropUrls] = useState<Map<string, string>>(new Map());
   const [thumbUrls, setThumbUrls] = useState<Map<string, string>>(new Map());
@@ -60,7 +61,17 @@ export default function EventReviewPage() {
   const [deferred, setDeferred] = useState<Set<string>>(new Set());
 
   const list: ReviewFace[] = useMemo(() => faces.data ?? [], [faces.data]);
+  const currentReview = useRef({ eventId, list });
+  currentReview.current = { eventId, list };
   const key = list.map((f) => f.id).join("|");
+  const [deferredContext, setDeferredContext] = useState({ eventId, key });
+  if (deferredContext.eventId !== eventId || deferredContext.key !== key) {
+    setDeferredContext({ eventId, key });
+    const ids = new Set(list.map((face) => face.id));
+    setDeferred((previous) => deferredContext.eventId !== eventId
+      ? new Set()
+      : new Set([...previous].filter((id) => ids.has(id))));
+  }
 
   useEffect(() => {
     if (list.length === 0) {
@@ -107,9 +118,23 @@ export default function EventReviewPage() {
   }, [students.data, event.data?.schoolId]);
 
   async function onConfirmGroup(studentId: string, faceIds: string[], toDefer: string[]) {
+    if (confirmingGroup.current || confirm.isPending || faceIds.length === 0) return;
+    const currentGroup = groups.find((group) => group.studentId === studentId);
+    const currentIds = new Set([
+      ...(currentGroup?.confident ?? []), ...(currentGroup?.needsAttention ?? []),
+    ].map((face) => face.id));
+    if (faceIds.some((id) => !currentIds.has(id))) {
+      toast({ variant: "destructive", title: "As sugestões mudaram", description: "Confira novamente as fotos deste aluno antes de confirmar." });
+      return;
+    }
+    confirmingGroup.current = true;
     try {
       const changed = await confirm.mutateAsync({ faceIds, studentId });
-      setDeferred((prev) => new Set([...prev, ...toDefer]));
+      if (currentReview.current.eventId !== eventId) return;
+      const remainingIds = new Set(currentReview.current.list
+        .filter((face) => face.state === "suggested" && face.studentId === studentId)
+        .map((face) => face.id));
+      setDeferred((prev) => new Set([...prev, ...toDefer.filter((id) => remainingIds.has(id))]));
       toast({
         title: changed === 0 ? "Nada mudou" : `${changed} ${changed === 1 ? "foto confirmada" : "fotos confirmadas"}`,
         description:
@@ -126,6 +151,8 @@ export default function EventReviewPage() {
             ? err.message
             : "A confirmação é tudo ou nada: se um rosto falha na checagem, nenhum é confirmado.",
       });
+    } finally {
+      confirmingGroup.current = false;
     }
   }
 
@@ -294,7 +321,8 @@ export default function EventReviewPage() {
             ) : (
               groups.map((group) => (
                 <ReviewStudentCard
-                  key={group.studentId}
+                  key={`${eventId}:${group.studentId}`}
+                  eventId={eventId}
                   group={group}
                   cropUrls={cropUrls}
                   thumbUrls={thumbUrls}

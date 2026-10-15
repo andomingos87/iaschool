@@ -3,12 +3,21 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_ART_SHORTCUTS,
   DEFAULT_PROMPT_TEMPLATE,
   PLACEHOLDER_DOCS,
+  PROTECTION_RULE,
+  REPLACE_TEXT_INSTRUCTION,
+  REPLACE_TEXT_TOKEN,
   SAMPLE_CONTEXT,
+  applyReplaceText,
   buildGenerationPrompt,
   contextFromRequest,
+  hasUnfilledTextToken,
+  removeReplaceText,
   renderPromptTemplate,
+  shortcutInstructions,
+  toggleArtShortcut,
   validatePromptTemplate,
 } from "./prompt-template";
 import type { GenerationRequest } from "./data/types";
@@ -303,57 +312,53 @@ describe("renderPromptTemplate — blocos invertidos", () => {
 // contextFromRequest — cores desacopladas do logo da escola
 // ---------------------------------------------------------------------------
 
-describe("contextFromRequest — cores_escola desacoplado do logo", () => {
+describe("contextFromRequest — marca da escola fora da geração", () => {
   const escolaComCores = {
     id: "b1",
     name: "Escola Teste",
+    logo: { id: "logo", url: "https://example.test/logo.png", path: "logo.png", createdAt: "" },
     colors: ["#ff0000", "#0000ff"],
     createdAt: "",
     updatedAt: "",
   };
 
-  it("cores_escola ativo quando a escola tem cores e o logo está ligado", () => {
+  it("não injeta cores nem logo, mesmo com cadastro antigo e a flag ligada", () => {
     const ctx = contextFromRequest(
       makeRequest({ schoolBrand: escolaComCores, showSchoolLogo: true }),
     );
-    expect(ctx.flags.cores_escola).toBe(true);
-    expect(ctx.values.cores_escola).toBe("#ff0000, #0000ff");
-    expect(ctx.flags.logo_escola).toBe(true);
-  });
-
-  it("cores_escola ativo mesmo quando o logo está desligado", () => {
-    const ctx = contextFromRequest(
-      makeRequest({ schoolBrand: escolaComCores, showSchoolLogo: false }),
-    );
-    expect(ctx.flags.cores_escola).toBe(true);
-    expect(ctx.values.cores_escola).toBe("#ff0000, #0000ff");
+    expect(ctx.flags.cores_escola).toBe(false);
     expect(ctx.flags.logo_escola).toBe(false);
-  });
-
-  it("cores_escola inativo quando não há escola", () => {
-    const ctx = contextFromRequest(
-      makeRequest({ schoolBrand: undefined, showSchoolLogo: false }),
-    );
-    expect(ctx.flags.cores_escola).toBe(false);
     expect(ctx.values.cores_escola).toBe("");
+    expect(ctx.values.nome_escola).toBe("Escola Teste");
   });
 
-  it("cores_escola inativo quando a escola não tem cores cadastradas", () => {
-    const escolaSemCores = { ...escolaComCores, colors: [] };
+  it("template antigo com blocos de marca não leva logo nem cores ao prompt", () => {
+    const template = [
+      "Aluno {{nome_aluno}} da {{nome_escola}}.",
+      "{{#logo_escola}}Inclua o logo da escola.{{/logo_escola}}",
+      "{{#cores_escola}}Cores: {{cores_escola}}.{{/cores_escola}}",
+      "{{^cores_escola}}Siga a paleta do modelo de arte.{{/cores_escola}}",
+    ].join(" ");
+    const prompt = buildGenerationPrompt(
+      makeRequest({ schoolBrand: escolaComCores, showSchoolLogo: true }),
+      template,
+    );
+    expect(prompt).toContain("JOÃO");
+    expect(prompt).toContain("Escola Teste");
+    expect(prompt).toContain("Siga a paleta do modelo de arte");
+    expect(prompt).not.toContain("Inclua o logo");
+    expect(prompt).not.toContain("#ff0000");
+    expect(prompt).not.toContain("{{cores_escola}}");
+  });
+
+  it("sem escola, o nome fica vazio e a marca continua desligada", () => {
     const ctx = contextFromRequest(
-      makeRequest({ schoolBrand: escolaSemCores, showSchoolLogo: true }),
+      makeRequest({ schoolBrand: undefined, showSchoolLogo: true }),
     );
     expect(ctx.flags.cores_escola).toBe(false);
+    expect(ctx.flags.logo_escola).toBe(false);
     expect(ctx.values.cores_escola).toBe("");
-  });
-
-  it("logo_escola segue showSchoolLogo independentemente das cores", () => {
-    const escolaSemCores = { ...escolaComCores, colors: [] };
-    const ctx = contextFromRequest(
-      makeRequest({ schoolBrand: escolaSemCores, showSchoolLogo: true }),
-    );
-    expect(ctx.flags.logo_escola).toBe(true);
-    expect(ctx.flags.cores_escola).toBe(false);
+    expect(ctx.values.nome_escola).toBe("");
   });
 });
 
@@ -424,7 +429,8 @@ describe("Prompt novo do admin", () => {
   it("renderiza com escola+cores+logos+instruções (tudo ativo)", () => {
     const rendered = renderPromptTemplate(ADMIN_PROMPT_NOVO, {
       ...SAMPLE_CONTEXT,
-      flags: { ...SAMPLE_CONTEXT.flags, logo_escola: true },
+      values: { ...SAMPLE_CONTEXT.values, cores_escola: "#2563eb, #2e2e2e" },
+      flags: { ...SAMPLE_CONTEXT.flags, logo_escola: true, cores_escola: true },
     });
     expect(rendered).toContain("JOÃO DA SILVA");
     expect(rendered).toContain("Escola Horizonte");
@@ -553,4 +559,103 @@ describe("geração sem cores — bloco {{#cores_escola}} omitido do prompt fina
     const ctx = contextFromRequest(makeRequest({ schoolBrand: escolaSemCores }));
     expect(renderPromptTemplate(customTemplate, ctx)).toBe("Nome: JOÃO. Fim.");
   });
+});
+
+// ---------------------------------------------------------------------------
+// S02 — atalhos de instrução e regra fixa (ART-03 a ART-06)
+// ---------------------------------------------------------------------------
+
+describe("atalhos de instrução (S02)", () => {
+  it("os atalhos padrão mantêm só 'Manter a foto original' ligado", () => {
+    expect(DEFAULT_ART_SHORTCUTS).toEqual({
+      noLogo: false,
+      noText: false,
+      replaceText: false,
+      keepOriginal: true,
+    });
+  });
+
+  it("'Não usar texto' desliga 'Trocar o texto' e vice-versa", () => {
+    const comTroca = toggleArtShortcut(DEFAULT_ART_SHORTCUTS, "replaceText");
+    expect(comTroca.replaceText).toBe(true);
+    const comSemTexto = toggleArtShortcut(comTroca, "noText");
+    expect(comSemTexto.noText).toBe(true);
+    expect(comSemTexto.replaceText).toBe(false);
+
+    const voltaTroca = toggleArtShortcut(comSemTexto, "replaceText");
+    expect(voltaTroca.replaceText).toBe(true);
+    expect(voltaTroca.noText).toBe(false);
+  });
+
+  it("aplicar 'Trocar o texto' preserva o texto livre e não duplica", () => {
+    const umaVez = applyReplaceText("Tema: festa junina");
+    expect(umaVez).toContain("Tema: festa junina");
+    expect(umaVez).toContain(REPLACE_TEXT_INSTRUCTION);
+    const duasVezes = applyReplaceText(umaVez);
+    expect(duasVezes).toBe(umaVez);
+    expect(duasVezes.split(REPLACE_TEXT_INSTRUCTION).length - 1).toBe(1);
+  });
+
+  it("desfazer remove só a linha da instrução", () => {
+    const texto = applyReplaceText("Tema: festa junina");
+    expect(removeReplaceText(texto)).toBe("Tema: festa junina");
+    expect(removeReplaceText("apenas livre")).toBe("apenas livre");
+  });
+
+  it("detecta o marcador por preencher", () => {
+    expect(hasUnfilledTextToken("texto sem marcador")).toBe(false);
+    expect(hasUnfilledTextToken(`substituir ${REPLACE_TEXT_TOKEN}`)).toBe(true);
+  });
+
+  it("as instruções dos atalhos refletem o estado", () => {
+    const todas = shortcutInstructions({
+      noLogo: true,
+      noText: true,
+      replaceText: true,
+      keepOriginal: true,
+    });
+    expect(todas).toMatch(/nenhum logo/i);
+    expect(todas).toMatch(/títulos/i);
+    expect(todas).toMatch(/Manter a foto original/i);
+    expect(shortcutInstructions(undefined)).toBe("");
+  });
+});
+
+describe("buildGenerationPrompt — regra fixa (ART-05, ART-06)", () => {
+  it("começa pela regra fixa e mantém o template renderizado", () => {
+    const prompt = buildGenerationPrompt(makeRequest());
+    expect(prompt.startsWith(PROTECTION_RULE)).toBe(true);
+    expect(prompt).toContain("JOÃO");
+    expect(prompt.split(PROTECTION_RULE).length - 1).toBe(1);
+  });
+
+  it("mantém a regra mesmo com texto livre conflitante", () => {
+    const prompt = buildGenerationPrompt(
+      makeRequest({ auxiliaryPrompt: "Troque a roupa do aluno por outra." }),
+    );
+    expect(prompt.indexOf(PROTECTION_RULE)).toBe(0);
+    expect(prompt.indexOf(PROTECTION_RULE)).toBeLessThan(
+      prompt.indexOf("Troque a roupa"),
+    );
+  });
+
+  it("inclui as instruções dos atalhos ativos", () => {
+    const prompt = buildGenerationPrompt(
+      makeRequest({
+        shortcuts: {
+          noLogo: true,
+          noText: false,
+          replaceText: false,
+          keepOriginal: true,
+        },
+      }),
+    );
+    expect(prompt).toMatch(/nenhum logo/i);
+  });
+});
+
+it("prévia normaliza dimensão de template antigo para o tamanho real da API", () => {
+  const request = {student:{name:"Aluno"}, schoolBrand:{name:"Escola"}} as GenerationRequest;
+  expect(buildGenerationPrompt(request,"Crie uma arte 1080 × 1080.")).toContain("1024x1024");
+  expect(buildGenerationPrompt(request,"Crie uma arte 1080 × 1080.")).not.toContain("1080");
 });

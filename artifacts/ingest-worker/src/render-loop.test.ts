@@ -8,6 +8,7 @@ const JOB: RenderJob = {
   batch_id: "bt1",
   status: "queued",
   attempts: 0,
+  lease_version: 0,
   leased_until: null,
   last_error: null,
   created_at: new Date().toISOString(),
@@ -20,7 +21,8 @@ const CONTEXT: RenderContext = {
   eventId: "ev1",
   recipientId: "rc1",
   photoPath: "p.jpg",
-  sharpBoxes: [],
+  draftVersion: 1,
+  review: { regionsVersion: 1, reviewedVersion: 1, allPeopleReviewed: true, width: 200, height: 150, detectedFaceIds: [], authorizedStudentIds: [], regions: [] },
 };
 
 const CFG = {

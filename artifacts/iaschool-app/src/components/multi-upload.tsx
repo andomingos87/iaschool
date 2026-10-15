@@ -11,7 +11,9 @@ import { ImageLightbox } from "@/components/image-lightbox";
 interface MultiUploadProps {
   bucket: string;
   value: StoredImage[];
-  onChange: (images: StoredImage[]) => void;
+  onChange: (images: StoredImage[]) => void | Promise<void>;
+  disabled?: boolean;
+  onBusyChange?: (busy: boolean) => void;
   /** Se true, mantém no máximo 1 imagem (logo da escola). */
   single?: boolean;
   label?: string;
@@ -27,39 +29,80 @@ export function MultiUpload({
   value,
   onChange,
   single = false,
+  disabled = false,
+  onBusyChange,
   label = "Arraste imagens aqui ou clique para selecionar",
   "data-testid": testId,
 }: MultiUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const operationRef = useRef(false);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { uploadFiles, uploading } = useImageUpload(bucket);
   const [dragActive, setDragActive] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);
 
-  async function handleFiles(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const uploaded = await uploadFiles(Array.from(files));
-    if (uploaded.length === 0) return;
-    if (single) onChange([uploaded[uploaded.length - 1]]);
-    else onChange([...value, ...uploaded]);
+  const busy = disabled || uploading || working;
+  async function operate(work: () => Promise<void>) {
+    if (disabled || operationRef.current) return;
+    operationRef.current = true;
+    setWorking(true);
+    setError(null);
+    onBusyChange?.(true);
+    try {
+      await work();
+    } catch {
+      setError("Não foi possível concluir. Tente novamente.");
+    } finally {
+      operationRef.current = false;
+      setWorking(false);
+      onBusyChange?.(false);
+    }
   }
-
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0 || disabled || operationRef.current)
+      return;
+    const selected = single ? Array.from(files).slice(0, 1) : Array.from(files);
+    await operate(async () => {
+      const uploaded = await uploadFiles(selected);
+      if (uploaded.length === 0) return;
+      if (single) await onChange([uploaded[uploaded.length - 1]!]);
+      else await onChange([...valueRef.current, ...uploaded]);
+    });
+  }
   function onDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setDragActive(false);
-    handleFiles(e.dataTransfer.files);
+    if (!busy) void handleFiles(e.dataTransfer.files);
   }
-
-  function removeAt(index: number) {
-    onChange(value.filter((_, i) => i !== index));
+  async function removeAt(index: number) {
+    await operate(async () => {
+      await onChange(valueRef.current.filter((_, i) => i !== index));
+    });
   }
 
   return (
     <div className="space-y-3">
       <div
-        onClick={() => inputRef.current?.click()}
+        role="button"
+        tabIndex={busy ? -1 : 0}
+        aria-label={label}
+        aria-disabled={busy}
+        aria-busy={busy}
+        onKeyDown={(event) => {
+          if (!busy && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
+        onClick={() => {
+          if (!busy && !operationRef.current) inputRef.current?.click();
+        }}
         onDragOver={(e) => {
           e.preventDefault();
-          setDragActive(true);
+          if (!busy) setDragActive(true);
         }}
         onDragLeave={() => setDragActive(false)}
         onDrop={onDrop}
@@ -71,10 +114,12 @@ export function MultiUpload({
         )}
         data-testid={testId ?? "dropzone-upload"}
       >
-        {uploading ? (
+        {busy ? (
           <>
             <Spinner className="size-6 text-primary" />
-            <p className="text-sm text-muted-foreground">Processando imagens...</p>
+            <p className="text-sm text-muted-foreground">
+              Processando imagens...
+            </p>
           </>
         ) : (
           <>
@@ -88,6 +133,8 @@ export function MultiUpload({
         )}
         <input
           ref={inputRef}
+          disabled={busy}
+          aria-label={label}
           type="file"
           accept={`image/*,${ACCEPT_ATTRIBUTE}`}
           multiple={!single}
@@ -113,12 +160,13 @@ export function MultiUpload({
                 alt="Miniatura"
                 className="h-full w-full object-cover"
               />
-              <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+              <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                 <Button
                   type="button"
                   size="icon"
                   variant="secondary"
                   className="h-8 w-8"
+                  aria-label={`Ampliar imagem ${i + 1}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     setZoom(img.url);
@@ -132,6 +180,8 @@ export function MultiUpload({
                   size="icon"
                   variant="destructive"
                   className="h-8 w-8"
+                  disabled={busy}
+                  aria-label={`Remover imagem ${i + 1}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     removeAt(i);
@@ -146,7 +196,12 @@ export function MultiUpload({
         </div>
       )}
 
-      {uploading && (
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      {busy && (
         <p className="flex items-center gap-1 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" /> Enviando...
         </p>

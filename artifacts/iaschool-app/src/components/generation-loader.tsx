@@ -1,15 +1,6 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
-
-const PHRASES = [
-  "Analisando o modelo de arte...",
-  "Aplicando as cores da escola...",
-  "Recortando a foto do aluno...",
-  "Compondo o layout...",
-  "Ajustando a tipografia da marca...",
-  "Adicionando o brilho final...",
-  "Quase lá, preparando a arte...",
-];
+import { GENERATION_PHRASES } from "../lib/generation-phrases";
 
 /**
  * Animação de espera durante a geração.
@@ -28,7 +19,7 @@ export function GenerationLoader({
   useEffect(() => {
     if (uploading) return;
     const id = setInterval(() => {
-      setPhraseIndex((i) => (i + 1) % PHRASES.length);
+      setPhraseIndex((i) => (i + 1) % GENERATION_PHRASES.length);
     }, 1400);
     return () => clearInterval(id);
   }, [uploading]);
@@ -65,7 +56,7 @@ export function GenerationLoader({
             className="animate-in fade-in slide-in-from-bottom-1 text-sm text-primary duration-500"
             data-testid="text-generation-phrase"
           >
-            {PHRASES[phraseIndex]}
+            {GENERATION_PHRASES[phraseIndex]}
           </p>
         )}
       </div>

@@ -6,7 +6,7 @@ import { qk } from "@/lib/query-keys";
 /** Rede de segurança caso o canal Realtime caia: 1 consulta a cada 15 s. */
 const SAFETY_POLL_MS = 15_000;
 
-const ACTIVE_BATCH_STATUSES = ["draft", "preparing", "awaiting_review", "ready", "queued"];
+const ACTIVE_BATCH_STATUSES = ["draft", "preparing", "awaiting_review", "ready", "queued", "processing"];
 
 /** Retrato do evento para o preflight da entrega (Fase 5, W3). */
 export function useDeliveryPreflight(eventId: string | null) {
@@ -45,6 +45,8 @@ export function useDeliveryBatches(eventId: string | null) {
     const unsubscribe = data.deliveries.onBatchChange(eventId, () => {
       void queryClient.invalidateQueries({ queryKey: qk.deliveryBatches(eventId) });
       void queryClient.invalidateQueries({ queryKey: ["delivery-batch"] });
+      void queryClient.invalidateQueries({ queryKey: ["delivery-draft"] });
+      void queryClient.invalidateQueries({ queryKey: ["delivery-preview"] });
     });
     return unsubscribe;
   }, [eventId, data, queryClient]);
@@ -58,6 +60,7 @@ export function useDeliveryBatchDetail(batchId: string | null) {
     queryKey: qk.deliveryBatch(batchId ?? ""),
     queryFn: () => data.deliveries.batchDetail(batchId!),
     enabled: Boolean(batchId),
+    refetchInterval: (q) => q.state.data && ACTIVE_BATCH_STATUSES.includes(q.state.data.batch.status) ? SAFETY_POLL_MS : false,
   });
 }
 
@@ -67,6 +70,8 @@ function useInvalidateDeliveries(eventId: string) {
     void queryClient.invalidateQueries({ queryKey: qk.deliveryPreflight(eventId) });
     void queryClient.invalidateQueries({ queryKey: qk.deliveryBatches(eventId) });
     void queryClient.invalidateQueries({ queryKey: ["delivery-batch"] });
+    void queryClient.invalidateQueries({ queryKey: ["delivery-draft"] });
+    void queryClient.invalidateQueries({ queryKey: ["delivery-preview"] });
   };
 }
 

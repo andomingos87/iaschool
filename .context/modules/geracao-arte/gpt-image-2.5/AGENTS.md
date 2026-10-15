@@ -18,11 +18,13 @@ O Flare é o sucessor do `gpt-image-2` para o caso geral. O código usa o alias 
 O código envia só isto:
 
 - `model`: `gpt-image-2.5-flare`
-- `image`: as imagens do multipart, nesta ordem: modelo de arte, foto do aluno
-- `prompt`: o texto já montado no app
+- `image`: somente o modelo de estilo; a foto original do aluno fica no servidor para composição determinística
+- `prompt`: instruções somente para fundo/elementos, com dimensões reais e regra fixa do servidor
 - `size`: `1024x1024`
 
 Não envia `quality`, `background`, `n`, `output_format` nem `input_fidelity`. A resposta usada é `data[0].b64_json`. O log guarda metadados, não o base64.
+
+A chamada usa `maxRetries: 0` e timeout de 150 segundos: falha do provedor não dispara outra geração automaticamente. A escola pode corrigir e decidir uma nova tentativa.
 
 O pacote `openai` em `^7.4.0` ainda lista só até `gpt-image-2` no tipo `ImageModel`. O campo `model` também aceita string, e é assim que o Flare passa.
 
@@ -39,3 +41,7 @@ Na página do Flare, em 09/10/2026: texto de entrada US$ 5 / 1M tokens; imagem d
 ## Fora daqui
 
 Cota, rajada, log e o portão do menor estão no índice `geracao-arte`. Este arquivo não autoriza trocar o id sem mudar `IMAGE_MODEL` no servidor e `GENERATION_MODEL` no app no mesmo commit.
+
+## Fluxo simples — 12/10/2026
+
+O pedido vigente envia uma foto de referência e prompt, `mode=photo_prompt`. A foto entra em `images.edit`; identidade é uma instrução, sem garantia de pixels originais. O caminho antigo de fundo + composição existe apenas para clientes já abertos.

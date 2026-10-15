@@ -1,3 +1,4 @@
+import type { ReviewMediaRepository } from "./review-media";
 // Contrato da camada de dados — compatível com Supabase.
 // A implementação atual é mock (localStorage). Quando o projeto Supabase for
 // criado, implemente estas interfaces com @supabase/supabase-js e troque a
@@ -30,6 +31,7 @@ import type {
   SchoolEvent,
   GenerationDetails,
   GenerationRequest,
+  PhotoPromptGenerationRequest,
   PendingRegistration,
   PromptTemplateSetting,
   PromptTemplateVersion,
@@ -543,7 +545,7 @@ export interface ImageGenerationService {
    * servidor; após 100%, a fase passa a ser "gerando" (sem progresso real).
    */
   generate(
-    request: GenerationRequest,
+    request: GenerationRequest | PhotoPromptGenerationRequest,
     onUploadProgress?: (percent: number) => void,
   ): Promise<{ imageUrl: string; details: GenerationDetails; logId?: string }>;
 
@@ -602,6 +604,7 @@ export interface PromptTemplateRepository {
 }
 
 export interface DataLayer {
+  reviewMedia: ReviewMediaRepository;
   auth: AuthService;
   approvals: ApprovalRepository;
   storage: StorageService;

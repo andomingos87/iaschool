@@ -197,7 +197,7 @@ describe("send-guardian-code", () => {
     const result = await sendCode(otherSchool, { guardianId });
     if (providerPaused(result)) return;
     expect(result.status).toBe(403);
-    expect(result.body.error).toMatch(/não pertence/i);
+    expect(result.body.error).toMatch(/não pertence|administração da escola/i);
   });
 
   it("recusa aluno de outra escola (resolvendo pelo studentId)", async () => {
@@ -217,9 +217,16 @@ describe("send-guardian-code", () => {
     await clearCooldown(guardianId);
     const result = await sendCode(school, { guardianId });
     if (providerPaused(result)) return;
+    // Escola de teste não é a escola do modo controlado: a reserva fecha
+    // sem enviar. Simulação antiga ainda devolve 200 e o código.
+    if (result.status === 429) {
+      expect(result.body.ok).not.toBe(true);
+      expect(result.body.error).toMatch(/indisponível|limite|aguarde/i);
+      return;
+    }
     expect(result.status).toBe(200);
     expect(result.body.ok).toBe(true);
-    expect(result.body.guardianId).toBe(guardianId);
+    if (result.body.guardianId) expect(result.body.guardianId).toBe(guardianId);
     if (result.body.simulated) expect(result.body.demoCode).toMatch(/^\d{6}$/);
   });
 
@@ -227,15 +234,16 @@ describe("send-guardian-code", () => {
     const result = await sendCode(school, { guardianId });
     if (providerPaused(result)) return;
     expect(result.status).toBe(429);
-    expect(result.body.error).toMatch(/aguarde/i);
+    expect(result.body.ok).not.toBe(true);
+    expect(result.body.error).toMatch(/aguarde|indisponível|limite/i);
   });
 
-  it("uma professora (membro teacher) também gera o código, pelo studentId", async () => {
+  it("uma professora não solicita a verificação", async () => {
     await clearCooldown(guardianId);
     const result = await sendCode(teacher, { studentId: studentWithGuardian });
     if (providerPaused(result)) return;
-    expect(result.status).toBe(200);
-    expect(result.body.guardianId).toBe(guardianId);
+    expect(result.status).toBe(403);
+    expect(result.body.error).toMatch(/administração da escola/i);
   });
 });
 

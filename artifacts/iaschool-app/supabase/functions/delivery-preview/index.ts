@@ -1,5 +1,5 @@
 /**
- * Prévia protegida do lote (Fase 5, W3). O bucket `delivery-assets` não tem
+ * Prévia privada do lote (Fase 5, W3). O bucket `delivery-assets` não tem
  * policy para `anon`/`authenticated` (spec §8.3): a escola vê os derivados
  * por URLs assinadas de curta duração emitidas aqui, depois de conferir o
  * vínculo com a escola. Nenhum caminho de objeto volta ao navegador.
@@ -7,12 +7,12 @@
  * `verify_jwt` ligado (membro da escola). Publicar sem ajustes.
  */
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { partialDeliveryPreview, previewPhotoCurrent } from "../_shared/delivery/preview.ts";
 
 /** Spec §6.6: URL de arquivo assinada por no máximo 5 minutos. */
 const SIGNED_TTL_SECONDS = 300;
 /** Teto de itens por chamada; a tela pagina por lote (150 itens cobre o piloto). */
 const MAX_ITEMS = 150;
-const SIGN_CONCURRENCY = 20;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -28,6 +28,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 type Row = Record<string, unknown>;
+
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -63,7 +64,7 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
   const { data: batch } = await admin
     .from("delivery_batches")
-    .select("id, school_id, status")
+    .select("id, school_id, status, approved_version")
     .eq("id", batchId)
     .maybeSingle();
   if (!batch) return json({ error: "Lote não encontrado." }, 404);
@@ -76,10 +77,12 @@ Deno.serve(async (req: Request) => {
     .maybeSingle();
   if (!membership) return json({ error: "Sem acesso a este lote." }, 403);
 
-  async function sign(path: string): Promise<string | null> {
+  async function sign(path: string, retention: string): Promise<string | null> {
+    const ttl = Math.min(SIGNED_TTL_SECONDS, Math.floor((Date.parse(retention) - Date.now()) / 1000));
+    if (!Number.isFinite(ttl) || ttl < 1) return null;
     const { data, error } = await admin.storage
       .from("delivery-assets")
-      .createSignedUrl(path, SIGNED_TTL_SECONDS);
+      .createSignedUrl(path, ttl);
     if (error || !data?.signedUrl) return null;
     return data.signedUrl;
   }
@@ -87,10 +90,10 @@ Deno.serve(async (req: Request) => {
   if (itemId) {
     const { data: item } = await admin
       .from("delivery_items")
-      .select("id, asset_path, image_width, image_height, render_status, recipient_id")
+      .select("id, asset_path, image_width, image_height, render_status, recipient_id, selected, retention_until, assets_purged_at, render_policy, rendered_regions_version, photos!inner(deleted_at, regions_version, regions_reviewed_version, all_people_reviewed)")
       .eq("id", itemId)
       .maybeSingle();
-    if (!item || item.render_status !== "done" || !item.asset_path) {
+    if (!item || !item.selected || item.render_status !== "done" || !item.asset_path || item.assets_purged_at || !previewPhotoCurrent(item, batch.approved_version !== null)) {
       return json({ error: "Item sem derivado pronto." }, 404);
     }
     const { data: recipient } = await admin
@@ -101,7 +104,7 @@ Deno.serve(async (req: Request) => {
     if (!recipient || recipient.batch_id !== batchId) {
       return json({ error: "Item não pertence a este lote." }, 404);
     }
-    const url = await sign(item.asset_path as string);
+    const url = await sign(item.asset_path as string, item.retention_until as string);
     if (!url) return json({ error: "Não foi possível assinar o arquivo." }, 503);
     return json({
       url,
@@ -114,35 +117,18 @@ Deno.serve(async (req: Request) => {
   const { data: items, error: itemsError } = await admin
     .from("delivery_items")
     .select(
-      "id, thumb_path, image_width, image_height, render_status, recipient_student_id, delivery_recipients!inner(batch_id), delivery_recipient_students!inner(student_id, students(name))",
+      "id, thumb_path, image_width, image_height, render_status, selected, display_order, recipient_id, retention_until, assets_purged_at, render_policy, rendered_regions_version, photos!inner(deleted_at, regions_version, regions_reviewed_version, all_people_reviewed), recipient_student_id, delivery_recipients!inner(batch_id), delivery_recipient_students!delivery_items_recipient_student_id_fkey!inner(student_id, students(name))",
     )
     .eq("delivery_recipients.batch_id", batchId)
-    .eq("render_status", "done")
-    .limit(MAX_ITEMS);
+    .in("render_status", ["done", "failed"])
+    .eq("selected", true)
+    .is("assets_purged_at", null)
+    .order("display_order")
+    .limit(MAX_ITEMS + 1);
   if (itemsError) return json({ error: "Não foi possível listar a prévia." }, 503);
 
   const rows = (items ?? []) as unknown as Array<Row>;
-  const list: Array<Row> = [];
-  for (let i = 0; i < rows.length; i += SIGN_CONCURRENCY) {
-    const chunk = rows.slice(i, i + SIGN_CONCURRENCY);
-    const signed = await Promise.all(chunk.map(async (row) => {
-      const path = row["thumb_path"] as string | null;
-      if (!path) return null;
-      const url = await sign(path);
-      if (!url) return null;
-      const link = row["delivery_recipient_students"] as Row | undefined;
-      const student = link?.["students"] as Row | undefined;
-      return {
-        itemId: row["id"],
-        studentId: link?.["student_id"] ?? null,
-        studentName: student?.["name"] ?? "",
-        url,
-        width: row["image_width"],
-        height: row["image_height"],
-      };
-    }));
-    for (const entry of signed) if (entry) list.push(entry);
-  }
-
+  if (rows.length > MAX_ITEMS) return json({ error: "Prévia grande demais. Reduza a seleção para visualizar o conjunto completo." }, 413);
+  const list = await partialDeliveryPreview(rows, sign, batch.approved_version !== null);
   return json({ items: list, expiresIn: SIGNED_TTL_SECONDS });
 });

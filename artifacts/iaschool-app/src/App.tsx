@@ -27,6 +27,7 @@ import EventDetailPage from '@/pages/event-detail';
 import EventReviewPage from '@/pages/event-review';
 import EventDeliveriesPage from '@/pages/event-deliveries';
 import ConsentPage from '@/pages/consent';
+import GuardianAlbumPage from '@/pages/guardian-album';
 import ReferencesPage from '@/pages/references';
 import GalleryPage from '@/pages/gallery';
 import GeneratePage from '@/pages/generate';
@@ -97,6 +98,9 @@ function AuthGate() {
   // Primeira rota pública do app: o consentimento do responsável (Fase 5,
   // W2) não tem sessão — a posse do token do link é a credencial. Fica antes
   // do gate para nunca cair na tela de login.
+  if (location === '/album' || location.startsWith('/album/')) {
+    return <Switch><Route path="/album" component={GuardianAlbumPage} /><Route component={NotFound} /></Switch>;
+  }
   if (location === '/consentimento' || location.startsWith('/consentimento/')) {
     return (
       <Switch>

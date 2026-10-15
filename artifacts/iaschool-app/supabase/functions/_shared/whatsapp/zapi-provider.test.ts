@@ -91,3 +91,10 @@ Deno.test("webhook ignora grupo e status que não pertencem ao contrato", () => 
     phone: "5511999999999", instanceId: "instance-1", isGroup: false,
   }]);
 });
+
+Deno.test("HTTP 5xx/408 ficam incertos; rejeição 400 não é aceita", async () => {
+  for (const code of [500, 502, 408, 400]) {
+    const provider = new ZApiProvider({ instanceId: "i", instanceToken: "t", clientToken: "c", fetchImpl: async () => new Response("", { status: code }) });
+    assertEquals((await provider.sendDeliveryReady("+5511999999999", "https://private.test/x")).status, code === 400 ? "failed" : "unknown");
+  }
+});

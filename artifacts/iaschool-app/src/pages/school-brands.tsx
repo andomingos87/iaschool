@@ -179,34 +179,6 @@ function SchoolFicha({
             </p>
             <p className="text-sm">{brand.contact?.email?.trim() || "E-mail não informado"}</p>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Cores usadas nas artes</p>
-            {brand.colors.length === 0 ? (
-              <p className="text-sm">Nenhuma cor cadastrada</p>
-            ) : (
-              <div className="mt-1 flex gap-1.5">
-                {brand.colors.map((color, i) => (
-                  <span
-                    key={color}
-                    className="size-6 rounded-full border border-border"
-                    style={{ backgroundColor: color }}
-                    title={color}
-                    data-testid={`swatch-school-brand-${brand.id}-${i}`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-          {brand.logo && (
-            <div>
-              <img
-                src={brand.logo.url}
-                alt=""
-                className="size-16 rounded-md border border-border bg-muted object-contain p-1"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">Não é colocado na arte.</p>
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>
@@ -231,7 +203,7 @@ export default function SchoolBrandsPage() {
     <div className="mx-auto max-w-6xl">
       <PageHeader
         title="Escola"
-        description="Dados de cadastro da escola. As cores entram na arte. O logo não é colocado na arte."
+        description="Nome, identificação, endereço e contato da escola."
       />
 
       {brands.isError ? (

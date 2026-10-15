@@ -25,3 +25,15 @@ Worker Python de reconhecimento. Um processo por máquina.
 - Setup: `pnpm --filter @workspace/face-worker run setup`
 - Dev: `pnpm --filter @workspace/face-worker run dev`
 - Teste: `pnpm --filter @workspace/face-worker run test`
+
+## Referência de evento (S04)
+
+- `public.student_reference_jobs.source_kind = 'event'`, `public.student_reference_jobs.source_photo_id`, `public.student_reference_jobs.source_face_id` e `public.student_reference_jobs.source_bbox` (`artifacts/iaschool-app/supabase/fase5-review-media.sql`, aplicado em 12/10/2026 pelo MCP supabase-iaschool) identificam a origem confirmada. `public.reference_event_source` revalida autorização e confirmação antes de baixar o original; `public.complete_student_reference_job` repete a checagem ao persistir.
+- O handler recorta somente a caixa EXATA desse rosto antes de chamar o motor; não escolhe um rosto na foto de grupo. Zero/múltiplos rostos ou caixa ilegível ficam como falha recuperável pela escola. Só o recorte sem metadados vai para `student-refs`, nunca outra cópia permanente da foto inteira. Cancelamento/revogação/revisão concorrente remove o recorte; jobs/referências usam a retenção e a fila de expurgo existentes.
+- `public.student_reference_faces.source_photo_id` e `public.student_reference_faces.source_face_id` (`artifacts/iaschool-app/supabase/fase5-review-media.sql`) preservam origem após processamento. Alterar/remover origem invalida a referência derivada. Nada vetoriza no browser, confirma automaticamente ou muda escopo de autorização. Worker publicado na Fly em 12/10/2026, versão v2. Teste local não prova reconhecimento real.
+
+- Publicação em 12/10/2026: Fly `iaschool-face-worker`, release v2, uma máquina em gru com 2 CPU compartilhadas/2 GB. Health real 200 após carregar o motor; o ensaio sintético de origem não atesta reconhecimento de uma pessoa real.
+
+## Verificação integrada de 12/10/2026
+
+- App/SQL complementares publicados/aplicados; ensaio `artifacts/iaschool-app/tests/adjustments-integrated.integration.test.ts` passou (Run 5, 27,64 s), com limpeza da escola/conta/dados/objetos sintéticos. O rosto foi vínculo de domínio confirmado manualmente sobre imagem de padrões, não detecção humana real. S04 validou origem/enfileiramento mantendo zero referências processadas: não comprova embedding ou precisão do modelo publicado. Nenhuma foto real de menor ou mensagem WhatsApp foi usada.

@@ -217,9 +217,3 @@ export function allowedShareTarget(
   const g = student.guardian!;
   return { whatsapp: g.whatsapp, label: `${g.name} (responsável)` };
 }
-
-/**
- * Texto do selo aplicado à imagem exportada e à mensagem de compartilhamento.
- * Base: Decreto 12.880/2026, art. 11, I (transparência do caráter sintético).
- */
-export const AI_DISCLOSURE_LABEL = "IMAGEM GERADA POR IA";

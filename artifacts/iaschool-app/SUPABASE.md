@@ -78,6 +78,7 @@ o mecanismo de aplicação. Mantenha-os fiéis ao banco.
 
 | Arquivo | O que descreve |
 | --- | --- |
+| [`generation-batches.sql`](./supabase/generation-batches.sql) | `public.generation_batches`, `public.generation_batch_items`, `public.generation_batch_retries`, RPCs com reserva atômica de cota, leases, recuperação, revogação e namespace privado para arte. Aplicada via MCP local em 12/10/2026: `iaschool_generation_batches` (20261012194454). Browser usa projeções autorizadas; worker usa helpers service_role. |
 | [`setup.sql`](./supabase/setup.sql) | `profiles`, `students`, `clubs`, `reference_posts`, `generated_posts`, `prompt_settings`, `prompt_template_versions`, funções auxiliares de RLS, buckets e políticas de Storage |
 | [`fase1-min-schools-events.sql`](./supabase/fase1-min-schools-events.sql) | **M1 (Fase 1 mínima)**: `schools`, `school_members`, `classes`, `guardians`, `events`; papéis globais; RLS por escola; Storage por escola; OTP por responsável; aprovação criando a escola. Aplicada em 20/09/2026; ensaio com rollback em [`supabase/rehearsal/`](./supabase/rehearsal/README.md) |
 | [`fase2-photos-upload.sql`](./supabase/fase2-photos-upload.sql) | **M2 (upload em massa)**: `photos` com dedup por hash, `batch_jobs`, trigger que restringe o UPDATE do cliente a `deleted_at`, buckets `event-photos`/`event-thumbs`/`event-originals` com policies por escola, RPC `event_photo_counts`, Realtime em `batch_jobs`. Aplicada em 20/09/2026 |
@@ -319,3 +320,48 @@ e bloqueado na rota de geração (HTTP 403) no backend.
 
 Nenhuma tela importa a implementação diretamente — todas usam
 `getDataLayer()` de `src/lib/data`.
+
+## Ajustes de 11/10/2026 — aplicação/publicação em 12/10/2026
+
+- [`fase5-person-regions.sql`](./supabase/fase5-person-regions.sql): pré-requisito de `public.photo_person_regions`, `public.photos.regions_version` e `public.delivery_items.rendered_regions_version`; migration `iaschool_s05_photo_person_regions` confirmada no histórico remoto em 12/10/2026.
+- [`fase5-review-media.sql`](./supabase/fase5-review-media.sql): **aplicado via MCP supabase-iaschool**, migration `iaschool_adjustments_review_media`. Origem em `public.student_reference_jobs`, referências só por rosto confirmado e revisão humana completa de `public.photos`; invalidação e expurgo vinculados à autorização/origem.
+- [`fase5-adjustments-delivery-album.sql`](./supabase/fase5-adjustments-delivery-album.sql): **aplicado via MCP supabase-iaschool**, migration `iaschool_adjustments_delivery_album`. Versão/snapshot de `public.delivery_batches`, seleção por família em `public.delivery_items`, início irrevogável da transmissão, tokens/sessões privadas e conclusão atômica de render. Revisão, sessão e download revalidam consentimento e versões.
+
+As três referências foram ensaiadas em Postgres local; os dois complementos
+foram aplicados pelo MCP local do projeto em 12/10/2026 após autorização do
+usuário. RLS das tabelas novas confirmado. `guardian-album` v1 (JWT desligado,
+autenticação própria por token/sessão), `school-delivery` v1 e `delivery-preview`
+v3 (JWT ligado) publicados e ativos. API v4, ingest v3 e face v2 publicados na Fly com checks passando; app promovido
+na Vercel para https://iaschool-app.vercel.app em 12/10/2026. Ensaio integrado
+sintético passou: render/prévia/aprovação pausada, cookie/sessão, uso único,
+download da mesma versão/hash e revogação, zero WhatsApp. Fixtures/dados/arquivos
+removidos e limpeza conferida. Uma geração real autorizada também passou,
+com PNG 1024, cota única e preservação de pixels.
+
+`DELIVERY_ALBUM_READY=false` configurado e valor confirmado impede envio pelo
+fluxo novo. Allowlist/teto/kill switch existentes não foram ampliados. Nenhum
+WhatsApp comercial foi habilitado. Alertas de RLS sem policy nas tabelas privadas
+e SECURITY DEFINER autenticado são intencionais, com papéis/escopo conferidos;
+alerta preexistente de senha vazada e event trigger público permanecem no backlog.
+
+## Prévia parcial de entrega — 13/10/2026
+
+`delivery-preview` v8 autenticada nomeia `delivery_items_recipient_student_id_fkey` para distinguir a relação direta de `public.delivery_items` com `public.delivery_recipient_students` da relação por `public.delivery_item_students` (`supabase/fase5-adjustments-delivery-album.sql`). Consulta ambígua PGRST201 foi corrigida sem alterar schema. Resposta contém URL validada OU motivo seguro por item; nunca URL para revisão pendente ou arquivo indisponível. Uma foto não bloqueia a prévia das outras; a aprovação no SQL continua exigindo todas as selecionadas seguras. Integração sintética real com retirada de falha e origem preservada passou, sem WhatsApp.
+
+### Fotos nítidas nas entregas — 13/10/2026
+
+A decisão de produto substitui o desfoque obrigatório por fotos completas nítidas.
+`delivery-original-photos.sql`, aplicado depois de `fase5-adjustments-delivery-album.sql`,
+registra a política em `public.delivery_items.render_policy`: novas fotos usam
+`original_v1`; arquivos antigos continuam identificados como `protected_regions_v1`.
+Rascunhos antigos exigem a ação explícita Atualizar fotos, sem reprocessamento na
+migration. O processamento gera JPEG orientado sem metadados, sem máscara nem
+revisão de regiões. Seleção, autorização do responsável, isolamento escolar,
+aprovação, retenção e sessão privada continuam verificados no servidor.
+
+`public.delivery_approvals.items` fixa também a política da imagem. O snapshot
+já aprovado não é trocado por um arquivo diferente silenciosamente. A conclusão
+confere versão, tentativa, política, origem e dimensões. O endpoint privado
+`delivery-preview` retorna `refresh_required` para rascunhos antigos e mantém
+prévia parcial, permitindo retirar uma foto inválida sem bloquear as demais.
+Publicada em 13/10/2026: migration `iaschool_delivery_original_photos` (`20261013113430`) aplicada pelo MCP local; Edge `delivery-preview` v9 com JWT; ingest v6 (`deployment-01M4TGPSEWM2218R6WTMCD8EBR`), mesma máquina e recursos; app Vercel `dpl_64iuU8mzCYexreaBggzNdeFj3ey4` promovido. 320 testes app, 69 ingest, 25 funções, PostgreSQL descartável, typecheck/build e ensaio integrado real sintético passaram. O ensaio comprovou original sem regiões, arquivo corrompido isolado, retirada/seleção, aprovação pausada, prévia, sessão, download e revogação; limpeza conferida, zero WhatsApp/IA. A tela local conectada ao Supabase real foi reaberta, exibindo Atualizar fotos no lote antigo; não houve reprocessamento, retirada nem aprovação das fotos reais.

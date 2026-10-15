@@ -11,6 +11,15 @@ comercial.
 **Acompanhamento:** [`BACKLOG.md`](../BACKLOG.md) continua sendo a fonte única de
 estado. Este documento define produto, arquitetura, segurança e aceite.
 
+**Atualização documental em 11/10/2026:**
+[lote de ajustes](specs/ajustes-2026-10-11/overview.md) complementa o alvo de
+proteção (§6.4), editor/seleção/versionamento e álbum/reenvio. S05–S07 detalham
+esses requisitos, ainda sem implementação/aceite nesta rodada. N-D1–N-D13 são
+decisões do Notion de 11/10 e não substituem a numeração D1–D8 deste documento.
+Mantêm-se provedores, papéis, filas, limites e gates. As descrições de estado
+verificado em setembro não revalidam serviços remotos em outubro; o backlog
+preserva o histórico de implementação/publicação por marco.
+
 ---
 
 ## 1. Decisões já tomadas
@@ -48,7 +57,7 @@ proteção das outras crianças da foto e trilha do resultado real da entrega.
 | R2 | O responsável aceita ou recusa, diretamente, um termo versionado para `delivery_whatsapp` |
 | R3 | A escola vê quem está apto, bloqueado ou pendente antes de criar um lote |
 | R4 | Um lote cria no máximo uma entrega por responsável e evento, mesmo quando o responsável tem mais de um aluno |
-| R5 | Só fotos com rostos confirmados entram na entrega; rostos de outras crianças e rostos sem identificação ficam desfocados |
+| R5 | Só fotos confirmadas e revisadas entram na entrega; proteger a pessoa inteira sem autorização aplicável e desconhecidos; outra criança só fica nítida para outras famílias com prova explícita desse escopo, conforme S05 |
 | R6 | O responsável recebe uma mensagem oficial com acesso privado às fotos, sem nome completo do aluno no texto ou na URL |
 | R7 | A escola acompanha `na fila`, `aceita pela Meta`, `enviada`, `entregue`, `lida` ou `falhou` |
 | R8 | Repetir uma ação ou receber o mesmo webhook não duplica mensagem nem evento de auditoria |
@@ -279,8 +288,10 @@ histórico, mas não satisfaz o preflight de produção.
 2. O preflight agrupa alunos por responsável e mostra: apto, número não
    verificado, autorização ausente/revogada, revisão pendente ou sem fotos.
 3. O professor seleciona destinatários aptos e cria um rascunho.
-4. Uma RPC em transação congela evento, alunos, responsável, número verificado,
-   autorização usada, fotos confirmadas e versão do termo.
+4. O rascunho registra evento, alunos, responsável, número verificado,
+   autorização usada, fotos selecionadas e versão do termo. S06 detalha editor,
+   ordem e versão; a aprovação congela o conjunto/texto/derivados exatos e
+   qualquer alteração antes de transmitir exige nova revisão/aprovação.
 5. O `ingest-worker`, que já possui `sharp`, gera os derivados em
    `delivery-assets/{school_id}/{batch_id}/{recipient_id}/...`.
 6. A tela mostra a versão exata que o responsável verá.
@@ -291,33 +302,42 @@ histórico, mas não satisfaz o preflight de produção.
 Se o mesmo responsável possui dois alunos no evento, recebe um link e vê duas
 pastas separadas na mesma sessão.
 
-### 6.4 Regra de desfoque
+### 6.4 Proteção localizada — alvo conciliado em 11/10/2026
 
 Para cada foto e cada destinatário:
 
-| Rosto | Saída |
+| Pessoa e autorização | Saída |
 | --- | --- |
-| Aluno filho daquele responsável e `confirmed` | nítido |
-| Outro aluno | desfocado na primeira versão, mesmo que possua autorização própria |
-| `suggested`, `unassigned` ou `not_a_student` | desfocado |
+| Aluno/irmão daquele responsável e `confirmed`, apto ao escopo aplicável | nítido |
+| Outro aluno com prova explícita de autorização para visualização por outras famílias | nítido, após conferir termo/aceite aplicável |
+| Outro aluno sem essa prova, ainda que possua entrega própria autorizada | pessoa inteira protegida por região revisada |
+| `suggested`, `unassigned`, `not_a_student` ou pessoa sem identidade/classificação | pessoa inteira protegida; sem região segura, foto pendente |
 | `adult_or_staff`, confirmado por pessoa | nítido |
-| Detecção rejeitada | não participa do recorte, mas a prévia humana continua obrigatória |
+| Detecção rejeitada ou pessoa não detectada | revisão humana confere a cena; identidade incerta não é liberada automaticamente |
 
-Essa regra evita interpretar `delivery_whatsapp` como autorização para expor a
-criança a todas as outras famílias. Uma futura permissão de compartilhamento
-entre famílias exige escopo e termo próprios.
+`delivery_whatsapp` próprio continua sem autorizar outras famílias. N-D3 pede
+prova explícita desse outro escopo; verificar termo e obter aceite quando
+necessário antes de liberar. Sua existência não é presumida pelo código atual.
 
-O desfoque é aplicado nos pixels do arquivo, nunca como CSS. O lote não sai sem
-prévia porque o detector pode deixar de encontrar um rosto.
+Conforme [S05](specs/ajustes-2026-10-11/05-protecao-localizada.md), partir da
+foto nítida e proteger somente a pessoa inteira sem autorização aplicável,
+mantendo cenário e autorizados nítidos. Escola ajusta/confere a máscara.
+Sobreposição sem proteção segura mantém aquela foto pendente, sem bloquear
+as demais já revisadas. Arquivo, miniatura e download recebem proteção nos
+pixels da mesma versão; não apenas CSS. Alterar a versão exige reprocessamento,
+invalidação dos ativos antigos e nova revisão antes de liberar.
 
 ### 6.5 Enviar o lote
 
 1. O consumidor reivindica destinatários `queued` com lease e lote limitado.
 2. Revalida número, consentimento, autorização, evento e existência dos ativos.
 3. Cria token opaco de 256 bits, guarda apenas o hash e associa ao destinatário.
-4. Envia a mensagem lógica `guardian_event_photos_ready` com escola, evento,
+4. Envia a mensagem lógica de aviso de álbum (`delivery_ready` no código local)
+   com escola, evento,
    expiração e URL. Na Meta ela usa template **Utility**; na Z-API vira texto
    versionado. A mensagem não inclui nome completo do aluno.
+   Só transmite texto + link, sem anexos, depois de validar o álbum de S07 e
+   o conjunto aprovado de S06; a URL curta da prévia não é o link do álbum.
 5. Guarda provedor, ID externo, versão da mensagem lógica, configuração técnica
    do adaptador e horário.
 6. O retorno 2xx muda para `accepted`.
@@ -329,14 +349,18 @@ prévia porque o detector pode deixar de encontrar um rosto.
 1. O link troca o token de uso único por uma sessão aleatória em cookie
    `HttpOnly`, `Secure`, `SameSite=Lax`, válida por 24 horas.
 2. O servidor revalida autorização, número, responsável e expiração.
-3. A página lista somente os itens congelados para aquele destinatário.
+3. A página lista somente os itens/ordem/versão aprovados para aquele destinatário,
+   sem duplicar fotos de irmãos e sem fallback para originais internos.
 4. Cada imagem recebe URL assinada por no máximo 5 minutos, com
    `Cache-Control: private, no-store` na resposta da aplicação.
 5. O download individual ou ZIP é montado sob demanda. O ZIP não fica salvo.
 6. Abertura e download geram eventos de auditoria sem registrar URL ou token.
 
-Encaminhar o link antes da troca de token transfere o acesso. Por isso ele é de
-uso único e curto. Depois da troca, o token original não abre outra sessão.
+Encaminhar o link antes da troca de token transfere o acesso. N-D8 aceita esse
+risco, sem adicionar código ou conta/login ao álbum. Consumo é atômico e de uso
+único; depois da troca, o token original não abre outra sessão. O mesmo navegador
+com sessão válida pode retornar, sem renovar suas 24 horas. S07 detalha estados,
+downloads, isolamento e expiração dos arquivos, cuja retenção não aumenta por reenvio.
 
 ### 6.7 Revogar
 
@@ -348,6 +372,21 @@ Ao revogar `delivery_whatsapp`:
 4. derivados são enfileirados em `storage_purge_queue`;
 5. o evento de revogação registra quem, quando e qual lote foi afetado;
 6. mensagens e arquivos já baixados não podem ser recolhidos.
+
+### 6.8 Reenviar acesso sem encerrar sessões abertas
+
+[S07](specs/ajustes-2026-10-11/07-album-privado.md), conforme N-D9/N-D12, define
+recuperação pela escola no painel, sem solicitação automática no MVP. Revalidar
+responsável, número cadastrado/verificado, autorização e disponibilidade das
+fotos antes de reemitir/transmitir.
+
+Novo link invalida links anteriores ainda não usados do mesmo álbum/entrega,
+mas mantém sessões abertas até seus vencimentos originais de 24 horas. Não
+renova essas sessões ou a retenção das fotos; o novo link abre sessão própria
+quando consumido. Reenvio e revogação são ações diferentes: revogação explícita
+continua bloqueando sessões e novas assinaturas/downloads. Resultado incerto
+não gera repetição automática. Não prometer recolher cópias já baixadas ou
+encerrar instantaneamente uma URL de arquivo já emitida e ainda válida por até 5 min.
 
 ## 7. Arquitetura proposta
 
@@ -865,8 +904,10 @@ Os limites são ponto de partida e devem ser calibrados no piloto.
 
 - todas as caixas esperadas recebem blur nos pixels;
 - alvo permanece nítido;
-- outras crianças ficam desfocadas;
-- desconhecido e `not_a_student` ficam desfocados;
+- outra criança sem escopo explícito para outras famílias fica protegida por
+  inteiro; com prova aplicável, segue a matriz de S05;
+- desconhecido e `not_a_student` ficam protegidos por inteiro com região
+  conferida; proteção insegura mantém a foto pendente;
 - `adult_or_staff` permanece nítido;
 - EXIF não reaparece no derivado;
 - arquivo final respeita limite e formato aceitos;
@@ -907,7 +948,9 @@ Antes de foto real:
 ### 15.3 Fotos
 
 - [ ] Apenas associação `confirmed` entra no lote.
-- [ ] Outras crianças, desconhecidos e `not_a_student` ficam desfocados.
+- [ ] Crianças sem autorização aplicável, desconhecidos e `not_a_student`
+  ficam protegidos por inteiro; cenário/autorizados permanecem nítidos,
+  máscara ajustável e mesma versão na prévia/miniatura/download (S05).
 - [ ] Derivado não contém EXIF.
 - [ ] Uma pessoa revisa a versão final antes da aprovação.
 - [ ] Ativo expira e é removido pelo worker.

@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createOpenAIGenerationService } from "./openai-generation";
 import { buildGenerationPrompt } from "../prompt-template";
+import type { OriginalGenerationRequest } from "../original-composition";
 import type { GenerationRequest, StoredImage } from "./types";
 
 // ---------- fixtures ----------
@@ -18,8 +19,21 @@ function img(id: string): StoredImage {
   };
 }
 
-function makeRequest(overrides: Partial<GenerationRequest> = {}): GenerationRequest {
+function makeRequest(
+  overrides: Partial<GenerationRequest> = {},
+): OriginalGenerationRequest {
   return {
+    composition: {
+      version: "original-pixels-v1",
+      photoId: "foto-aluno",
+      reviewed: true,
+      points: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+      ],
+      protectedHead: { x: 0.3, y: 0.1, width: 0.4, height: 0.3 },
+    },
     student: {
       id: "s1",
       name: "João Silva",
@@ -75,7 +89,13 @@ function mockXhr(response: { status: number; body: unknown }) {
     status = 0;
     responseText = "";
     upload: {
-      onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null;
+      onprogress:
+        | ((e: {
+            lengthComputable: boolean;
+            loaded: number;
+            total: number;
+          }) => void)
+        | null;
       onload: (() => void) | null;
     } = { onprogress: null, onload: null };
     onload: (() => void) | null = null;
@@ -88,7 +108,11 @@ function mockXhr(response: { status: number; body: unknown }) {
     send(formData: FormData) {
       sent.formData = formData;
       queueMicrotask(() => {
-        this.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 });
+        this.upload.onprogress?.({
+          lengthComputable: true,
+          loaded: 5,
+          total: 10,
+        });
         this.upload.onload?.();
         this.status = response.status;
         this.responseText = JSON.stringify(response.body);
@@ -112,7 +136,10 @@ afterEach(() => {
 
 describe("createOpenAIGenerationService().generate — detalhes da geração", () => {
   it("retorna details com prompt, modelo, tamanho e imagens ordenadas (todas as opções)", async () => {
-    const sent = mockXhr({ status: 200, body: { imageUrl: "data:image/png;base64,ok" } });
+    const sent = mockXhr({
+      status: 200,
+      body: { imageUrl: "data:image/png;base64,ok" },
+    });
     const service = createOpenAIGenerationService();
     const request = makeRequest();
 
@@ -124,11 +151,17 @@ describe("createOpenAIGenerationService().generate — detalhes da geração", (
     // Sem template do admin, o prompt final é o do template padrão embutido.
     expect(result.details.prompt).toBe(buildGenerationPrompt(request, null));
     // Ordem importa: a referência é sempre a primeira imagem.
+    // Logo e cores da escola não entram, mesmo com flag e arquivo antigos.
     expect(result.details.images.map((i) => i.role)).toEqual([
       "Referência",
       "Foto do aluno",
-      "Logo da escola",
     ]);
+    expect(result.details.prompt).not.toContain("logo-escola");
+    expect(result.details.prompt).not.toContain("azul");
+    const meta = JSON.parse(String(sent.formData!.get("meta"))) as {
+      showSchoolLogo: boolean;
+    };
+    expect(meta.showSchoolLogo).toBe(false);
     for (const image of result.details.images) {
       expect(image.fileName).toMatch(/\.png$/);
       expect(image.sizeBytes).toBeGreaterThan(0);
@@ -143,7 +176,10 @@ describe("createOpenAIGenerationService().generate — detalhes da geração", (
   });
 
   it("não oferece logo: escola com imagem e flag falsa não anexa nem cita o logo", async () => {
-    const sent = mockXhr({ status: 200, body: { imageUrl: "data:image/png;base64,ok" } });
+    const sent = mockXhr({
+      status: 200,
+      body: { imageUrl: "data:image/png;base64,ok" },
+    });
     const service = createOpenAIGenerationService();
     const request = makeRequest({ showSchoolLogo: false });
 
@@ -174,15 +210,44 @@ describe("createOpenAIGenerationService().generate — detalhes da geração", (
     ]);
   });
 
+  it("template antigo com logo e cores da escola não anexa arquivo nem injeta a paleta", async () => {
+    const sent = mockXhr({
+      status: 200,
+      body: { imageUrl: "data:image/png;base64,ok" },
+    });
+    const service = createOpenAIGenerationService(
+      undefined,
+      async () =>
+        "{{#logo_escola}}Inclua o logo da escola.{{/logo_escola}} {{#cores_escola}}Cores {{cores_escola}}{{/cores_escola}} {{nome_aluno}}",
+    );
+    const result = await service.generate(makeRequest());
+
+    expect(result.details.images.map((image) => image.role)).toEqual([
+      "Referência",
+      "Foto do aluno",
+    ]);
+    expect(result.details.prompt).not.toContain("Inclua o logo");
+    expect(result.details.prompt).not.toContain("azul");
+    expect(result.details.prompt).toContain("JOÃO SILVA");
+    const files = sent.formData!.getAll("images") as File[];
+    expect(files).toHaveLength(2);
+    expect(files.some((file) => file.name.includes("logo"))).toBe(false);
+  });
+
   it("usa o template salvo pelo admin no prompt dos detalhes", async () => {
     const sent = mockXhr({ status: 200, body: { imageUrl: "data:x" } });
     const template = "Post para {{nome_aluno}}.";
-    const service = createOpenAIGenerationService(undefined, async () => template);
+    const service = createOpenAIGenerationService(
+      undefined,
+      async () => template,
+    );
     const request = makeRequest();
 
     const result = await service.generate(request);
 
-    expect(result.details.prompt).toBe(buildGenerationPrompt(request, template));
+    expect(result.details.prompt).toBe(
+      buildGenerationPrompt(request, template),
+    );
     expect(result.details.prompt).toContain("JOÃO SILVA");
     expect(sent.formData!.get("prompt")).toBe(result.details.prompt);
   });
@@ -191,6 +256,85 @@ describe("createOpenAIGenerationService().generate — detalhes da geração", (
     mockXhr({ status: 500, body: { error: "Falha interna" } });
     const service = createOpenAIGenerationService();
 
-    await expect(service.generate(makeRequest())).rejects.toThrow("Falha interna");
+    await expect(service.generate(makeRequest())).rejects.toThrow(
+      "Falha interna",
+    );
   });
+});
+
+it("exige recorte conferido para a foto atual antes de qualquer envio", async () => {
+  const request = makeRequest();
+  request.composition.photoId = "outra-foto";
+  await expect(
+    createOpenAIGenerationService().generate(request),
+  ).rejects.toThrow(/recorte/);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("envia recorte e origem do fallback sem nome do aluno nos metadados", async () => {
+  const sent = mockXhr({
+    status: 200,
+    body: { imageUrl: "data:image/png;base64,ok" },
+  });
+  await createOpenAIGenerationService(undefined, async () => {
+    throw new Error("indisponível");
+  }).generate(makeRequest());
+  const meta = JSON.parse(String(sent.formData!.get("meta")));
+  expect(meta.templateSource).toBe("fallback");
+  expect(meta.studentName).toBeUndefined();
+  expect(meta.schoolName).toBeUndefined();
+  expect(JSON.parse(String(sent.formData!.get("composition")))).toMatchObject({
+    version: "original-pixels-v1",
+    reviewed: true,
+    photoId: "foto-aluno",
+  });
+});
+
+it("fluxo foto+prompt envia uma única imagem sem template, atalhos ou recorte", async () => {
+  const sent = mockXhr({
+      status: 200,
+      body: { imageUrl: "data:image/png;base64,ok" },
+    }),
+    getTemplate = vi.fn();
+  const legacy = makeRequest();
+  const result = await createOpenAIGenerationService(
+    undefined,
+    getTemplate,
+  ).generate({
+    mode: "photo_prompt",
+    student: legacy.student,
+    studentPhoto: legacy.studentPhoto,
+    schoolBrand: legacy.schoolBrand,
+    prompt: "Festa junina com bandeirinhas",
+  });
+  expect(sent.formData!.get("mode")).toBe("photo_prompt");
+  expect(sent.formData!.getAll("images")).toHaveLength(1);
+  expect(sent.formData!.get("prompt")).toBe("Festa junina com bandeirinhas");
+  expect(sent.formData!.get("composition")).toBeNull();
+  expect(sent.formData!.get("meta")).toBeNull();
+  expect(getTemplate).not.toHaveBeenCalled();
+  expect(result.details.images).toHaveLength(1);
+  expect(result.details.prompt).toBe("Festa junina com bandeirinhas");
+});
+it("fluxo simples bloqueia prompt vazio e erro mantém resposta recuperável", async () => {
+  const legacy = makeRequest(),
+    service = createOpenAIGenerationService();
+  await expect(
+    service.generate({
+      mode: "photo_prompt",
+      student: legacy.student,
+      studentPhoto: legacy.studentPhoto,
+      prompt: " ",
+    }),
+  ).rejects.toThrow("Escreva");
+  expect(fetch).not.toHaveBeenCalled();
+  mockXhr({ status: 502, body: { error: "Tente novamente" } });
+  await expect(
+    service.generate({
+      mode: "photo_prompt",
+      student: legacy.student,
+      studentPhoto: legacy.studentPhoto,
+      prompt: "Festa",
+    }),
+  ).rejects.toThrow("Tente novamente");
 });

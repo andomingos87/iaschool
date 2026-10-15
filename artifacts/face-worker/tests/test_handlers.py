@@ -244,3 +244,73 @@ def test_referencia_com_dois_rostos_e_recusada():
     done = fx.queue.completed[0]
     assert done["ok"] is False and done["permanent"] is True
     assert "2 rostos" in done["error"]
+
+
+def test_event_reference_only_processes_confirmed_box(monkeypatch):
+    fx = build([face(px=50)])
+    fx.api.rpc = lambda name, payload: {"storage_path": "event/original.jpg", "bbox": {"x": 500, "y": 400, "w": 200, "h": 180}}
+    shapes = []
+    original = fx.engine.analyze
+    def analyze(image, **kwargs):
+        shapes.append(image.shape)
+        return original(image, **kwargs)
+    fx.engine.analyze = analyze
+    job = ReferenceJob("event-job", "s1", "ana", "s1/ana/event-job.jpg", 1, "event")
+    out = handle_reference(job, fx.deps)
+    assert out.result == "done"
+    assert shapes == [(180, 200, 3)]
+    assert fx.api.uploads == [("student-refs", "s1/ana/event-job.jpg")]
+
+
+def test_event_reference_revocation_before_processing_never_downloads():
+    fx = build([face()])
+    fx.api.rpc = lambda name, payload: None
+    fx.api.download = lambda *args: pytest.fail("não deve baixar sem origem/autorização válida")
+    out = handle_reference(ReferenceJob("event-job", "s1", "ana", "ref.jpg", 1, "event"), fx.deps)
+    assert out.result == "failed"
+    assert fx.engine.det_sizes == []
+    assert fx.api.uploads == []
+
+
+def test_event_reference_stale_completion_cleans_crop():
+    fx = build([face(px=50)])
+    fx.api.rpc = lambda name, payload: {"storage_path": "original.jpg", "bbox": {"x": 0, "y": 0, "w": 200, "h": 200}}
+    fx.queue.complete_reference = lambda *args, **kwargs: "revoked"
+    out = handle_reference(ReferenceJob("event-job", "s1", "ana", "ref.jpg", 1, "event"), fx.deps)
+    assert out.result == "revoked"
+    assert fx.api.removed == ["ref.jpg"]
+
+
+def test_event_reference_invalid_box_fails_closed():
+    fx = build([face()])
+    fx.api.rpc = lambda name, payload: {"storage_path": "original.jpg", "bbox": {"x": -1, "y": 0, "w": 200, "h": 200}}
+    out = handle_reference(ReferenceJob("event-job", "s1", "ana", "ref.jpg", 1, "event"), fx.deps)
+    assert out.result == "failed"
+    assert fx.api.uploads == []
+    assert fx.engine.det_sizes == []
+
+
+def test_event_reference_parallel_completed_attempt_keeps_valid_crop():
+    fx = build([face(px=50)])
+    fx.api.rpc = lambda name, payload: {"storage_path": "original.jpg", "bbox": {"x": 0, "y": 0, "w": 200, "h": 200}}
+    fx.queue.complete_reference = lambda *args, **kwargs: "noop"
+    out = handle_reference(ReferenceJob("event-job", "s1", "ana", "ref.jpg", 1, "event"), fx.deps)
+    assert out.result == "noop"
+    assert fx.api.removed == []
+
+
+def test_group_reference_crop_contains_only_selected_face_pixels(monkeypatch):
+    # Duas regiões sintéticas representam os dois rostos da mesma foto de grupo.
+    image = np.zeros((160, 240, 3), dtype=np.uint8)
+    image[20:80, 20:80] = (10, 20, 30)
+    image[30:100, 130:210] = (90, 100, 110)
+    monkeypatch.setattr("face_worker.handlers.decode_image", lambda _: image)
+    fx = build([face(px=40)])
+    fx.api.rpc = lambda name, payload: {"storage_path": "group.jpg", "bbox": {"x": 130, "y": 30, "w": 80, "h": 70}}
+    def analyze(selected, **kwargs):
+        assert selected.shape == (70, 80, 3)
+        assert np.all(selected == np.array([90, 100, 110]))
+        return fx.engine.faces
+    fx.engine.analyze = analyze
+    outcome = handle_reference(ReferenceJob("group-job", "s1", "aluno-b", "s1/aluno-b/ref.jpg", 1, "event"), fx.deps)
+    assert outcome.result == "done"

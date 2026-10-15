@@ -1,3 +1,4 @@
+import { renderDeliveryMessage, type DeliveryMessageFields } from "../delivery/message.ts";
 import type {
   NormalizedStatusEvent,
   ProviderMessageResult,
@@ -18,8 +19,8 @@ export class FakeWhatsAppProvider implements WhatsAppProvider {
     return { status: "accepted", providerMessageId: `fake-${this.sent.length}` };
   }
 
-  async sendDeliveryReady(phoneE164: string, link: string): Promise<ProviderMessageResult> {
-    this.sent.push({ phoneE164, purpose: "delivery", text: link });
+  async sendDeliveryReady(phoneE164: string, link: string, fields?: DeliveryMessageFields): Promise<ProviderMessageResult> {
+    this.sent.push({ phoneE164, purpose: "delivery", text: fields ? renderDeliveryMessage(fields, link) : link });
     return { status: "accepted", providerMessageId: `fake-${this.sent.length}` };
   }
 

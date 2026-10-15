@@ -1,0 +1,8 @@
+# Configuração de publicação das novas funções; não aplica nem publica.
+# guardian-album valida token/cookie e chama RPCs privadas com service_role.
+[functions.guardian-album]
+verify_jwt = false
+[functions.school-delivery]
+verify_jwt = true
+[functions.delivery-preview]
+verify_jwt = true

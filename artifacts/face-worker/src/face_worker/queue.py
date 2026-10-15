@@ -43,6 +43,7 @@ class ReferenceJob:
     student_id: str
     storage_path: str
     attempts: int
+    source_kind: str = "upload"
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,7 @@ class SupabaseQueue:
                 student_id=str(r["student_id"]),
                 storage_path=str(r["storage_path"]),
                 attempts=int(r.get("attempts", 0)),
+                source_kind=str(r.get("source_kind", "upload")),
             )
             for r in rows
         ]

@@ -44,6 +44,8 @@ export async function createTestUser(opts: {
    */
   signupRole: "school" | "school_user";
   schoolName?: string;
+  /** Track fixture immediately so login/setup failure still permits cleanup. */
+  onCreated?: (id: string) => void;
 }): Promise<TestUser> {
   const email = `rls-test-${opts.label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
   const createResp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
@@ -64,6 +66,7 @@ export async function createTestUser(opts: {
     throw new Error(`Falha ao criar usuário de teste: ${createResp.status} ${await createResp.text()}`);
   }
   const created = (await createResp.json()) as { id: string };
+  opts.onCreated?.(created.id);
 
   const tokenResp = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
@@ -180,4 +183,12 @@ export async function userInsert(
     body: JSON.stringify(row),
   });
   return resp.status;
+}
+
+/** Checks deletion of the disposable Auth account without exposing credentials. */
+export async function testUserExists(id: string): Promise<boolean> {
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(id)}`, {headers:adminHeaders(),signal:AbortSignal.timeout(15_000)});
+  if (response.status === 404) return false;
+  if (!response.ok) throw new Error(`Falha ao conferir conta descartável: HTTP ${response.status}.`);
+  return true;
 }

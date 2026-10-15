@@ -1,12 +1,12 @@
 // Um job de render, do começo ao fim: baixa a foto do evento, gera o
-// derivado desfocado por destinatário, sobe no bucket `delivery-assets` e
+// arquivo da política registrada no item, sobe no bucket `delivery-assets` e
 // conclui no banco. Nunca rejeita: erro vira `complete({ ok: false })` e a
 // RPC decide entre devolver à fila (attempts < 5) e falhar de vez.
 
 import type { WorkerConfig } from "./config";
-import { renderDeliveryAsset } from "./delivery-render";
-import { errorMessage } from "./handler";
+import { assertDeliveryReviewReady, DeliveryImageInvalidError, DeliveryReviewPendingError, renderLocalizedDeliveryAsset } from "./localized-delivery-render";
 import { jobLogger } from "./logger";
+import { renderOriginalDeliveryAsset } from "./original-delivery-render";
 import type { RenderContext, RenderJob, RenderQueueApi } from "./render-queue";
 import { DELIVERY_ASSETS_BUCKET, EVENT_PHOTOS_BUCKET, type StorageApi } from "./storage";
 
@@ -17,12 +17,13 @@ export type RenderJobHandler = (
 ) => Promise<void>;
 
 /** Caminho determinístico do derivado e da miniatura (spec §6.3, passo 5). */
-export function assetPathFor(context: Pick<RenderContext, "schoolId" | "batchId" | "recipientId" | "itemId">): string {
-  return `${context.schoolId}/${context.batchId}/${context.recipientId}/${context.itemId}.jpg`;
+export function assetPathFor(context: RenderContext, attempt = 1): string {
+  const policy = context.renderPolicy === "original_v1" ? "original_v1" : `r${context.review.regionsVersion}`;
+  return `${context.schoolId}/${context.batchId}/${context.recipientId}/${context.itemId}/v${context.draftVersion}-${policy}-a${attempt}.jpg`;
 }
 
-export function thumbPathFor(context: Pick<RenderContext, "schoolId" | "batchId" | "recipientId" | "itemId">): string {
-  return `${context.schoolId}/${context.batchId}/${context.recipientId}/${context.itemId}.webp`;
+export function thumbPathFor(context: RenderContext, attempt = 1): string {
+  return assetPathFor(context, attempt).replace(/\.jpg$/, ".webp");
 }
 
 export function makeRenderHandler(deps: {
@@ -38,26 +39,40 @@ export function makeRenderHandler(deps: {
     const started = performance.now();
 
     if (!context) {
-      await safeComplete(deps.queue, log, job.id, { ok: false, error: "contexto não encontrado" }, started, "missing_context");
+      await safeComplete(deps.queue, log, job.id, { ok: false, error: "render_contexto_indisponivel", leaseVersion: job.lease_version }, started, "missing_context");
       return;
     }
 
+    let attemptedAssetPath: string | undefined;
+    let attemptedThumbPath: string | undefined;
+    let stage: "download" | "render" | "upload" = "download";
     try {
       if (signal.aborted) throw new Error("job cancelado por timeout");
+      if (context.renderPolicy !== "original_v1") assertDeliveryReviewReady(context.review);
       const input = await deps.storage.download(EVENT_PHOTOS_BUCKET, context.photoPath);
+      if (signal.aborted) throw new Error("timeout");
 
-      const out = await renderDeliveryAsset(input, context.sharpBoxes, {
+      stage = "render";
+      const options = {
         blurSigma: deps.cfg.blurSigma,
         jpegQuality: deps.cfg.deliveryJpegQuality,
         thumbSize: deps.cfg.deliveryThumbSize,
         thumbQuality: deps.cfg.thumbQuality,
-      });
+      };
+      const out = context.renderPolicy === "original_v1"
+        ? await renderOriginalDeliveryAsset(input, options)
+        : await renderLocalizedDeliveryAsset(input, context.review, options);
       if (signal.aborted) throw new Error("job cancelado por timeout");
 
-      const assetPath = assetPathFor(context);
-      const thumbPath = thumbPathFor(context);
+      const assetPath = assetPathFor(context, job.lease_version);
+      const thumbPath = thumbPathFor(context, job.lease_version);
+      attemptedAssetPath = assetPath;
+      attemptedThumbPath = thumbPath;
+      stage = "upload";
       await deps.storage.upload(DELIVERY_ASSETS_BUCKET, assetPath, out.asset, "image/jpeg");
+      if (signal.aborted) throw new Error("timeout");
       await deps.storage.upload(DELIVERY_ASSETS_BUCKET, thumbPath, out.thumb, "image/webp");
+      if (signal.aborted) throw new Error("timeout");
 
       await safeComplete(
         deps.queue,
@@ -68,6 +83,10 @@ export function makeRenderHandler(deps: {
           assetPath,
           thumbPath,
           assetHash: out.assetHash,
+          leaseVersion: job.lease_version,
+          regionsVersion: context.renderPolicy === "original_v1" ? undefined : context.review.regionsVersion,
+          renderPolicy: context.renderPolicy,
+          draftVersion: context.draftVersion,
           width: out.width,
           height: out.height,
         },
@@ -75,7 +94,13 @@ export function makeRenderHandler(deps: {
         "done",
       );
     } catch (err) {
-      await safeComplete(deps.queue, log, job.id, { ok: false, error: errorMessage(err) }, started, "error");
+      const code = signal.aborted ? "render_timeout"
+        : err instanceof DeliveryReviewPendingError ? "render_revisao_pendente"
+        : err instanceof DeliveryImageInvalidError ? "render_imagem_invalida"
+        : stage === "download" ? "render_download_falhou"
+        : stage === "upload" ? "render_upload_falhou"
+        : "render_processamento_falhou";
+      await safeComplete(deps.queue, log, job.id, { ok: false, error: code, assetPath: attemptedAssetPath, thumbPath: attemptedThumbPath, regionsVersion: context.renderPolicy === "original_v1" ? undefined : context.review.regionsVersion, draftVersion: context.draftVersion, leaseVersion: job.lease_version, renderPolicy: context.renderPolicy }, started, "error");
     }
   };
 }
@@ -96,6 +121,6 @@ async function safeComplete(
     else log.info(fields, "render concluído");
   } catch (err) {
     // O lease expira e outro claim repega; nada a fazer além de logar.
-    log.error({ duration_ms, reason, err: errorMessage(err) }, "falha ao concluir o render no banco");
+    log.error({ duration_ms, reason, err: "render_completion_failed" }, "falha ao concluir o render no banco");
   }
 }

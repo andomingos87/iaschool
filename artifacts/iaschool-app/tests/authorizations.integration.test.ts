@@ -302,6 +302,19 @@ describe("fila do rosto de referência", () => {
     const jobId = created.row!["id"] as string;
     expect(created.row!["status"]).toBe("queued");
 
+    // Reserva antes das leituras lentas: o face-worker também reivindica esta fila.
+    let found = false;
+    for (let i = 0; i < 4 && !found; i++) {
+      const claimed = await adminRpc("claim_student_reference_jobs", {
+        p_limit: 100,
+        p_lease_seconds: 120,
+      });
+      expect(claimed.status).toBeLessThan(300);
+      const rows = Array.isArray(claimed.body) ? (claimed.body as Array<{ id: string }>) : [];
+      found = rows.some((j) => j.id === jobId);
+    }
+    expect(found).toBe(true);
+
     // Membro de outra escola não vê a fila de A.
     const foreign = await userSelect(schoolB, "student_reference_jobs", `id=eq.${jobId}`);
     expect(foreign.rows).toHaveLength(0);
@@ -318,13 +331,6 @@ describe("fila do rosto de referência", () => {
       p_lease_seconds: 60,
     });
     expect(claimAsUser.status).toBeGreaterThanOrEqual(400);
-
-    const claimed = await adminRpc("claim_student_reference_jobs", {
-      p_limit: 20,
-      p_lease_seconds: 120,
-    });
-    expect(claimed.status).toBeLessThan(300);
-    expect((claimed.body as Array<{ id: string }>).some((j) => j.id === jobId)).toBe(true);
 
     // Concluir sem vetor é erro: a referência não existe sem embedding.
     const noVector = await adminRpc("complete_student_reference_job", {

@@ -1,3 +1,4 @@
+import { ConfirmedEventReferencePicker } from "./confirmed-event-reference-picker";
 import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -42,6 +43,7 @@ import {
 import { enqueueProfileReference } from "@/lib/enqueue-profile-reference";
 import { formatDateTime, isoToBrDate } from "@/lib/format";
 import { hashFromReferencePath, sha256Hex } from "@/lib/reference-from-profile";
+import { referenceCoverage } from "@/lib/reference-coverage";
 
 /** URLs assinadas das miniaturas, por caminho no bucket. */
 function useSignedThumbs(paths: string[]): Map<string, string> {
@@ -97,9 +99,9 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
   const consent = activeByScope(authorizations.data).get("biometric_sorting");
   const faceList = faces.data ?? [];
   const jobList = jobs.data ?? [];
-  const pending = jobList.filter((j) => j.status !== "failed");
+  const pending = jobList.filter((j) => j.status === "queued" || j.status === "leased");
   const failed = jobList.filter((j) => j.status === "failed");
-  const total = faceList.length + pending.length;
+  const coverage = referenceCoverage(faceList, jobList, Boolean(consent));
 
   const thumbs = useSignedThumbs([
     ...faceList.map((f) => f.sourcePhotoPath ?? "").filter(Boolean),
@@ -261,14 +263,15 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
                 )}
                 Adicionar foto
               </Button>
+              <ConfirmedEventReferencePicker studentId={student.id} studentName={student.name} onEnqueued={() => { void faces.refetch(); void jobs.refetch(); toast({ title: "Rosto confirmado na fila", description: "A referência depende do processamento e da autorização ainda válida." }); }} />
               <span className="text-sm text-muted-foreground">
-                {total === 0
-                  ? "Nenhuma foto de referência."
-                  : `${total} foto${total > 1 ? "s" : ""} de referência.`}
+                {coverage.processed === 0 ? "Nenhum rosto processado e válido."
+                  : `${coverage.processed} ${coverage.processed === 1 ? "rosto processado e válido" : "rostos processados e válidos"}.`}
+                {coverage.pending > 0 ? ` ${coverage.pending} ${coverage.pending === 1 ? "foto na fila" : "fotos na fila"}; a cobertura ainda não aumentou.` : ""}
               </span>
             </div>
 
-            {total > 0 && total < REFERENCE_FACES_RECOMMENDED && (
+            {coverage.processed > 0 && coverage.processed < REFERENCE_FACES_RECOMMENDED && (
               <Alert data-testid="alert-reference-low-coverage">
                 <AlertTriangle className="size-4" />
                 <AlertTitle>Cobertura baixa</AlertTitle>
@@ -392,8 +395,7 @@ export function StudentReferenceFaces({ student }: { student: Student }) {
             </div>
             <p className="text-xs text-muted-foreground">
               O rosto só vira referência depois que o reconhecimento facial
-              processa a foto. Se ela não tiver exatamente um rosto, volta
-              como falha.
+              processa a foto. Fotos enviadas precisam de um único rosto; fotos de evento usam somente o rosto confirmado.
             </p>
           </div>
         )}

@@ -5,10 +5,10 @@
 // ausente/vazio. O template padrão abaixo é o prompt base do IAschool para
 // artes de eventos escolares.
 
-import type { GenerationRequest } from "./data/types";
+import type { ArtShortcuts, GenerationRequest } from "./data/types";
 
 export const DEFAULT_PROMPT_TEMPLATE = [
-  "Crie uma arte de post para redes sociais de uma escola (1080x1080), seguindo fielmente o estilo, composição e clima da PRIMEIRA imagem enviada (a referência).",
+  "Crie uma arte de post para redes sociais de uma escola (1024x1024), seguindo fielmente o estilo, composição e clima da PRIMEIRA imagem enviada (a referência).",
   "Use a foto do aluno enviada como imagem principal da arte. Nome do aluno: {{nome_aluno}}.",
   "{{#prompt_auxiliar}}Instruções adicionais desta geração: {{prompt_auxiliar}}{{/prompt_auxiliar}}",
   "Não invente textos e logos que não existam na referencia da imagem. Não use marcas de água, assinaturas ou logos de bancos de imagens.",
@@ -18,11 +18,11 @@ export const DEFAULT_PROMPT_TEMPLATE = [
 export const PLACEHOLDER_DOCS: Array<{ token: string; description: string }> = [
   { token: "{{nome_aluno}}", description: "Nome do aluno (em maiúsculas)" },
   { token: "{{nome_escola}}", description: "Nome da escola do aluno" },
-  { token: "{{cores_escola}}", description: "Cores da identidade visual da escola" },
+  { token: "{{cores_escola}}", description: "Legado. A geração não injeta cores configuradas da escola; o valor fica vazio." },
   { token: "{{prompt_auxiliar}}", description: "Instruções extras digitadas na geração" },
-  { token: "{{#logo_escola}}...{{/logo_escola}}", description: "Bloco legado. A geração não envia logo, então este trecho não entra no prompt." },
-  { token: "{{#cores_escola}}...{{/cores_escola}}", description: "Bloco: só entra se a escola tiver cores cadastradas" },
-  { token: "{{^cores_escola}}...{{/cores_escola}}", description: "Bloco invertido: só entra se a escola NÃO tiver cores" },
+  { token: "{{#logo_escola}}...{{/logo_escola}}", description: "Bloco legado. A geração não anexa nem descreve o logo da escola." },
+  { token: "{{#cores_escola}}...{{/cores_escola}}", description: "Bloco legado. Não entra no prompt: a geração não usa cores configuradas da escola." },
+  { token: "{{^cores_escola}}...{{/cores_escola}}", description: "Bloco legado. Entra porque a geração não usa cores da escola; o texto deve seguir a paleta do modelo de arte." },
   { token: "{{#prompt_auxiliar}}...{{/prompt_auxiliar}}", description: "Bloco: só entra se houver instruções extras" },
   { token: "{{^nome_aluno}}...{{/nome_aluno}}", description: "Bloco invertido: só entra quando a condição do bloco NÃO está ativa" },
 ];
@@ -235,22 +235,20 @@ export interface PromptContext {
 }
 
 export function contextFromRequest(request: GenerationRequest): PromptContext {
-  const showLogo = request.showSchoolLogo && !!request.schoolBrand;
-  // cores_escola é desacoplado do logo: disponível sempre que a escola tiver
-  // cores cadastradas, independentemente da opção de exibir o logo.
-  const brandColors = (request.schoolBrand?.colors ?? []).join(", ");
+  // Logo e cores gravados na escola não entram na geração, nem quando o
+  // template antigo ou o fallback ainda citam esses blocos (S01, ESC-06).
+  // O nome da escola continua. A paleta usada é a do modelo de arte.
   const auxiliar = request.auxiliaryPrompt?.trim() ?? "";
   return {
     values: {
       nome_aluno: request.student.name.toUpperCase(),
       nome_escola: request.schoolBrand?.name ?? "",
-      cores_escola: brandColors,
+      cores_escola: "",
       prompt_auxiliar: auxiliar,
     },
     flags: {
-      logo_escola: showLogo,
-      // Ativo quando há escola com pelo menos uma cor cadastrada.
-      cores_escola: !!request.schoolBrand && brandColors.length > 0,
+      logo_escola: false,
+      cores_escola: false,
       prompt_auxiliar: auxiliar.length > 0,
     },
   };
@@ -261,12 +259,12 @@ export const SAMPLE_CONTEXT: PromptContext = {
   values: {
     nome_aluno: "JOÃO DA SILVA",
     nome_escola: "Escola Horizonte",
-    cores_escola: "#2563eb, #2e2e2e",
+    cores_escola: "",
     prompt_auxiliar: "Tema do evento: Festa Junina, com bandeirinhas coloridas ao fundo.",
   },
   flags: {
     logo_escola: false,
-    cores_escola: true,
+    cores_escola: false,
     prompt_auxiliar: true,
   },
 };
@@ -305,14 +303,115 @@ export function renderPromptTemplate(
     .trim();
 }
 
-/** Monta o prompt final da geração usando o template salvo (ou o padrão). */
+// ---------------------------------------------------------------------------
+// Atalhos de instrução e regra fixa (S02, ART-03 a ART-06)
+// ---------------------------------------------------------------------------
+
+/**
+ * Atalhos padrão da tela de geração. "Manter a foto original" nasce ligado: é
+ * o reforço visual da regra fixa que o servidor aplica de qualquer forma.
+ */
+export const DEFAULT_ART_SHORTCUTS: ArtShortcuts = {
+  noLogo: false,
+  noText: false,
+  replaceText: false,
+  keepOriginal: true,
+};
+
+/** Marcador que o professor precisa preencher antes de gerar (ART-04). */
+export const REPLACE_TEXT_TOKEN = "{DIGITE SEU TEXTO AQUI}";
+
+/** Linha inserida por "Trocar o texto"; removida ao desfazer. */
+export const REPLACE_TEXT_INSTRUCTION = `Substitua o texto por ${REPLACE_TEXT_TOKEN}`;
+
+/**
+ * Regra fixa de preservação da pessoa (ART-05/ART-06). É o contrato que o
+ * servidor garante mesmo quando a chamada vem fora da tela. O mesmo texto vive
+ * em `artifacts/api-server/src/lib/art-protection.ts`; os dois precisam bater
+ * para o servidor não duplicar a regra (ele só a prepende se ainda não existir).
+ */
+export const PROTECTION_RULE = [
+  "Regra fixa (acima de template, atalho ou texto livre):",
+  "a pessoa da arte é exatamente a da FOTO DO ALUNO enviada.",
+  "Preserve rosto, expressão, identidade, proporções, pose, cabelo, roupa e",
+  "acessórios nos pixels da foto original; não redesenhe, não retoque, não",
+  "embeleze, não envelheça nem rejuvenesça, e não invente partes ausentes.",
+  "Nunca troque roupa, expressão ou corpo, e não use a pessoa do modelo de arte.",
+].join(" ");
+
+/** O texto ainda tem o marcador de "Trocar o texto" por preencher. */
+export function hasUnfilledTextToken(text: string): boolean {
+  return text.includes(REPLACE_TEXT_TOKEN);
+}
+
+/** Liga/desliga um atalho resolvendo os conflitos de ART-04. */
+export function toggleArtShortcut(
+  current: ArtShortcuts,
+  key: keyof ArtShortcuts,
+): ArtShortcuts {
+  const next = { ...current, [key]: !current[key] };
+  if (key === "noText" && next.noText) next.replaceText = false;
+  if (key === "replaceText" && next.replaceText) next.noText = false;
+  return next;
+}
+
+/**
+ * Aplica "Trocar o texto" ao texto livre sem tocar no que a pessoa escreveu:
+ * acrescenta a instrução uma única vez (ações repetidas não duplicam).
+ */
+export function applyReplaceText(text: string): string {
+  if (text.includes(REPLACE_TEXT_INSTRUCTION)) return text;
+  const base = text.trim();
+  return base.length > 0
+    ? `${base}\n${REPLACE_TEXT_INSTRUCTION}`
+    : REPLACE_TEXT_INSTRUCTION;
+}
+
+/** Desfaz "Trocar o texto": remove só a linha da instrução. */
+export function removeReplaceText(text: string): string {
+  if (!text.includes(REPLACE_TEXT_INSTRUCTION)) return text;
+  return text
+    .split("\n")
+    .filter((line) => line.trim() !== REPLACE_TEXT_INSTRUCTION)
+    .join("\n")
+    .trim();
+}
+
+/** Instruções dos atalhos booleanos (troca de texto vive no texto livre). */
+export function shortcutInstructions(shortcuts?: ArtShortcuts): string {
+  if (!shortcuts) return "";
+  const parts: string[] = [];
+  if (shortcuts.noLogo) {
+    parts.push("Não inclua nenhum logo na arte, inclusive o do modelo de arte.");
+  }
+  if (shortcuts.noText) {
+    parts.push("Não inclua títulos, legendas nem o nome do aluno na arte.");
+  }
+  if (shortcuts.keepOriginal) {
+    parts.push(
+      "Manter a foto original: reforce a preservação integral da pessoa da foto.",
+    );
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Monta o prompt final usando o template salvo (ou o padrão), a regra fixa de
+ * preservação e as instruções dos atalhos. A regra fixa vai primeiro e não é
+ * anulável pelo texto livre; o servidor a replica de qualquer forma.
+ */
 export function buildGenerationPrompt(
   request: GenerationRequest,
   template?: string | null,
 ): string {
   const tpl =
     template && template.trim().length > 0 ? template : DEFAULT_PROMPT_TEMPLATE;
-  const prompt = renderPromptTemplate(tpl, contextFromRequest(request));
+  const rendered = renderPromptTemplate(tpl, contextFromRequest(request)).replace(/\b\d{3,4}\s*[x×]\s*\d{3,4}\b/g, "1024x1024");
+  const prompt = [PROTECTION_RULE, rendered.trim(), shortcutInstructions(request.shortcuts)]
+    .filter((part) => part.length > 0)
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
   // Nunca quebra: template inválido/vazio após render cai no padrão embutido.
   if (prompt.length === 0) {
     return renderPromptTemplate(
