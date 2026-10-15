@@ -1,7 +1,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { createWhatsAppProvider } from "../_shared/whatsapp/provider.ts";
 import { getWhatsAppMode } from "../_shared/whatsapp/types.ts";
-import { dispatchDelivery } from "../_shared/delivery/dispatch.ts";
+import { deliverySendBlock, dispatchDelivery } from "../_shared/delivery/dispatch.ts";
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "private, no-store" } });
 Deno.serve(async req => {
@@ -14,7 +14,18 @@ Deno.serve(async req => {
   if (!user) return json({ error: "Sessão inválida." }, 401);
   let body;
   try { body = await req.json(); } catch { return json({ error: "Pedido inválido." }, 400); }
-  if (!body || !["dispatch", "resend", "revoke"].includes(body.action) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.recipientId)) return json({ error: "Pedido inválido." }, 400);
+  if (!body || !["dispatch", "resend", "revoke", "capability"].includes(body.action)) return json({ error: "Pedido inválido." }, 400);
+  if (body.action === "capability") {
+    const reason = deliverySendBlock({
+      mode: getWhatsAppMode(name => Deno.env.get(name)),
+      publicUrl: (Deno.env.get("APP_PUBLIC_URL") ?? "").replace(/\/+$/, ""),
+      instanceId: Deno.env.get("ZAPI_INSTANCE_ID") ?? "",
+      albumReady: Deno.env.get("DELIVERY_ALBUM_READY") === "true",
+      provider: createWhatsAppProvider(),
+    });
+    return json(reason ? { ok: true, sending: "blocked", reason } : { ok: true, sending: "ready" });
+  }
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.recipientId)) return json({ error: "Pedido inválido." }, 400);
   if (body.action === "revoke") {
     const { data, error } = await caller.rpc("revoke_delivery_album", { p_recipient_id: body.recipientId });
     return error ? json({ error: "Não foi possível revogar o acesso." }, 403) : json(data);

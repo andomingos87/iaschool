@@ -9,6 +9,8 @@ import {
   validateDraftSelection,
   deliveryPreviewReady,
   deliveryPreparationState,
+  deliverySendBlockCopy,
+  deliverySendView,
   deliveryPreviewProblem,
   deliveryPhotoProblemLabel,
   canRevokeDeliveryAccess,
@@ -349,4 +351,21 @@ it("foto antiga pede atualização sem ser retirada como falha", () => {
   const batch = { status: "preparing", itemCount: 5, renderedCount: 0, failedCount: 5 };
   expect(deliveryPreparationState(batch, true)?.label).toBe("Atualizar fotos");
   expect(deliveryPreparationState({ ...batch, status: "canceled" }, true)?.label).toBe("Cancelado");
+});
+
+it("aprovado com envio fechado não se apresenta como fila", () => {
+  const batch = { status: "queued", itemCount: 2, renderedCount: 2, failedCount: 0 };
+  expect(deliveryPreparationState(batch, false, true)?.label).toBe("Aprovado, sem envio");
+  expect(deliveryPreparationState(batch, false, true)?.description).toContain("continua desligado");
+  expect(deliveryPreparationState(batch)?.label).toBeUndefined();
+  expect(deliverySendBlockCopy("paused")).toContain("pausado");
+  expect(deliverySendBlockCopy("album_not_ready")).toContain("álbum ainda não está liberado");
+  expect(deliverySendBlockCopy("public_url_invalid")).toContain("endereço público");
+  expect(deliverySendBlockCopy("provider_missing")).toBe(deliverySendBlockCopy("instance_missing"));
+  expect(deliverySendBlockCopy("unknown")).toContain("confirmar");
+  expect(deliverySendView({ isPending: true, isError: false })).toBe("loading");
+  expect(deliverySendView({ isPending: false, isError: true })).toBe("unknown");
+  expect(deliverySendView({ isPending: false, isError: false, data: { sending: "ready" } })).toBe("ready");
+  expect(deliverySendView({ isPending: false, isError: false, data: { sending: "blocked", reason: "paused" } })).toBe("paused");
+  expect(deliverySendView({ isPending: false, isError: false, data: { sending: "blocked", reason: "ZAPI_TOKEN" } })).toBe("unknown");
 });

@@ -90,6 +90,8 @@ Decisão vigente do usuário: as fotos do álbum permanecem nítidas, sem desfoq
 
 Verificação local: 320 testes do app em 38 arquivos e typecheck da raiz passaram. Ensaio no navegador integrado com fixture sintética confirmou atualizar três fotos antigas e aprovar; também retirar uma foto com falha, salvar duas e aprovar. A instância sintética 5180 foi encerrada sem alterar a instância real 5179. Nenhuma mensagem WhatsApp ou chamada OpenAI.
 
+- Envio na tela de entregas (15/10/2026, código local, função não publicada): `school-delivery` aceita `capability` e devolve só `sending: ready` ou `blocked` com um motivo (`paused`, `provider_missing`, `album_not_ready`, `public_url_invalid`, `instance_missing`). Não devolve segredo, URL nem identificador. O botão "Enviar texto e link" fica oculto até `ready`. Lote `queued` com envio fechado mostra "Aprovado, sem envio" e "Sem envio", no lugar de "Na fila". Falha da consulta também esconde o botão. Revogar acesso continua disponível. A função publicada ainda não tem essa ação. Verificação local: 322 testes em `src`, 5 testes Deno de `dispatch.test.ts`, typecheck verde e fixture sintética. Integração no banco real não rodou.
+
 
 ### Publicação coordenada das fotos nítidas — 13/10/2026
 

@@ -19,8 +19,13 @@ Deno.test('fluxo falso manda somente texto + link opaco, aceitação não entreg
 Deno.test('modo pausado, álbum indisponível e portão fechado não transmitem',async()=>{
  const provider=new FakeWhatsAppProvider();
  const deps={userId:'u',mode:'paused',publicUrl:'https://school.test',instanceId:'i',albumReady:true,provider,rpc:async(name:string)=>({data:name==='reserve_delivery_dispatch'?{messageId:'m',phone:'+5511999999999',fields}:false,error:null})};
- eq((await dispatchDelivery(deps,'r',false)).code,'sending_disabled');
- eq((await dispatchDelivery({...deps,mode:'controlled_zapi',albumReady:false},'r',false)).code,'sending_disabled');
+ const paused=await dispatchDelivery(deps,'r',false);
+ eq(paused.code,'sending_disabled');eq(paused.reason,'paused');
+ const album=await dispatchDelivery({...deps,mode:'controlled_zapi',albumReady:false},'r',false);
+ eq(album.reason,'album_not_ready');
+ eq((await dispatchDelivery({...deps,mode:'controlled_zapi',provider:null},'r',false)).reason,'provider_missing');
+ eq((await dispatchDelivery({...deps,mode:'controlled_zapi',publicUrl:'https://school.test?token=secret'},'r',false)).reason,'public_url_invalid');
+ eq((await dispatchDelivery({...deps,mode:'controlled_zapi',instanceId:''},'r',false)).reason,'instance_missing');
  eq((await dispatchDelivery({...deps,mode:'controlled_zapi'},'r',false)).code,'dispatch_blocked');eq(provider.sent.length,0);
 });
 Deno.test('timeout permanece incerto sem segunda transmissão',async()=>{
