@@ -27,7 +27,7 @@ import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { DeliveryDraftDialog } from "@/components/delivery-draft-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDeliveryService } from "@/lib/delivery-service";
-import { canResendRecipient, canTransmitRecipient, isActiveDeliveryBatch, canApproveDeliveryForSchool, deliveryPreparationState, canRevokeDeliveryAccess } from "@/lib/delivery-workspace";
+import { canResendRecipient, canTransmitRecipient, isActiveDeliveryBatch, canApproveDeliveryForSchool, deliveryPreparationState, canRevokeDeliveryAccess, deliverySendBlockCopy, deliverySendBlocked, deliverySendView, type DeliverySendView } from "@/lib/delivery-workspace";
 import { useAuth } from "@/hooks/use-auth";
 import { useEvent } from "@/hooks/use-events";
 import {
@@ -72,12 +72,19 @@ function recipientBadgeVariant(status: DeliveryRecipientStatus) {
 /**
  * Entregas do evento (Fase 5, W3 — `/eventos/:id/entregas`): preflight por
  * responsável, criação do lote, progresso das fotos, prévia nítida e
- * aprovação por papel. O envio em si chega no W4. Enquanto não há sinal de
- * modo no cliente, esta tela prepara o lote e diz que o WhatsApp está desligado.
+ * aprovação por papel. O botão de transmitir só aparece quando a função
+ * `school-delivery` responde `sending: ready`. Motivo pausado não traz segredo.
  */
 export default function EventDeliveriesPage() {
   const params = useParams<{ id: string }>();
   const eventId = params.id ?? "";
+  const sendCapability = useQuery({
+    queryKey: ["delivery-send-capability"],
+    queryFn: () => getDeliveryService().capability(),
+    retry: false,
+    staleTime: 30_000,
+  });
+  const sendView = deliverySendView(sendCapability);
   const event = useEvent(eventId || null);
   const preflight = useDeliveryPreflight(eventId || null);
   const batches = useDeliveryBatches(eventId || null);
@@ -341,6 +348,7 @@ export default function EventDeliveriesPage() {
               key={batch.id}
               batch={batch}
               canApprove={canApprove}
+              sendView={sendView}
               busy={
                 approveBatch.isPending ||
                 cancelBatch.isPending ||
@@ -397,9 +405,15 @@ export default function EventDeliveriesPage() {
   );
 }
 
+function recipientStatusLabel(status: string, sendView: DeliverySendView) {
+  if (deliverySendBlocked(sendView) && status === "queued") return "Sem envio";
+  return DELIVERY_RECIPIENT_STATUS_LABEL[status as DeliveryRecipientStatus] ?? status;
+}
+
 function BatchCard({
   batch,
   canApprove,
+  sendView,
   busy,
   onPreview,
   onCancel,
@@ -407,6 +421,7 @@ function BatchCard({
 }: {
   batch: DeliveryBatchSummary;
   canApprove: boolean;
+  sendView: DeliverySendView;
   busy: boolean;
   onPreview: () => void;
   onCancel: () => void;
@@ -419,14 +434,15 @@ function BatchCard({
       : 0;
   const terminal = TERMINAL_BATCH_STATUSES.includes(batch.status);
   const needsPhotoUpdate = detail.data?.recipients.some((recipient) => recipient.lastError === "render_atualizacao_necessaria") ?? false;
-  const preparation = deliveryPreparationState(batch, needsPhotoUpdate);
+  const sendBlocked = deliverySendBlocked(sendView);
+  const preparation = deliveryPreparationState(batch, needsPhotoUpdate, sendBlocked);
 
   return (
     <Card className="border-border" data-testid={`card-delivery-batch-${batch.id}`}>
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Badge variant={statusBadgeVariant(batch.status)} data-testid={`badge-batch-status-${batch.id}`}>
+            <Badge variant={sendBlocked && batch.status === "queued" ? "secondary" : statusBadgeVariant(batch.status)} data-testid={`badge-batch-status-${batch.id}`}>
               {preparation?.label ?? DELIVERY_BATCH_STATUS_LABEL[batch.status]}
             </Badge>
             <span className="text-xs font-normal text-muted-foreground">
@@ -457,7 +473,9 @@ function BatchCard({
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         {preparation && <p className="rounded-md bg-muted/40 p-3 text-sm" role="status">{preparation.description}</p>}
-        <p className="text-xs text-muted-foreground">Abra o álbum para conferir as fotos e a mensagem antes de aprovar.</p>
+        {!(sendBlocked && batch.status === "queued") && (
+          <p className="text-xs text-muted-foreground">Abra o álbum para conferir as fotos e a mensagem antes de aprovar.</p>
+        )}
         <div className="space-y-1">
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>
@@ -477,7 +495,7 @@ function BatchCard({
           {Object.entries(batch.recipientsByStatus)
             .map(
               ([status, count]) =>
-                `${DELIVERY_RECIPIENT_STATUS_LABEL[status as DeliveryRecipientStatus] ?? status}: ${count}`,
+                `${recipientStatusLabel(status, sendView)}: ${count}`,
             )
             .join(" · ")}
         </p>
@@ -505,20 +523,20 @@ function BatchCard({
                     </span>
                   )}
                   <Badge variant={recipientBadgeVariant(recipient.status)}>
-                    {recipient.lastError === "render_atualizacao_necessaria" ? "Atualizar fotos" : recipient.status === "preparing" && recipient.itemsFailed > 0 ? "Precisa de atenção" : DELIVERY_RECIPIENT_STATUS_LABEL[recipient.status]}
+                    {recipient.lastError === "render_atualizacao_necessaria" ? "Atualizar fotos" : recipient.status === "preparing" && recipient.itemsFailed > 0 ? "Precisa de atenção" : recipientStatusLabel(recipient.status, sendView)}
                   </Badge>
                 </span>
               </div>
             ))}
           </div>
         )}
-        <RecipientDeliveryActions batchId={batch.id} canApprove={canApprove} />
+        <RecipientDeliveryActions batchId={batch.id} canApprove={canApprove} sendView={sendView} />
       </CardContent>
     </Card>
   );
 }
 
-function RecipientDeliveryActions({ batchId, canApprove }: { batchId: string; canApprove: boolean }) {
+function RecipientDeliveryActions({ batchId, canApprove, sendView }: { batchId: string; canApprove: boolean; sendView: DeliverySendView }) {
   const queryClient = useQueryClient();
   const [confirm, setConfirm] = useState<{ action: "dispatch" | "resend" | "revoke"; id: string; name: string; phone: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -536,15 +554,15 @@ function RecipientDeliveryActions({ batchId, canApprove }: { batchId: string; ca
   if (!draft.data) return draft.isError ? <p className="text-xs text-destructive" role="alert">As ações de envio estão indisponíveis. {draft.error.message}</p> : null;
   return <div className="space-y-3 border-t pt-3">
     <h3 className="font-medium">Envio e acesso ao álbum</h3>
-    <p className="text-xs text-muted-foreground">Depois da aprovação, envie o link. A confirmação de entrega aparece quando o WhatsApp informar o resultado.</p>
+    <p className="text-xs text-muted-foreground">{sendView === "loading" ? "Conferindo se o envio está liberado." : sendView === "ready" ? "Depois da aprovação, envie o link. A confirmação de entrega aparece quando o WhatsApp informar o resultado." : deliverySendBlockCopy(sendView)}</p>
     {draft.data.recipients.map(recipient => <div key={recipient.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
       <div><p className="text-sm font-medium">{recipient.guardianName} <span className="font-mono text-xs">{recipient.phoneMasked}</span></p>
-        <p className="text-xs text-muted-foreground">{DELIVERY_RECIPIENT_STATUS_LABEL[recipient.status as DeliveryRecipientStatus] ?? recipient.status}
+        <p className="text-xs text-muted-foreground">{recipientStatusLabel(recipient.status, sendView)}
           {recipient.updatedAt ? ` · atualizado em ${formatDateTime(recipient.updatedAt)}` : ""}</p>
         {recipient.blockedReason && <p className="text-xs text-destructive">{DELIVERY_BLOCKED_REASON_LABEL[recipient.blockedReason] ?? "Confira a autorização, o número e a disponibilidade das fotos."}</p>}</div>
       {canApprove && <div className="flex flex-wrap gap-2">
-        {canTransmitRecipient(recipient.status, draft.data.batch.approvedVersion === draft.data.batch.version) && <Button size="sm" disabled={act.isPending} onClick={() => setConfirm({ action: "dispatch", id: recipient.id, name: recipient.guardianName, phone: recipient.phoneMasked })}>Enviar texto e link</Button>}
-        {canResendRecipient(recipient.status) && <Button size="sm" variant="outline" disabled={act.isPending} onClick={() => setConfirm({ action: "resend", id: recipient.id, name: recipient.guardianName, phone: recipient.phoneMasked })}>{recipient.status === "failed" ? "Retomar envio" : "Reenviar acesso"}</Button>}
+        {sendView === "ready" && canTransmitRecipient(recipient.status, draft.data.batch.approvedVersion === draft.data.batch.version) && <Button size="sm" disabled={act.isPending} onClick={() => setConfirm({ action: "dispatch", id: recipient.id, name: recipient.guardianName, phone: recipient.phoneMasked })}>Enviar texto e link</Button>}
+        {sendView === "ready" && canResendRecipient(recipient.status) && <Button size="sm" variant="outline" disabled={act.isPending} onClick={() => setConfirm({ action: "resend", id: recipient.id, name: recipient.guardianName, phone: recipient.phoneMasked })}>{recipient.status === "failed" ? "Retomar envio" : "Reenviar acesso"}</Button>}
         {canRevokeDeliveryAccess(recipient.status) && <Button size="sm" variant="outline" disabled={act.isPending} onClick={() => setConfirm({ action: "revoke", id: recipient.id, name: recipient.guardianName, phone: recipient.phoneMasked })}>Revogar acesso</Button>}
       </div>}
     </div>)}

@@ -11,8 +11,24 @@ export interface DispatchDeps {
   provider: WhatsAppProvider | null;
   rpc(name: string, args: Row): Promise<{ data: unknown; error: unknown }>;
 }
+export type DeliverySendBlock =
+  | "paused"
+  | "provider_missing"
+  | "album_not_ready"
+  | "public_url_invalid"
+  | "instance_missing";
+/** Primeira trava fechada, sem devolver segredo, URL ou identificador. */
+export function deliverySendBlock(deps: Pick<DispatchDeps, "mode" | "provider" | "albumReady" | "publicUrl" | "instanceId">): DeliverySendBlock | null {
+  if (deps.mode !== "controlled_zapi") return "paused";
+  if (!deps.provider) return "provider_missing";
+  if (!deps.albumReady) return "album_not_ready";
+  if (!/^https:\/\/[^\s?#]+$/.test(deps.publicUrl)) return "public_url_invalid";
+  if (!deps.instanceId) return "instance_missing";
+  return null;
+}
 export async function dispatchDelivery(deps: DispatchDeps, recipientId: string, resend: boolean): Promise<Row> {
-  if (deps.mode !== "controlled_zapi" || !deps.provider || !deps.albumReady || !/^https:\/\/[^\s?#]+$/.test(deps.publicUrl) || !deps.instanceId) return { error: "Envio desligado ou álbum indisponível.", code: "sending_disabled" };
+  const blocked = deliverySendBlock(deps);
+  if (blocked || !deps.provider) return { error: "Envio desligado ou álbum indisponível.", code: "sending_disabled", reason: blocked ?? "provider_missing" };
   const token = createOpaqueToken();
   const reserved = await deps.rpc("reserve_delivery_dispatch", {
     p_recipient_id: recipientId, p_token_hash: await sha256Hex(token), p_instance_id: deps.instanceId,

@@ -201,13 +201,60 @@ export function requiresDeliveryApproval(
   return batch.approvedVersion !== batch.version;
 }
 
+export const DELIVERY_SEND_BLOCKS = [
+  "paused",
+  "provider_missing",
+  "album_not_ready",
+  "public_url_invalid",
+  "instance_missing",
+] as const;
+export type DeliverySendBlock = (typeof DELIVERY_SEND_BLOCKS)[number];
+export type DeliverySendView = "loading" | "ready" | DeliverySendBlock | "unknown";
+
+export function isDeliverySendBlock(value: unknown): value is DeliverySendBlock {
+  return (
+    typeof value === "string" &&
+    (DELIVERY_SEND_BLOCKS as readonly string[]).includes(value)
+  );
+}
+
+/** O navegador só repete o motivo. Valor de segredo ou URL não entra aqui. */
+export function deliverySendBlockCopy(view: Exclude<DeliverySendView, "loading" | "ready">): string {
+  if (view === "album_not_ready")
+    return "O álbum ainda não está liberado para o responsável. Nenhuma mensagem sai.";
+  if (view === "public_url_invalid")
+    return "O endereço público do álbum ainda não está configurado. Nenhuma mensagem sai.";
+  if (view === "provider_missing" || view === "instance_missing")
+    return "O envio ainda não está configurado. Nenhuma mensagem sai.";
+  if (view === "paused")
+    return "O envio pelo WhatsApp está pausado. As fotos ficam neste preparo e nenhuma mensagem sai.";
+  return "Não foi possível confirmar se o envio está liberado. Nenhuma mensagem sai até essa confirmação.";
+}
+
+export function deliverySendView(state: {
+  isPending: boolean;
+  isError: boolean;
+  data?: { sending?: string; reason?: unknown } | null;
+}): DeliverySendView {
+  if (state.isPending) return "loading";
+  if (state.isError || !state.data) return "unknown";
+  if (state.data.sending === "ready") return "ready";
+  if (state.data.sending === "blocked" && isDeliverySendBlock(state.data.reason))
+    return state.data.reason;
+  return "unknown";
+}
+
+export function deliverySendBlocked(view: DeliverySendView): boolean {
+  return view !== "loading" && view !== "ready";
+}
+
 /** Preparo de imagem não significa entrega ao responsável. */
 export function deliveryPreparationState(batch: {
   status: string;
   itemCount: number;
   renderedCount: number;
   failedCount: number;
-}, refreshRequired = false) {
+}, refreshRequired = false, sendBlocked = false) {
   if (batch.status === "canceled")
     return {
       label: "Cancelado",
@@ -238,6 +285,12 @@ export function deliveryPreparationState(batch: {
       label: "Conferir fotos",
       description:
         "Confira as fotos e a mensagem antes de aprovar. Nada foi enviado nesta etapa.",
+    };
+  if (sendBlocked && batch.status === "queued")
+    return {
+      label: "Aprovado, sem envio",
+      description:
+        "As fotos já foram conferidas. O envio ao responsável continua desligado.",
     };
   return null;
 }

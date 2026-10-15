@@ -59,12 +59,15 @@ export async function prepareAdjustmentsUi(data: DataLayer, syntheticUrl: string
   function summary(): DeliveryBatchSummary { return { id: batchId, status: draft.batch.status as DeliveryBatchSummary["status"], termsVersion: "test.v1",
     recipientCount: 1, itemCount: draft.recipients[0]!.items.filter(i => i.selected).length,
     renderedCount: draft.recipients[0]!.items.filter(i => i.selected && i.renderStatus === "done").length, failedCount: draft.recipients[0]!.items.filter(i => i.selected && i.renderStatus === "failed").length,
-    createdAt: new Date().toISOString(), recipientsByStatus: { [draft.recipients[0]!.status]: 1 } }; }
-  const deliveryFailure = new URLSearchParams(location.search).get("falha") === "1";
+    createdAt: new Date().toISOString(), approvedAt: draft.batch.approvedVersion != null ? "2026-10-15T09:46:00.000Z" : undefined, recipientsByStatus: { [draft.recipients[0]!.status]: 1 } }; }
+  const params = new URLSearchParams(location.search);
+  const deliveryFailure = params.get("falha") === "1";
+  const sendReady = params.get("envio") === "1";
   let previewFailure = deliveryFailure;
-  let refreshRequired = new URLSearchParams(location.search).get("atualizar") === "1";
+  let refreshRequired = params.get("atualizar") === "1";
   if (deliveryFailure) { draft.batch.status = "preparing"; draft.recipients[0]!.status = "preparing"; draft.recipients[0]!.items[0]!.renderStatus = "failed"; }
   if (refreshRequired) { draft.batch.status = "preparing"; draft.recipients[0]!.status = "preparing"; for (const item of draft.recipients[0]!.items) item.renderStatus = "failed"; }
+  if (params.get("aprovado") === "1") { draft.batch.approvedVersion = draft.batch.version; draft.batch.status = "queued"; draft.recipients[0]!.status = "queued"; }
   data.deliveries.retryFailedRenders = async () => {
     refreshRequired = false;
     const failed = draft.recipients[0]!.items.filter(item => item.selected && item.renderStatus === "failed");
@@ -110,6 +113,8 @@ export async function prepareAdjustmentsUi(data: DataLayer, syntheticUrl: string
       return json({ version: draft.batch.version });
     }
     if (endpoint.endsWith("/functions/v1/school-delivery")) {
+      if (body.action === "capability") return json(sendReady ? { ok: true, sending: "ready" } : { ok: true, sending: "blocked", reason: "paused" });
+      if (!sendReady && body.action !== "revoke") return json({ code: "sending_disabled", reason: "paused" }, 503);
       draft.recipients[0]!.status = body.action === "revoke" ? "revoked" : "accepted";
       if (body.action === "revoke") session = false;
       return json({ status: draft.recipients[0]!.status });

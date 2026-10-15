@@ -1,5 +1,11 @@
 import { getDataLayer } from "./data";
-import type { DeliveryDraft, DeliveryFields, RecipientSelection } from "./delivery-workspace";
+import {
+  deliverySendBlockCopy,
+  isDeliverySendBlock,
+  type DeliveryDraft,
+  type DeliveryFields,
+  type RecipientSelection,
+} from "./delivery-workspace";
 
 export interface AlbumPhoto { id: string; photoId: string; width: number; height: number; thumbUrl: string }
 export interface GuardianAlbum {
@@ -34,7 +40,11 @@ async function readResponse<T>(response: Response): Promise<T> {
   const data = body && typeof body === "object" ? body as Record<string, unknown> : null;
   const code = typeof data?.code === "string" ? data.code : typeof data?.error === "string" ? data.error : "";
   if (!response.ok || code || !data || data.ok === false) {
-    throw new DeliveryServiceError(response.ok ? 503 : response.status, SAFE_ERROR_MESSAGES[code] ?? publicError(response.status));
+    const reason = isDeliverySendBlock(data?.reason) ? data.reason : undefined;
+    const message = code === "sending_disabled" && reason
+      ? deliverySendBlockCopy(reason)
+      : SAFE_ERROR_MESSAGES[code] ?? publicError(response.status);
+    throw new DeliveryServiceError(response.ok ? 503 : response.status, message);
   }
   return body as T;
 }
@@ -48,18 +58,22 @@ export function createDeliveryService(config: { url: string; anonKey: string; to
       body: JSON.stringify(body), cache: "no-store",
     }));
   }
+  async function callFunction<T>(body: unknown): Promise<T> {
+    const token = await config.token();
+    if (!token) throw new DeliveryServiceError(401, "Entre novamente com sua conta da escola.");
+    return readResponse<T>(await transport(`${config.url}/functions/v1/school-delivery`, {
+      method: "POST", headers: { "Content-Type": "application/json", apikey: config.anonKey, Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body), cache: "no-store",
+    }));
+  }
   return {
     draft: (batchId: string) => rpc<DeliveryDraft>("delivery_draft_detail", { p_batch_id: batchId }),
     save: (batchId: string, version: number, fields: DeliveryFields, selection: RecipientSelection[]) =>
       rpc<{ version: number }>("save_delivery_draft", { p_batch_id: batchId, p_expected_version: version, p_fields: fields, p_selection: selection }),
     async act(action: "dispatch" | "resend" | "revoke", recipientId: string) {
-      const token = await config.token();
-      if (!token) throw new DeliveryServiceError(401, "Entre novamente com sua conta da escola.");
-      return readResponse<{ status: string }>(await transport(`${config.url}/functions/v1/school-delivery`, {
-        method: "POST", headers: { "Content-Type": "application/json", apikey: config.anonKey, Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action, recipientId }), cache: "no-store",
-      }));
+      return callFunction<{ status: string }>({ action, recipientId });
     },
+    capability: () => callFunction<{ ok: true; sending: "ready" | "blocked"; reason?: string }>({ action: "capability" }),
   };
 }
 let schoolService: ReturnType<typeof createDeliveryService> | null = null;
