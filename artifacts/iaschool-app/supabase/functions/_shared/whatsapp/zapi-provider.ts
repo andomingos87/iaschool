@@ -1,3 +1,4 @@
+import { renderDeliveryMessage, type DeliveryMessageFields } from "../delivery/message.ts";
 import {
   toZApiPhone,
   type NormalizedStatusEvent,
@@ -31,8 +32,8 @@ export class ZApiProvider implements WhatsAppProvider {
     return this.sendText(phoneE164, WHATSAPP_MESSAGE_TEMPLATES.guardian_consent.render(link));
   }
 
-  sendDeliveryReady(phoneE164: string, link: string): Promise<ProviderMessageResult> {
-    return this.sendText(phoneE164, WHATSAPP_MESSAGE_TEMPLATES.delivery_ready.render(link));
+  sendDeliveryReady(phoneE164: string, link: string, fields?: DeliveryMessageFields): Promise<ProviderMessageResult> {
+    return this.sendText(phoneE164, fields ? renderDeliveryMessage(fields, link) : WHATSAPP_MESSAGE_TEMPLATES.delivery_ready.render(link));
   }
 
   normalizeWebhook(payload: unknown): NormalizedStatusEvent[] {
@@ -75,7 +76,7 @@ export class ZApiProvider implements WhatsAppProvider {
       return { status: "unknown", errorCode: "provider_timeout_or_network_error" };
     }
     if (!response.ok) {
-      return { status: "failed", errorCode: `provider_http_${response.status}` };
+      return { status: response.status >= 500 || response.status === 408 ? "unknown" : "failed", errorCode: `provider_http_${response.status}` };
     }
     try {
       const result = await response.json() as Record<string, unknown>;

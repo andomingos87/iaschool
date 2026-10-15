@@ -1,5 +1,48 @@
 # Ensaio de migrations (dry-run com rollback)
 
+## Geração em lote — PostgreSQL exclusivamente local
+
+Execute `python3 artifacts/iaschool-app/supabase/rehearsal/test-generation-batches-local.py`.
+Cria PostgreSQL descartável por socket, sem credenciais ou conexão do produto,
+executa `generation-batches.sql` duas vezes e verifica concorrência de cota,
+idempotência, contratos, leases, início único do provedor, recuperação de arte,
+revogação, fotos de evento com aluno sozinho, retry manual e permissões.
+Usa dados sintéticos e encerra/apaga os temporários ao terminar. Não faz chamadas
+à OpenAI, não aplica migration real e não comprova o worker publicado.
+
+## Ajustes de 11/10/2026 — ensaio exclusivamente local
+
+Execute `python3 artifacts/iaschool-app/supabase/rehearsal/test-adjustments-local.py`.
+O comando cria um Postgres descartável em socket próprio (sem TCP, credenciais
+ou acesso ao produto), compila o SQL, executa o roundtrip sintético e testa uso
+único/revogação com conexões concorrentes. Encerra o processo e apaga os arquivos
+temporários ao terminar. Requer os binários locais do PostgreSQL.
+
+`local-adjustments-fixture.sql` é um fixture mínimo, não o schema de produção.
+A extensão pgvector é substituída somente nele por um domínio `real[]`; o ensaio
+não verifica reconhecimento/embedding. `adjustments-delivery-checks.sql` inclui
+o guard de porta/socket e usa rollback. Produção, migrations remotas e envio
+real continuam dependentes de autorização separada.
+
+### Ensaio integrado publicado (autorização própria)
+
+Em 12/10/2026, depois da autorização e aplicação/publicação do lote, passou
+`tests/adjustments-integrated.integration.test.ts`: banco/workers/Edge/proxy
+reais com escola/conta/foto inteiramente sintéticos, aprovação pausada, sessão,
+uso único, download e revogação. Nenhum WhatsApp. É opt-in com
+`IASCHOOL_ADJUSTMENTS_INTEGRATED=1` e `APP_PUBLIC_URL` HTTPS do app; executar
+somente esse arquivo após autorização, não a suíte inteira por engano.
+
+A geração real tem outro opt-in em
+`artifacts/api-server/tests/generation-real-synthetic.integration.test.ts`,
+`IASCHOOL_RUN_REAL_IMAGE_SMOKE=approved_single_synthetic_generation`. Faz uma
+requisição paga com a chave já configurada no servidor, sem lê-la; exige
+aprovação própria para cada nova execução. A rodada autorizada de 12/10/2026
+passou com PNG 1024, pixels preservados e cota única. Ambos os ensaios limpam
+suas fixtures e conferem ausência de resíduos; não criam arquivos de evidência.
+
+Os roteiros abaixo são históricos; não são autorização para executar no banco real.
+
 Sem branching no plano do Supabase, o ensaio roda **na própria base**, dentro
 de uma transação que termina em `rollback`. DDL é transacional no Postgres,
 então nada persiste — nem tabela, nem policy, nem dado semeado.

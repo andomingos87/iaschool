@@ -21,7 +21,7 @@ export interface ProviderMessageResult {
 export interface WhatsAppProvider {
   sendOtp(phoneE164: string, code: string): Promise<ProviderMessageResult>;
   sendConsentRequest(phoneE164: string, link: string): Promise<ProviderMessageResult>;
-  sendDeliveryReady(phoneE164: string, link: string): Promise<ProviderMessageResult>;
+  sendDeliveryReady(phoneE164: string, link: string, fields?: import("../delivery/message.ts").DeliveryMessageFields): Promise<ProviderMessageResult>;
   normalizeWebhook(payload: unknown): NormalizedStatusEvent[];
 }
 
