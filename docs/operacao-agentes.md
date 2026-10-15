@@ -44,14 +44,21 @@ alvo e o roadmap por fases.
 | 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ✅ M2 (20/09/2026) e M3 (21/09/2026) concluídos: `photos`, `batch_jobs`, buckets, upload em massa no cliente; fila `photo_jobs`, `ingest-worker` (miniaturas WebP, `/health`), galeria virtualizada e progresso por Realtime. `ingest-worker` implantado na Fly em 26/09/2026 |
 | 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | 🔬 M0 (spike) concluído (31/08/2026); ✅ **M4, M5 e M6 concluídos** (21/09/2026): consentimento por escopo, rosto de referência, `face-worker` em Python rodado contra o banco real, `photo_faces`, busca vetorial isolada por escola, pasta do aluno, e a tela de revisão por aluno com trilha `biometric_events` e expurgo diário. Os dois workers rodam na Fly desde 26/09/2026. Faltam as medições de aceite (§12.2) com acervo sintético |
 | 4 — Autorização granular | Escopos, revogação, papel `guardian` | ❌ |
-| 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
+| 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | Wizard de artes por alunos/turmas publicado em 12/10/2026; migration aplicada, API v6/ingest v4 saudáveis e app conferido. Entrega comercial/Meta e templates seguem pendentes |
+| Lote 11/10/2026 — ajustes | Cadastro, artes, pasta/ZIP, revisão/referências, proteção, preparo e álbum temporário | Fotos nítidas nas entregas publicadas e verificadas em 13/10, substituindo proteção manual de S05. Migration original_photos, prévia v9, ingest v6 e app promovido; ensaio sintético real passou, zero WhatsApp. S01–S07 implementadas e publicadas em 12/10/2026: migrations/Edge Functions, Vercel app e Fly API/ingest/face. Ensaio integrado sintético e uma geração real verdes; sessão/download/revogação comprovados, zero WhatsApp e gate false. [Overview](specs/ajustes-2026-10-11/overview.md). Gates para dados reais, termo entre famílias e comercial permanecem; não fecha Fase 4 ou W4 |
+
+**Atualizado em 12/10/2026:** wizard de artes publicado; a tabela
+mantém os estados históricos das fases e não comprova serviços remotos atuais.
+As decisões N-D1–N-D13 do Notion foram transcritas no overview, sem renumerar
+D1–D8 da spec de WhatsApp. Para o novo alvo de logo/cores, faixa, proteção e
+álbum/reenvio, consultar S01–S07; descrições abaixo da operação antiga não
+substituem essas specs. Nenhuma fase ou marco foi marcado concluído nesta rodada.
 
 O detalhe por item, com o que está feito e o que falta em cada fase, está em
 [`BACKLOG.md`](../BACKLOG.md). Esta tabela é o resumo; o backlog é a fonte.
 
 **O que existe hoje**: o núcleo herdado da Fase 0 (cadastro com aprovação,
-autenticação, conformidade ECA, cota de geração e geração **unitária** de arte,
-1 aluno por vez), o M1 — escola como tenant, RLS por escola, responsáveis
+autenticação, conformidade ECA, cota de geração e wizard de arte por aluno/turma com uma arte por aluno), o M1 — escola como tenant, RLS por escola, responsáveis
 com OTP, cadastro da escola e turmas (`classes`) ligadas ao aluno —, o M2 —
 eventos (`/eventos`), upload em massa no cliente com dedup por hash e retomada,
 tabela `photos` e buckets por escola — e o M3 — fila `photo_jobs`,
@@ -159,6 +166,7 @@ consentimento ou compartilhamento, use a skill `eca-digital`
 | [`docs/pivotagem-iaschool.md`](pivotagem-iaschool.md) | Plano da pivotagem, roadmap por fases, decisões em aberto |
 | [`docs/pendencias-producao.md`](pendencias-producao.md) | O que falta para rodar com dado real (domínio, Resend, OTP) |
 | [`docs/spec-upload-massa-reconhecimento-facial.md`](spec-upload-massa-reconhecimento-facial.md) | Spec das Fases 2 e 3: upload em massa, biometria, fila de revisão, pasta do aluno |
+| [Overview — ajustes de 11/10/2026](specs/ajustes-2026-10-11/overview.md) | Sete specs, N-D1–N-D13, rastreabilidade T01–T12, implementação/publicação verificadas, ensaio sintético real e gates de produção preservados |
 | [`docs/spike-reconhecimento-facial.md`](spike-reconhecimento-facial.md) | Spike M0: números medidos do motor facial, limiares calibrados e o que ficou sem medir |
 | [`docs/estimativa-custos-por-aluno.md`](estimativa-custos-por-aluno.md) | Custo operacional por cenário de escala e por aluno, base para precificar; recalculável por `../scripts/custos-por-aluno.py` |
 | [`docs/diagnostico-geracao-imagens.md`](diagnostico-geracao-imagens.md) | Diagnóstico da falha de geração de imagens |
@@ -426,3 +434,11 @@ A documentação operacional atual deve ficar consistente com os scripts reais.
   a publicar e migrations a aplicar. Quando não existirem, declare isso
   explicitamente.
 - Sugira um próximo passo concreto, sem afirmar que ele já foi executado.
+
+## Wizard de artes — publicação de 12/10/2026
+
+Publicado em 12/10/2026: app Vercel `dpl_5pRkJ2TuKri1r6FGRYZSTaBUkU7f` promovido em `https://iaschool-app.vercel.app`, API v6 e ingest v4 saudáveis na Fly. Migration `iaschool_generation_batches` (20261012194454) aplicada via MCP local. Sessão do app carregou wizard e autocomplete sem erro; endpoints sem sessão retornaram 401. Privilégios das tabelas internas e helpers privados conferidos no banco real. Sem nova geração OpenAI; teste do lote com provedor simulado não comprova uma geração real remota. WhatsApp comercial permanece desligado; nenhuma Edge Function mudou neste wizard. Verificação local: 313 testes app, 49 API, 58 ingest, PostgreSQL descartável e typecheck/build verdes. [Spec S08](specs/ajustes-2026-10-11/08-wizard-geracao-lote.md).
+
+### Ensaio posterior do wizard — 12/10/2026
+
+Em 12/10/2026, uma geração sintética adicional autorizada passou pelo domínio do app, API v6 e ingest v4 publicados: lote com um aluno, uma tentativa e uma cota; pedido idempotente, listagem/retomada, PNG 1024×1024 salvo na galeria e download real, revogação bloqueando elegibilidade e nova assinatura. Zero mensagens WhatsApp. O corpo do teste passou; o cleanup inicial falhou ao usar download em cache para conferir remoção. A verificação foi corrigida para metadados do Storage, a limpeza foi concluída sem repetir geração e ausência de conta/escola/aluno/lote/arte/arquivos/cota/logs/filas conferida. 49 testes locais API e typecheck passaram depois da correção; teste pago ficou desativado na segunda rodada.

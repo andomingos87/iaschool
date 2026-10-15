@@ -1,8 +1,14 @@
 # Spec — Ajustes de cadastro, arte, escola e entrega
 
-**Data:** 07/10/2026.
-**Estado:** proposta. Nada disto está implementado.
-**Pedido:** onze ajustes vistos no app em uso (cadastro de aluno, ficha,
+**Data de origem:** 07/10/2026.
+**Atualizado em:** 11/10/2026.
+**Estado:** baseline de 07/10 conciliada com as decisões do Notion de 11/10.
+O backlog registra parte dos ajustes de 07/10 implementada e conferida localmente;
+§6 permanece parcial e §9 continua sem escolha. As referências de “Estado atual”
+abaixo descrevem o cenário inicial de 07/10, anterior àquela implementação.
+Os novos alvos de 11/10 estão especificados, ainda sem implementação/aceite;
+esta atualização documental não revalida produção.
+**Pedido original:** onze ajustes vistos no app em uso (cadastro de aluno, ficha,
 criação de arte, primeiro login de escola, gestão da escola e envio do evento).
 **Acompanhamento:** [`BACKLOG.md`](../BACKLOG.md), seção "Ajustes de produto
 (07/10/2026)". Este documento não fecha a Fase 4 nem substitui
@@ -10,6 +16,11 @@ criação de arte, primeiro login de escola, gestão da escola e envio do evento
 nem [`spec-upload-massa-reconhecimento-facial.md`](spec-upload-massa-reconhecimento-facial.md).
 
 Assessoria técnica de produto, não parecer jurídico.
+
+O detalhamento executável da rodada nova está no
+[overview de 11/10](specs/ajustes-2026-10-11/overview.md). T01–T12 e N-D1–N-D13
+identificam o Notion de 11/10, não as seções deste documento ou as decisões da
+spec de WhatsApp. Não interpretar um item feito em 07/10 como aceite da extensão nova.
 
 ---
 
@@ -36,7 +47,7 @@ fluxo comercial de WhatsApp. Vale a regra bloqueante de [`AGENTS.md`](../AGENTS.
 
 ## 0.1 O que não se mistura
 
-Hoje a palavra "autorização" aparece em quatro lugares que fazem coisas
+No cenário inicial, a palavra "autorização" aparece em quatro lugares que fazem coisas
 diferentes. As specs 1, 2 e 11 separam isso. Não juntar de novo.
 
 | O quê | Onde está hoje | Quem decide | O que libera | O que não libera |
@@ -46,16 +57,32 @@ diferentes. As specs 1, 2 e 11 separam isso. Não juntar de novo.
 | Foto para reconhecimento | Toggle na ficha → `authorizations.scope = biometric_sorting` | A escola declara | Cadastrar rosto de referência e guardar embedding | Envio ao responsável |
 | Envio por WhatsApp | No código local, pedido ao responsável; na tela publicada que originou o pedido, ainda parece um toggle | Só o responsável, pelo link, no WhatsApp verificado | Entrega da pasta daquele aluno | Deixar o rosto nítido na foto de outra família |
 
-A regra do pixel, já implementada, continua:
+A separação de finalidades continua. A regra de pixel abaixo descreve o código
+local anterior ao lote novo, não o novo alvo: `delivery-render.ts` recompõe
+rostos nítidos de filhos confirmados e adulto/equipe sobre uma base desfocada.
+Uma autorização de `delivery_whatsapp` própria não libera outra família.
 
-> Na foto entregue a um responsável, fica nítido só o filho dele (rosto
-> confirmado na revisão) e adulto/equipe confirmado. Todo o resto fica
-> desfocado, mesmo que a outra criança tenha autorização própria.
+**Alvo conciliado em 11/10:** [S05 — Proteção localizada](specs/ajustes-2026-10-11/05-protecao-localizada.md)
+substitui o desfoque global. Cenário e pessoas autorizadas ficam nítidos;
+criança sem autorização aplicável e desconhecido são protegidos por inteiro,
+com máscara revisável. Outra criança só pode ficar nítida para outras famílias
+com prova explícita que cubra esse escopo (N-D3), após conferir o termo/aceite.
+Sem prova ou proteção segura, manter a foto protegida/pendente. Não presumir
+que esse consentimento já existe nem que o código atual implementa a mudança.
 
-Evidência: `artifacts/ingest-worker/src/delivery-render.ts` (comentário do
-arquivo e a composição nítido-sobre-desfocado). Base: Decreto nº 12.880/2026,
-art. 35. A frase "se não autorizar, o rosto aparece borrado nas outras fotos"
-é o efeito certo. Autorizar não pode ter o efeito inverso.
+## 0.2 Conciliação com 11/10/2026
+
+| Trecho de 07/10 | Novo alvo, ainda pendente |
+| --- | --- |
+| §2 e regra de pixel | S05: proteção localizada da pessoa inteira; outra família exige escopo explícito, N-D3/N-D4/N-D10 |
+| §5 e §7 | S01: logo e cores configurados da escola saem da interface e dos usos no produto; dados antigos não são apagados nesta rodada |
+| §5, §9 e §12, faixa de IA | S02: novas artes sem faixa; arquivos antigos intactos, N-D5/N-D13; arte em massa continua sem escolha |
+| §8, cores no assistente | S01/S02: vínculo aluno/escola continua, cores configuradas da escola não entram no prompt |
+| §11, preparo/envio | S06/S07: editor, seleção/versionamento, status separados e álbum privado; mensagem só texto + link, N-D2/N-D7–N-D9/N-D12 |
+
+S02 também detalha upload/atalhos e composição da pessoa original (T01/T02/T04,
+N-D1/N-D11); S03 cobre eventos/ZIP (T07/T08); S04 cobre revisão/referências
+(T12/T09). Esses itens não são implementação implícita dos ajustes antigos.
 
 ---
 
@@ -193,7 +220,8 @@ Na ficha, um bloco só, com duas linhas e uma frase de efeito:
 - **Reconhecer o rosto.** Interruptor da escola. Ligado: pode haver rosto de
   referência e o aluno entra na sugestão da revisão. Desligado: não se
   cadastra referência, não se persiste embedding, e qualquer rosto dele numa
-  foto de evento permanece sem atribuição e sai desfocado em toda entrega.
+  foto de evento permanece sem atribuição e fica protegido por inteiro na
+  entrega, conforme S05; sem região segura, aquela foto fica pendente.
 - **Enviar ao responsável.** Sem interruptor da escola. Estado visível
   (não pedido, aguardando, aceito, recusado, expirado, revogado) e o botão
   de pedir aceite, como o código local já faz. Sem aceite no número
@@ -202,8 +230,8 @@ Na ficha, um bloco só, com duas linhas e uma frase de efeito:
 Abaixo das duas linhas, uma frase fixa:
 
 > Sem reconhecimento, o rosto não é separado. Sem o aceite do responsável,
-> nada é enviado. Na foto que vai para uma família, as outras crianças saem
-> desfocadas.
+> nada é enviado. Na entrega, quem não tem autorização para aparecer naquele
+> álbum fica protegido; pessoas desconhecidas também precisam de proteção e revisão.
 
 O selo "Autorização registrada" ao lado do responsável, hoje amarrado a
 `consentAt`, sai. No lugar: "WhatsApp verificado" ou "WhatsApp não
@@ -242,16 +270,20 @@ continua só de leitura.
 
 ### Regras do desfoque
 
-Não mudar `renderDeliveryAsset`. Autorização de um aluno não deixa o rosto
-dele nítido na entrega de outro responsável.
+Em 07/10, manter `renderDeliveryAsset` era o escopo. Em 11/10, T10 exige mudar
+o render conforme S05: partir da cena nítida e proteger somente a pessoa inteira
+sem autorização aplicável. Autorização de entrega própria de um aluno continua
+sem liberar exposição a outra família; N-D3 exige prova específica para esse uso.
 
 Sem `biometric_sorting`, o worker continua sem gravar embedding (já é a
-regra do M5). O rosto cai em não atribuído e o derivado o deixa desfocado.
+regra do M5). A pessoa sem identificação não fica nítida automaticamente;
+S05 exige proteção da pessoa inteira e conferência humana.
 
 ### Fora de escopo
 
-Texto jurídico versionado do termo (continua pendência do backlog). Portal
-do responsável. Mudar o sigma do desfoque.
+Em 07/10, texto jurídico do termo, portal e mudança de render ficavam fora.
+Agora S05 exige conferir o termo para o escopo entre famílias e detalhar a
+proteção localizada; S07 cobre álbum temporário, sem portal permanente.
 
 ### Aceite
 
@@ -260,8 +292,9 @@ do responsável. Mudar o sigma do desfoque.
 - Desligar reconhecimento impede nova referência (tela e banco).
 - Pedir envio sem WhatsApp verificado continua bloqueado.
 - Declaração do evento continua obrigatória para o upload, com o texto novo.
-- Entrega para a família A não traz nítida a criança B, mesmo com B
-  autorizado.
+- Entrega para a família A protege B sem autorização explícita que cubra esse
+  uso; autorização própria de entrega de B não basta. A matriz/arquivo final
+  seguem S05, ainda pendente de implementação.
 - Gerar arte de menor sem reconhecimento ativo é recusado na tela e na
   função `generationBlockers`.
 - Testes de `lib/eca.ts`, do formulário e de `delivery-render` atualizados e
@@ -276,11 +309,13 @@ Evidência: `student-form-dialog.tsx` (`guardianConsent` obrigatório) e o cart�
 Risco: a escola ou não cadastra a criança, ou marca um texto genérico que o produto depois não consegue separar de reconhecimento e de envio
 Correção mínima: cadastro sem autorização; duas finalidades na ficha; evento continua sendo só a declaração de subida
 
-[OBSERVAR] Não afrouxar o desfoque entre famílias
+[OBSERVAR] Não presumir autorização entre famílias
 Base: Decreto 12.880/2026, art. 35
 Evidência: `delivery-render.ts`
 Risco: a foto nítida de uma criança chegar ao WhatsApp de outra família
-Correção mínima: manter a regra de pixel atual
+Correção mínima: verificar prova/escopo do termo antes de liberar outra criança;
+S05 muda o render, mas mantém proteção por inteiro sem prova aplicável e revisão
+obrigatória. Decisão de produto não é declaração de conformidade jurídica global.
 
 ---
 
@@ -447,36 +482,37 @@ A página Escola e o passo Escola ainda dizem que o logo entra na arte.
 O passo Logo deixa de existir. O assistente fica com Aluno, Escola (quando
 a spec 8 mandar mostrar) e Modelo.
 
-Toda geração manda `showSchoolLogo: false`. O bloco do logo não entra no
-prompt. A imagem do logo não é enviada ao modelo.
-
-Cores da escola continuam, quando a escola selecionada tiver cores.
-
-Textos que prometem logo na arte são reescritos: página Escola, passo
-Escola, exemplo do prompt em `/admin/prompt`. O campo de upload do logo
-pode permanecer no cadastro da escola nesta leva (não há decisão de apagar
-o arquivo), mas a interface não diz que ele será impresso na arte.
+O alvo de 07/10 retirava apenas o passo/anexação do logo. T06 de 11/10 amplia
+o pedido: [S01](specs/ajustes-2026-10-11/01-cadastro-escola.md) retira upload,
+edição, prévia, exibição, validação e gravação de logo/cores pelo formulário,
+além de seus usos no prompt/geração. Templates antigos não podem reativá-los.
+O assistente preserva aluno, escola e modelo; cores do modelo de arte não são
+as cores configuradas da escola. Dados/arquivos antigos ficam sem uso, sem
+exclusão ou mudança de schema automática.
 
 ### Regras
 
-- Não apagar `schools.logo` nem os arquivos já gravados.
-- Não remover o token `{{#logo_escola}}` dos templates salvos. Com a flag
-  sempre falsa, o bloco não renderiza. Tirar o token do template padrão
-  novo, para o próximo restore não reintroduzir a frase.
+- Não apagar `public.schools.logo`, `public.schools.colors` nem arquivos
+  antigos nesta rodada. SQL: `artifacts/iaschool-app/supabase/fase1-min-schools-events.sql`.
+- Retirar usos legados, exemplos e placeholders de logo/cores no código;
+  neutralizar referências em templates antigos sem permitir reativação.
+  Alterar valores remotos/schema exige a autorização própria.
 - Teste existente "omite o logo quando a opção está desligada" ganha um
   caso em que a geração nem oferece a opção.
 
 ### Fora de escopo
 
-Marca d'água "IMAGEM GERADA POR IA", que fica (`lib/eca.ts`,
-`AI_DISCLOSURE_LABEL`). Logo do próprio IAschool na tela de login.
+Logo do próprio IAschool na tela de login continua fora deste ajuste.
+A faixa de IA agora é coberta por [S02](specs/ajustes-2026-10-11/02-criacao-artes.md):
+retirada nas novas artes, com arquivos históricos intactos (N-D5/N-D13).
 
 ### Aceite
 
 - O stepper não tem "Logo".
 - Uma geração com escola que tem logo não envia essa imagem e o prompt
   montado não contém a frase do logo.
-- Cores da escola continuam no prompt quando existirem.
+- Cores configuradas da escola não entram no prompt, mesmo quando já salvas;
+  interface e geração seguem S01/S02.
 - Nenhum texto de produto diz que o logo entra na arte.
 
 ---
@@ -600,8 +636,8 @@ No banco, `schools` também tem `plan` (`text not null`). O tipo
 `SchoolBrand` do app não carrega esse campo. Não mostrar plano nem deixar
 editar até existir produto de plano.
 
-A página fala em "logo e cores aplicados nas artes". A spec 5 acaba com o
-logo na arte. As cores continuam.
+A frase inicial sobre “logo e cores aplicados nas artes” fica obsoleta. T06 de
+11/10 retira ambas as configurações do produto, conforme S01.
 
 Para quem tem uma escola, a grade de cartões é o formato errado: é uma
 ficha, não uma coleção.
@@ -624,9 +660,8 @@ A ficha tem quatro blocos, de cima para baixo:
    eventos com revisão aberta. Os dados já existem nas listas do app; a
    ficha só conta. Não criar métrica nova.
 4. **Cadastro completo.** Endereço em linhas legíveis e contato com nome,
-   telefone e e-mail. Cores da escola num bloco "Cores usadas nas artes".
-   Logo, se houver, fica nesse bloco com a legenda "Não é colocado na
-   arte". Sem logo, o bloco não pede upload como se fosse obrigatório.
+   telefone e e-mail. Não exibir bloco de logo/cores da escola, mesmo quando
+   existirem dados antigos; essa retirada segue S01.
 
 Estado vazio (aprovado sem vínculo) continua o texto atual, que manda
 falar com o administrador. Isso conversa com a spec 6.
@@ -687,17 +722,17 @@ A lista vem de `schools` com RLS. O app não tem uma query paralela.
 Junto com a spec 5, os passos ficam:
 
 - **Uma escola na sessão** (o caso da escola e do `school_admin`): Aluno →
-  Modelo. A escola ativa entra sozinha. Não há "Sem escola". As cores
-  dessa escola seguem para o prompt.
+  Modelo. A escola ativa entra sozinha. Não há "Sem escola". Cores configuradas
+  da escola não seguem para o prompt, conforme T06/S01.
 - **Mais de uma escola, ou papel de plataforma:** Aluno → Escola → Modelo.
   A escola ativa, ou a do aluno quando ele já tem `schoolId`, vem
-  pré-selecionada. Dá para trocar. Não há "Sem escola": arte sem escola
-  não tem cor nem tenant, e o logo já não existe.
+  pré-selecionada. Dá para trocar. Não há "Sem escola": a arte conserva o
+  vínculo/isolamento da escola do aluno, sem logo/cores configurados da escola.
 
 O aluno listado no passo 1 é o da escola selecionada. Para quem tem uma
 escola, é a escola ativa. Para a plataforma, trocar a escola no passo 2
 refiltra os alunos se a pessoa voltar ao passo 1. Não gerar arte de aluno
-de uma escola com as cores de outra.
+de uma escola sob o vínculo de outra. Retirar cores não retira o isolamento.
 
 ### Regras
 
@@ -747,8 +782,9 @@ chamadas de imagem, cada uma com foto de criança saindo para o modelo.
 
 ### Requisito que dá para afirmar
 
-A pessoa quer produzir a mesma arte (mesmo modelo, mesmas cores, mesmas
-instruções) para muitos alunos, sem repetir o assistente. "Todos" significa
+A pessoa quer produzir a mesma arte (mesmo modelo e mesmas instruções) para
+muitos alunos, sem repetir o assistente. Cores do modelo de arte continuam
+possíveis; cores configuradas da escola saem conforme T06/S01. "Todos" significa
 todos os alunos elegíveis da escola ativa, não todos os alunos do banco.
 
 Elegível, nesta leitura: tem foto, passa em `generationBlockers` (depois
@@ -772,8 +808,9 @@ desmarcado e sem poder marcar, com o motivo numa linha.
    "Selecionar elegíveis". A confirmação mostra a conta: quantos vão,
    quantos ficam de fora e por quê, e quantas cotas serão consumidas.
    Um job por aluno, em série, com teto de 20 por ação. Dá para cancelar
-   o que ainda não começou. Cada imagem nasce com o selo de IA e um post
-   próprio. Falha de um não desfaz os outros; a tela lista o que falhou
+   o que ainda não começou. Cada imagem segue as regras da geração de S02,
+   sem faixa nas novas artes, e tem post próprio. Falha de um não desfaz os
+   outros; a tela lista o que falhou
    para tentar de novo. Acima de 20, a pessoa repete a ação. Não envia
    WhatsApp neste passo.
 2. **Só a seleção, uma arte por vez.** Multisseleção vira uma fila visual
@@ -799,15 +836,18 @@ Migration, botão, alteração de `GenerationRequest`.
 - "Selecionar elegíveis" marca só quem tem foto e passa na trava.
 - A confirmação mostra quantidade, exclusões e cotas.
 - A ação para em 20, em cota zero ou em cancelar.
-- Cada arte salva tem selo de IA e o aluno certo.
+- Cada arte nova salva respeita S02 (pessoa original, aluno certo e sem faixa);
+  esse aceite hipotético não autoriza escolher/implementar arte em massa.
 - Um erro no meio deixa as artes já feitas na galeria e lista o restante.
 
 ### Conformidade
 
 [OBSERVAR] Rajada de geração com foto de menor
 Base: Lei 15.211/2025, arts. 6º e 7º, § 2º; Decreto 12.880/2026, art. 11
-Risco: dezenas de imagens sintéticas de crianças numa ação, sem trava por aluno e sem o selo
-Correção mínima: elegibilidade por aluno, teto, selo em cada arquivo, e a regra bloqueante de foto real continua valendo
+Risco: dezenas de imagens de crianças numa ação, sem trava por aluno
+Correção mínima: elegibilidade por aluno, teto e salvaguardas da geração;
+a regra bloqueante de foto real continua valendo. N-D5/N-D13 retiram a faixa
+das novas artes, sem reabrir a decisão ainda pendente de arte em massa.
 
 ---
 
@@ -936,8 +976,13 @@ quando o provedor estiver no modo permitido e o lote aprovado. Não usar
 "Enviar" num botão que só gera o derivado.
 
 O lote continua um por responsável (não um por aluno), no máximo um lote
-ativo por evento, só com fotos de rosto confirmado, outras crianças
-desfocadas. Isso já é a spec de WhatsApp (R4, R5). Esta spec não reabre.
+ativo por evento, só com fotos confirmadas. A proteção segue S05: criança sem
+escopo aplicável e pessoa desconhecida protegidas por inteiro; outra família
+não é autorizada pelo aceite de entrega própria. T11 amplia o preparo via
+[S06](specs/ajustes-2026-10-11/06-preparacao-entrega.md) e o álbum temporário via
+[S07](specs/ajustes-2026-10-11/07-album-privado.md), sem duplicar a tela/consumidor.
+Mensagem é texto + link, nunca anexos de fotos; seleção/texto/versão precisam
+ser conferidos e congelados na aprovação. Nenhum aviso sai antes do álbum validado.
 
 Aluno sem aceite, sem número verificado ou sem foto confirmada aparece na
 lista como não apto, com o motivo que o preflight já devolve. Não entra
@@ -957,8 +1002,11 @@ marcado.
 
 ### Fora de escopo
 
-Template novo de mensagem, portal do responsável, reenvio automático,
-cobrança. Tudo isso segue a spec de WhatsApp.
+Portal permanente, recuperação automática e cobrança continuam fora.
+Editor de mensagem, seleção, estados reais, álbum temporário e reenvio pela
+escola agora pertencem a S06/S07, conforme N-D2/N-D7–N-D9/N-D12, com implantação
+e envio sujeitos aos gates existentes. A porta de revisão feita em 07/10 não
+conclui essas extensões nem o W4.
 
 ### Aceite
 
@@ -989,20 +1037,25 @@ Correção mínima: a porta de entrada desta spec, sem mudar o gate de envio
 - Upload do evento continua atrás da declaração da escola.
 - Embedding só com `biometric_sorting` ativo.
 - Desfoque por destinatário, trilha `biometric_events`, expurgo.
-- Cota diária de geração, selo de imagem sintética.
+- Cota diária de geração e travas de autorização. A faixa agora sai apenas
+  das novas artes em S02; histórico preservado conforme N-D13.
 - OTP, allowlist, teto, kill switch e a Meta como destino comercial.
 - Foto real de menor fora do produto enquanto
   [`pendencias-producao.md`](pendencias-producao.md) não fechar.
 
 ## 13. Migrations, funções e deploy
 
-Nesta spec, escrita e não aplicada:
+O backlog de 07/10 registra a aplicação da migration
+`iaschool_ajustes_students_whatsapp_nullable` e alterações locais em parte
+desta baseline, sem deploy daquela rodada. Esse registro histórico não foi
+revalidado contra serviços remotos nesta conciliação.
 
-- Uma migration, só se a spec 1 for implementada: `students.whatsapp`
-  passa a aceitar nulo. SQL de referência no mesmo commit. Aplicação pelo
-  MCP `supabase-iaschool`, não pelo SQL Editor.
-- Nenhuma Edge Function nova.
-- Nenhum deploy.
+**Rodada documental de 11/10:** nenhuma migration, Edge Function ou worker
+criado/alterado no código, aplicado ou publicado. Os planos S01–S07 identificam
+onde conferir necessidade de schema, máscara, origem de referência e snapshot;
+não são migrations aprovadas nem lista de funções já implementadas.
 
-As specs 2, 3, 5, 6, 8, 10 e 11 são aplicação e, na 6, leitura do fluxo de
-Auth. A spec 9 não tem implementação até a escolha da §9.
+Ao implementar, listar exatamente SQL/Edge Functions/workers que precisam de
+publicação, manter SQL de referência junto da migration e pedir a autorização
+prevista no `AGENTS.md` antes da ação. A spec §9 continua sem implementação
+até sua escolha própria; N-D1–N-D13 não escolhem uma opção de arte em massa.
