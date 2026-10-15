@@ -297,7 +297,7 @@ export default function StudentDetailPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Dados do aluno e autorizações */}
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Card className="border-border">
             <CardHeader>
               <CardTitle className="text-base">Dados</CardTitle>
@@ -411,9 +411,9 @@ export default function StudentDetailPage() {
         </div>
 
         {/* Galerias e rosto de referência */}
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           <Tabs defaultValue="gallery">
-            <TabsList className="mb-4">
+            <TabsList className="mb-4 h-auto max-w-full flex-wrap justify-start">
               <TabsTrigger value="gallery" data-testid="tab-student-gallery">
                 <Images className="size-4" /> Fotos e artes
               </TabsTrigger>

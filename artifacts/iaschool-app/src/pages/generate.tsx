@@ -1,1080 +1,474 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "wouter";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Sparkles,
-  Users,
-  School,
-  Images,
-  Download,
-  Maximize2,
-  RotateCcw,
-  Wand2,
-  Plus,
-  Loader2,
-  ShieldAlert,
-  ShieldCheck,
-} from "lucide-react";
-import { SiWhatsapp } from "react-icons/si";
-import { cn } from "@workspace/iaschool-ui/lib/utils";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Sparkles } from "lucide-react";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
-import { Input } from "@workspace/iaschool-ui/components/ui/input";
 import { Textarea } from "@workspace/iaschool-ui/components/ui/textarea";
-import { Badge } from "@workspace/iaschool-ui/components/ui/badge";
-import {
-  Card,
-  CardContent,
-} from "@workspace/iaschool-ui/components/ui/card";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@workspace/iaschool-ui/components/ui/avatar";
-import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
-import { getDataLayer } from "@/lib/data";
-import type {
-  SchoolBrand,
-  GenerationDetails,
-  GenerationRequest,
-  ReferencePost,
-  StoredImage,
-  Student,
-} from "@/lib/data";
 import { PageHeader } from "@/components/app-shell";
-import { EmptyState, CardsSkeleton, ErrorState } from "@/components/data-state";
-import { GenerationLoader } from "@/components/generation-loader";
-import { GenerationDetailsSection } from "@/components/generation-details";
-import { ImageLightbox } from "@/components/image-lightbox";
-import { GuardianVerifyDialog } from "@/components/guardian-verify-dialog";
+import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
+import { GenerationStudentPicker } from "@/components/generation-student-picker";
+import { GenerationPhotoPicker } from "@/components/generation-photo-picker";
+import { GenerationBatchProgress } from "@/components/generation-batch-progress";
 import { useStudents } from "@/hooks/use-students";
-import { useClassLabels } from "@/hooks/use-classes";
-import { activeByScope, useAuthorizations } from "@/hooks/use-authorizations";
-import { useGuardianConsentStatus } from "@/hooks/use-guardian-consent";
-import { useSchoolBrands } from "@/hooks/use-school-brands";
-import { useReferences } from "@/hooks/use-references";
-import { useCreateGeneratedPost } from "@/hooks/use-generated-posts";
-import { useGenerationQuota } from "@/hooks/use-generation-quota";
-import { useQueryClient } from "@tanstack/react-query";
-import { qk } from "@/lib/query-keys";
-import { iaschool } from "@/config/iaschool";
+import { useClasses } from "@/hooks/use-classes";
 import { useAuth } from "@/hooks/use-auth";
-import { isPlatformAdmin } from "@/lib/data";
+import { TEST_DATA_ONLY } from "@/lib/constants";
 import {
-  artWizardSteps,
-  initialArtSchoolId,
-  studentSchoolInSession,
-  type ArtWizardStep,
-} from "@/lib/art-wizard";
-import {
-  ageBracket,
-  allowedShareTarget,
-  generationBlockers,
-  hasVerifiedGuardianChannel,
-  requiresGuardianConsent,
-  shareBlockers,
-} from "@/lib/eca";
-import { stampAiDisclosure } from "@/lib/watermark";
-import { initials, storedToMasked, studentContactLine } from "@/lib/format";
-import {
-  AUX_PROMPT_PREFILL_EVENT,
-  AUX_PROMPT_PREFILL_KEY,
-} from "@/lib/constants";
-
-type Phase = "form" | "generating" | "result";
-
-const STEP_ICON: Record<ArtWizardStep, typeof Users> = {
-  aluno: Users,
-  escola: School,
-  modelo: Images,
-};
-
-const STEP_LABEL: Record<ArtWizardStep, string> = {
-  aluno: "Aluno",
-  escola: "Escola",
-  modelo: "Modelo de arte",
-};
-
-const STEP_TITLE: Record<ArtWizardStep, string> = {
-  aluno: "Selecionar aluno e foto",
-  escola: "Escolher escola",
-  modelo: "Escolher o modelo de arte",
-};
+  GenerationBatchRequestError,
+  EMPTY_GENERATION_SELECTION,
+  batchIsActive,
+  batchReviewError,
+  eligibleRoster,
+  expandGenerationSelection,
+  getGenerationBatchService,
+  type GenerationSelection,
+  type GenerationPhotoChoice,
+  type CreateGenerationBatch,
+} from "@/lib/generation-batches";
 
 export default function GeneratePage() {
-  const students = useStudents();
-  const classLabels = useClassLabels();
-  const schoolBrands = useSchoolBrands();
-  const references = useReferences();
-  const createPost = useCreateGeneratedPost();
-  const quota = useGenerationQuota();
-  const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const me = session?.user;
-
-  const [phase, setPhase] = useState<Phase>("form");
-  const [step, setStep] = useState(0);
-
-  // seleções
-  const [student, setStudent] = useState<Student | null>(null);
-  const [photo, setPhoto] = useState<StoredImage | null>(null);
-  // null = ainda não escolheu; cai na escola inicial da sessão.
-  const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null);
-  const [outOfSessionName, setOutOfSessionName] = useState<string | null>(null);
-  const [reference, setReference] = useState<ReferencePost | null>(null);
-  const [auxiliaryPrompt, setAuxiliaryPrompt] = useState("");
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const [resultDetails, setResultDetails] = useState<GenerationDetails | null>(null);
-  // Progresso real (0–100) do upload das fotos; null = fase de geração.
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const [zoom, setZoom] = useState<string | null>(null);
-  // id do post salvo — necessário para amarrar o envio à trilha de auditoria.
-  const [resultPostId, setResultPostId] = useState<string | null>(null);
-  const [guardianDialogOpen, setGuardianDialogOpen] = useState(false);
-
-  // Pré-preenche as instruções adicionais com um prompt vindo de
-  // "Detalhes da geração" (botão "Usar como instruções").
-  useEffect(() => {
-    function applyPrefill(prompt: string | null) {
-      if (!prompt) return;
-      try {
-        sessionStorage.removeItem(AUX_PROMPT_PREFILL_KEY);
-      } catch {
-        // ignora
-      }
-      setAuxiliaryPrompt(prompt);
-      setPhase("form");
-      toast({
-        title: "Instruções pré-preenchidas",
-        description:
-          'O prompt da geração foi copiado para "Instruções adicionais" (último passo). Ajuste como quiser.',
-      });
-    }
-
-    function readStored(): string | null {
-      try {
-        return sessionStorage.getItem(AUX_PROMPT_PREFILL_KEY);
-      } catch {
-        return null;
-      }
-    }
-
-    applyPrefill(readStored());
-    const onEvent = (e: Event) => {
-      const prompt =
-        (e as CustomEvent<string>).detail ?? readStored();
-      applyPrefill(prompt);
-    };
-    window.addEventListener(AUX_PROMPT_PREFILL_EVENT, onEvent);
-    return () => window.removeEventListener(AUX_PROMPT_PREFILL_EVENT, onEvent);
-  }, []);
-
-  const platformAdmin = isPlatformAdmin(session?.user.role);
-  const membershipIds = useMemo(
-    () => (session?.user.schools ?? []).map((s) => s.schoolId),
-    [session?.user.schools],
+  const { session, loading, sessionError, retrySession } = useAuth();
+  const schoolId = session?.activeSchoolId;
+  const userId = session?.user.id;
+  const contextRef = useRef(`${userId}:${schoolId}`);
+  contextRef.current = `${userId}:${schoolId}`;
+  const students = useStudents(),
+    classes = useClasses(schoolId);
+  const service = getGenerationBatchService();
+  const [selection, setSelection] = useState<GenerationSelection>(
+    EMPTY_GENERATION_SELECTION,
   );
-  const visibleSchoolIds = useMemo(
-    () => (schoolBrands.data ?? []).map((b) => b.id),
-    [schoolBrands.data],
+  const [choices, setChoices] = useState<Record<string, GenerationPhotoChoice>>(
+    {},
   );
-  const steps = useMemo(
-    () => artWizardSteps({ schoolCount: membershipIds.length, platformAdmin }),
-    [membershipIds.length, platformAdmin],
-  );
-  const defaultSchoolId = useMemo(
-    () =>
-      initialArtSchoolId({
-        membershipSchoolIds: membershipIds,
-        visibleSchoolIds,
-        activeSchoolId: session?.activeSchoolId,
-        platformAdmin,
-      }),
-    [membershipIds, visibleSchoolIds, session?.activeSchoolId, platformAdmin],
-  );
-  const brandId = selectedBrandId ?? defaultSchoolId;
-
-  // Pré-seleciona o aluno vindo de /gerar?aluno=<id>. Escola fora da sessão
-  // não avança e não busca a escola por outro caminho.
-  const [prefillApplied, setPrefillApplied] = useState(false);
-  useEffect(() => {
-    if (prefillApplied || !students.data || schoolBrands.isLoading) return;
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get("aluno");
-    if (!id) {
-      setPrefillApplied(true);
-      return;
-    }
-    setPrefillApplied(true);
-    const s = students.data.find((x) => x.id === id);
-    const url = new URL(window.location.href);
-    url.searchParams.delete("aluno");
-    window.history.replaceState(null, "", url.toString());
-    if (!s) return;
-    const inSession = studentSchoolInSession({
-      studentSchoolId: s.schoolId,
-      membershipSchoolIds: membershipIds,
-      visibleSchoolIds,
-      platformAdmin,
-    });
-    if (!inSession) {
-      setOutOfSessionName(s.name);
-      setStudent(null);
-      setPhoto(null);
-      return;
-    }
-    setOutOfSessionName(null);
-    setStudent(s);
-    setPhoto(s.photos?.[0] ?? null);
-    setSelectedBrandId(s.schoolId);
-  }, [
-    prefillApplied,
-    students.data,
-    schoolBrands.isLoading,
-    membershipIds,
-    visibleSchoolIds,
-    platformAdmin,
-  ]);
-
-  const schoolBrand: SchoolBrand | undefined = useMemo(
-    () => schoolBrands.data?.find((b) => b.id === brandId),
-    [schoolBrands.data, brandId],
-  );
-
-  const loading =
-    students.isLoading || schoolBrands.isLoading || references.isLoading;
-
-  const sessionSchools = {
-    membershipSchoolIds: membershipIds,
-    visibleSchoolIds,
-    platformAdmin,
-  };
-
+  const [step, setStep] = useState(0),
+    [prompt, setPrompt] = useState("");
+  const [photoStudent, setPhotoStudent] = useState<string | null>(null),
+    [batchId, setBatchId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null),
+    [busy, setBusy] = useState(false);
+  const lock = useRef(false),
+    pending = useRef<CreateGenerationBatch | null>(null),
+    prefilled = useRef(false);
+  const pendingRetry = useRef<{
+    batchId: string;
+    requestId: string;
+    itemIds: string[];
+  } | null>(null);
+  const eligibility = useQuery({
+    queryKey: ["generation-eligibility", userId, schoolId],
+    queryFn: () => service.eligibility(schoolId!),
+    enabled: Boolean(schoolId),
+    retry: false,
+  });
+  const batches = useQuery({
+    queryKey: ["generation-batches", userId, schoolId],
+    queryFn: () => service.list(schoolId!),
+    enabled: Boolean(schoolId),
+    retry: false,
+    refetchInterval: 5000,
+  });
+  const batch = useQuery({
+    queryKey: ["generation-batch", userId, schoolId, batchId],
+    queryFn: () => service.get(batchId!),
+    enabled: Boolean(schoolId && batchId),
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data && batchIsActive(query.state.data) ? 3000 : false,
+  });
   const roster = useMemo(
-    () => (students.data ?? []).filter((s) => !!brandId && s.schoolId === brandId),
-    [students.data, brandId],
+    () => eligibleRoster(students.data ?? [], schoolId ?? "", eligibility.data),
+    [students.data, schoolId, eligibility.data],
   );
-
-  // valida cada passo
-  /**
-   * Impedimentos do ECA Digital para o aluno selecionado.
-   * Vazio = liberado. Ver lib/eca.ts para a base legal de cada item.
-   */
-  const authorizations = useAuthorizations(student?.id ?? null);
-  const consentStatus = useGuardianConsentStatus(student?.id ?? null);
-  const artCompliance = {
-    biometricSortingActive: activeByScope(authorizations.data).has("biometric_sorting"),
-    deliveryAccepted: consentStatus.data?.state === "accepted",
-  };
-  const blockers = student ? generationBlockers(student, artCompliance) : [];
-  const shareIssues = student ? shareBlockers(student, artCompliance) : [];
-
-  function sameSchool(s: Student): boolean {
-    return (
-      !!brandId &&
-      s.schoolId === brandId &&
-      studentSchoolInSession({ studentSchoolId: s.schoolId, ...sessionSchools })
-    );
-  }
-
-  function canAdvance(current: number): boolean {
-    const key = steps[current];
-    if (key === "aluno") {
-      // Sem conformidade não se avança: a foto do aluno não pode ser
-      // enviada ao modelo antes de a autorização estar registrada.
-      return !!student && !!photo && blockers.length === 0 && sameSchool(student);
-    }
-    if (key === "escola") return !!schoolBrand && schoolBrand.id === brandId;
-    if (key === "modelo") return !!reference;
-    return false;
-  }
-
-  function next() {
-    setStep((s) => Math.min(s + 1, steps.length - 1));
-  }
-  function back() {
-    setStep((s) => Math.max(s - 1, 0));
-  }
-
-  function resetAll() {
-    setPhase("form");
+  const selectedIds = expandGenerationSelection(selection, roster);
+  const selected = roster.filter((s) => selectedIds.includes(s.id));
+  const selectedPhotos = selected.map((student) => ({
+    studentId: student.id,
+    photo: choices[student.id] ?? {
+      source: "profile" as const,
+      id:
+        eligibility.data?.students.find((s) => s.studentId === student.id)
+          ?.photoId ?? "",
+      url: student.photos[0]?.url ?? "",
+    },
+  }));
+  const reviewError = batchReviewError(
+    prompt,
+    selectedPhotos,
+    eligibility.data?.remainingQuota ?? 0,
+  );
+  useEffect(() => {
+    setSelection(EMPTY_GENERATION_SELECTION);
+    setChoices({});
+    setBatchId(null);
     setStep(0);
-    setStudent(null);
-    setPhoto(null);
-    setSelectedBrandId(null);
-    setOutOfSessionName(null);
-    setResultPostId(null);
-    setReference(null);
-    setAuxiliaryPrompt("");
-    setResultUrl(null);
-    setResultDetails(null);
-  }
-
-  function selectSchoolBrand(id: string) {
-    if (id === brandId) return;
-    setSelectedBrandId(id);
-    if (student && student.schoolId !== id) {
-      setStudent(null);
-      setPhoto(null);
-    }
-  }
-
-  function pickStudent(s: Student) {
-    if (
-      !studentSchoolInSession({
-        studentSchoolId: s.schoolId,
-        ...sessionSchools,
-      })
-    ) {
-      setOutOfSessionName(s.name);
-      setStudent(null);
-      setPhoto(null);
-      return;
-    }
-    setOutOfSessionName(null);
-    setStudent(s);
-    setPhoto(s.photos?.[0] ?? null);
-    if (steps.includes("escola")) setSelectedBrandId(s.schoolId);
-  }
-
-  async function generate() {
-    if (!student || !photo || !reference) return;
-    if (!schoolBrand) {
-      toast({
-        variant: "destructive",
-        title: "Escola indisponível",
-        description: "Esta conta não tem uma escola na sessão.",
-      });
-      return;
-    }
-    if (student.schoolId !== schoolBrand.id || !sameSchool(student)) {
-      toast({
-        variant: "destructive",
-        title: "Escola diferente do aluno",
-        description: "A arte usa a escola do aluno. Troque o aluno ou a escola.",
-      });
-      return;
-    }
-    // Segunda barreira, além do wizard: nenhuma foto de menor sai daqui sem
-    // consentimento registrado do responsável (Lei 15.211/2025, art. 7º, § 2º).
-    if (blockers.length > 0) {
-      toast({
-        variant: "destructive",
-        title: "Geração bloqueada",
-        description: blockers[0].message,
-      });
-      return;
-    }
-    const request: GenerationRequest = {
-      student,
-      studentPhoto: photo,
-      schoolBrand,
-      showSchoolLogo: false,
-      reference,
-      auxiliaryPrompt: auxiliaryPrompt.trim() || undefined,
-    };
-
-    setPhase("generating");
-    setUploadProgress(0);
-    try {
-      const { imageUrl, details, logId } = await getDataLayer().generation.generate(
-        request,
-        (percent) => setUploadProgress(percent < 100 ? percent : null),
+    setError(null);
+    pending.current = null;
+    pendingRetry.current = null;
+    prefilled.current = false;
+  }, [schoolId, userId]);
+  useEffect(() => {
+    if (prefilled.current || !eligibility.data || !students.data) return;
+    prefilled.current = true;
+    const id = new URLSearchParams(location.search).get("aluno");
+    if (id && roster.some((s) => s.id === id))
+      setSelection({ studentIds: [id], classIds: [], excludedStudentIds: [] });
+  }, [eligibility.data, students.data, roster]);
+  useEffect(() => {
+    if (!batchId) {
+      const active = batches.data?.find(
+        (b) => b.status === "pending" || b.status === "processing",
       );
-      // Selo de transparência do caráter sintético aplicado ANTES de salvar,
-      // para que toda cópia que sai do produto já nasça marcada
-      // (Decreto 12.880/2026, art. 11, I).
-      const stampedUrl = await stampAiDisclosure(imageUrl);
-      setResultUrl(stampedUrl);
-      setResultDetails(details);
-      setPhase("result");
-      // O saldo diário mudou — atualiza o indicador na próxima visita ao form.
-      void queryClient.invalidateQueries({ queryKey: qk.generationQuota });
-      // Se salvar no histórico falhar, a imagem gerada continua visível.
-      try {
-        // Persiste a imagem no Storage (bucket "generated") em vez de gravar
-        // a data URL base64 gigante direto no banco. Se o upload falhar,
-        // salva a data URL mesmo assim para não perder o post.
-        let savedUrl = stampedUrl;
-        if (stampedUrl.startsWith("data:")) {
-          try {
-            const blob = await (await fetch(stampedUrl)).blob();
-            const stored = await getDataLayer().storage.upload(
-              "generated",
-              blob,
-              `${student.name.replace(/\s+/g, "-").toLowerCase()}.png`,
-            );
-            savedUrl = stored.url;
-          } catch {
-            // mantém a data URL como fallback
-          }
-        }
-        const saved = await createPost.mutateAsync({
-          studentId: student.id,
-          imageUrl: savedUrl,
-          details,
-        });
-        setResultPostId(saved.id);
-        // Vincula a URL do post salvo ao log de auditoria (best-effort).
-        if (logId && savedUrl.startsWith("http")) {
-          void (async () => {
-            try {
-              const token = await getDataLayer().auth.getAccessToken();
-              if (!token) return;
-              await fetch(`/api/generation/logs/${logId}/result`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ imageUrl: savedUrl }),
-              });
-            } catch {
-              // log é best-effort — nunca incomoda o usuário
-            }
-          })();
-        }
-      } catch {
-        toast({
-          variant: "destructive",
-          title: "Imagem gerada, mas não foi salva no histórico",
-          description: "Você ainda pode baixar ou compartilhar esta imagem.",
-        });
+      if (active) setBatchId(active.id);
+    }
+  }, [batches.data, batchId]);
+  async function generate() {
+    if (lock.current || !schoolId || (!pending.current && reviewError)) return;
+    const context = contextRef.current;
+    lock.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const request = pending.current ?? {
+        requestId: crypto.randomUUID(),
+        schoolId,
+        prompt: prompt.trim(),
+        students: selectedPhotos.map((s) => ({
+          studentId: s.studentId,
+          photo: { source: s.photo.source, id: s.photo.id },
+        })),
+      };
+      pending.current = request;
+      const result = await service.create(request);
+      if (contextRef.current !== context) return;
+      pending.current = null;
+      setBatchId(result.id);
+      await Promise.all([batches.refetch(), eligibility.refetch()]);
+    } catch (cause) {
+      if (contextRef.current !== context) return;
+      if (cause instanceof GenerationBatchRequestError && cause.definitive) {
+        pending.current = null;
+        pendingRetry.current = null;
+        void eligibility.refetch();
       }
-    } catch (err) {
-      setPhase("form");
-      setUploadProgress(null);
-      // Mesmo em falha a cota pode ter sido consumida — atualiza o saldo.
-      void queryClient.invalidateQueries({ queryKey: qk.generationQuota });
-      toast({
-        variant: "destructive",
-        title: "Falha na geração",
-        description: err instanceof Error ? err.message : "Tente novamente.",
-      });
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Não foi possível iniciar. Retome o mesmo pedido para evitar duplicação.",
+      );
+    } finally {
+      lock.current = false;
+      setBusy(false);
     }
   }
-
-  function download() {
-    if (!resultUrl) return;
-    const a = document.createElement("a");
-    a.href = resultUrl;
-    a.download = `iaschool-${student?.name.replace(/\s+/g, "-").toLowerCase() ?? "post"}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  }
-
-  /**
-   * Envio da imagem por WhatsApp.
-   *
-   * Para aluno menor de 18 anos, o único destino permitido é o número
-   * verificado do responsável legal, e todo envio é registrado na trilha de
-   * auditoria (Lei 15.211/2025, arts. 6º, V e 7º, § 2º; Decreto, art. 35).
-   */
-  async function sendWhatsapp() {
-    if (!student) return;
-    if (shareIssues.length > 0) {
-      const issue = shareIssues[0];
-      toast({
-        variant: "destructive",
-        title: "Envio bloqueado",
-        description: `${issue.message} (${issue.legalBasis})`,
+  async function retry(itemIds: string[]) {
+    if (lock.current || !batchId) return;
+    const context = contextRef.current;
+    lock.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const request = pendingRetry.current ?? {
+        batchId,
+        requestId: crypto.randomUUID(),
+        itemIds,
+      };
+      pendingRetry.current = request;
+      await service.retry(request.batchId, {
+        requestId: request.requestId,
+        itemIds: request.itemIds,
       });
-      if (issue.code === "canal-nao-verificado") setGuardianDialogOpen(true);
-      return;
-    }
-    const target = allowedShareTarget(student, artCompliance);
-    if (!target) {
-      toast({
-        variant: "destructive",
-        title: "Envio bloqueado",
-        description: "Nenhum destino autorizado para este aluno.",
-      });
-      return;
-    }
-
-    // A trilha é gravada ANTES de abrir o WhatsApp: se o registro falhar, o
-    // envio não acontece. Uma trilha incompleta não serve como prova.
-    if (resultPostId) {
-      try {
-        await getDataLayer().shareLogs.record({
-          postId: resultPostId,
-          studentId: student.id,
-          studentName: student.name,
-          channel: "whatsapp",
-          targetWhatsapp: target.whatsapp,
-          targetLabel: target.label,
-          studentAgeBracket: ageBracket(student.birthDate) ?? "adulto",
-          guardianConsentAt: student.guardian?.consentAt,
-          sentByUserId: me?.id ?? "",
-          sentByName: me?.name ?? "",
-        });
-      } catch (err) {
-        toast({
-          variant: "destructive",
-          title: "Envio não registrado",
-          description:
-            err instanceof Error
-              ? err.message
-              : "Não foi possível registrar o envio na auditoria.",
-        });
-        return;
+      if (contextRef.current !== context) return;
+      pendingRetry.current = null;
+      await Promise.all([
+        batch.refetch(),
+        eligibility.refetch(),
+        batches.refetch(),
+      ]);
+    } catch (cause) {
+      if (contextRef.current !== context) return;
+      if (cause instanceof GenerationBatchRequestError && cause.definitive) {
+        pending.current = null;
+        pendingRetry.current = null;
+        void eligibility.refetch();
       }
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Não foi possível retomar estas artes. Atualize o progresso.",
+      );
+    } finally {
+      lock.current = false;
+      setBusy(false);
     }
-
-    const msg = iaschool.generation.shareMessage(student.name);
-    window.open(
-      `https://wa.me/${target.whatsapp}?text=${encodeURIComponent(msg)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
   }
-
-  // ---- Estados de nível de página ----
-  if (loading) {
+  if (loading || students.isLoading) return <CardsSkeleton />;
+  if (sessionError)
     return (
-      <div className="mx-auto max-w-4xl">
-        <PageHeader title="Criar arte" description="Carregando dados..." />
-        <CardsSkeleton count={3} />
-      </div>
-    );
-  }
-
-  if ((students.data?.length ?? 0) === 0) {
-    return (
-      <div className="mx-auto max-w-4xl">
-        <PageHeader title="Criar arte" />
-        <EmptyState
-          icon={<Users className="size-6" />}
-          title="Cadastre um aluno primeiro"
-          description="Você precisa de ao menos um aluno com foto para gerar imagens."
-          action={
-            <Link href="/alunos" data-testid="link-goto-alunos">
-              <Button>
-                <Plus className="size-4" /> Cadastrar aluno
-              </Button>
-            </Link>
-          }
-        />
-      </div>
-    );
-  }
-
-  if (phase === "generating") {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <PageHeader
-          title={
-            uploadProgress !== null && uploadProgress < 100
-              ? "Enviando fotos"
-              : "Gerando imagem"
-          }
-          description="Isso leva alguns segundos."
-        />
-        <Card className="border-primary/40">
-          <CardContent className="p-6">
-            <GenerationLoader uploadProgress={uploadProgress} />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (phase === "result" && resultUrl) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <PageHeader
-          title="Imagem pronta!"
-          description="Baixe, amplie e envie pelo WhatsApp."
-        />
-        <Card className="border-primary/40">
-          <CardContent className="flex flex-col items-center gap-6 p-6">
-            <div className="relative w-full max-w-md">
-              <img
-                src={resultUrl}
-                alt="Post gerado"
-                className="w-full rounded-lg border border-border shadow-xl"
-                data-testid="img-result"
-              />
-              <Badge className="absolute left-3 top-3">
-                <Sparkles className="size-3" /> Gerado com IA
-              </Badge>
-            </div>
-            <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-3">
-              <Button variant="outline" onClick={() => setZoom(resultUrl)} data-testid="button-ampliar">
-                <Maximize2 className="size-4" /> Ampliar
-              </Button>
-              <Button variant="secondary" onClick={download} data-testid="button-baixar">
-                <Download className="size-4" /> Baixar PNG
-              </Button>
-              <Button
-                onClick={sendWhatsapp}
-                disabled={shareIssues.length > 0}
-                data-testid="button-whatsapp"
-              >
-                <SiWhatsapp className="size-4" /> WhatsApp
-              </Button>
-            </div>
-
-            {/* Destino do envio — quem pode receber a imagem de um menor */}
-            {student && requiresGuardianConsent(student.birthDate) && (
-              <div
-                className={cn(
-                  "w-full max-w-md rounded-md border p-3 text-sm",
-                  shareIssues.length > 0
-                    ? "border-destructive/50 bg-destructive/10"
-                    : "border-primary/40 bg-accent/30",
-                )}
-                data-testid="box-share-target"
-              >
-                {shareIssues.length > 0 ? (
-                  <div className="flex items-start gap-2">
-                    <ShieldAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
-                    <div className="space-y-2">
-                      <p className="font-medium text-destructive">
-                        Envio bloqueado
-                      </p>
-                      <ul className="space-y-1 text-xs text-muted-foreground">
-                        {shareIssues.map((i) => (
-                          <li key={i.code}>
-                            {i.message}{" "}
-                            <span className="opacity-70">({i.legalBasis})</span>
-                          </li>
-                        ))}
-                      </ul>
-                      {student.guardian?.whatsapp && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setGuardianDialogOpen(true)}
-                          data-testid="button-verify-guardian-result"
-                        >
-                          <ShieldCheck className="size-4" /> Verificar WhatsApp do
-                          responsável
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-2">
-                    <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
-                    <p className="text-xs text-muted-foreground">
-                      Aluno menor de 18 anos: o envio vai para{" "}
-                      <span className="font-medium text-foreground">
-                        {student.guardian?.name} (responsável)
-                      </span>{" "}
-                      no número verificado{" "}
-                      <span className="font-mono">
-                        {storedToMasked(student.guardian?.whatsapp ?? "")}
-                      </span>
-                      . Cada envio fica registrado na auditoria.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-            <GenerationDetailsSection
-              details={resultDetails}
-              className="max-w-md"
-            />
-            <p className="max-w-md text-center text-xs text-muted-foreground">
-              O WhatsApp abre com a mensagem pronta. A imagem não pode ser anexada
-              automaticamente — baixe o PNG e envie junto. Toda imagem sai com o
-              selo "imagem gerada por IA" (Decreto nº 12.880/2026, art. 11).
-            </p>
-            <Button variant="ghost" onClick={resetAll} data-testid="button-nova-geracao">
-              <RotateCcw className="size-4" /> Gerar outra imagem
-            </Button>
-          </CardContent>
-        </Card>
-        <ImageLightbox src={zoom} onClose={() => setZoom(null)} />
-        <GuardianVerifyDialog
-          open={guardianDialogOpen}
-          onOpenChange={setGuardianDialogOpen}
-          student={student}
-        />
-      </div>
-    );
-  }
-
-  // ---- Wizard (form) ----
-  const stepKey = steps[step] ?? steps[steps.length - 1];
-  const StepIcon = STEP_ICON[stepKey];
-  const choosableSchools = (schoolBrands.data ?? []).filter(
-    (b) => platformAdmin || membershipIds.includes(b.id),
-  );
-
-  return (
-    <div className="mx-auto max-w-4xl">
-      <PageHeader
-        title="Criar arte"
-        description="Monte a arte passo a passo. Leva menos de um minuto."
+      <ErrorState
+        message="Não foi possível carregar sua escola."
+        onRetry={retrySession}
       />
-
-      {/* stepper */}
-      <div className="mb-6 flex items-center gap-1 overflow-x-auto pb-2">
-        {steps.map((key, i) => {
-          const Icon = STEP_ICON[key];
-          const done = i < step;
-          const active = i === step;
-          return (
-            <div key={key} className="flex items-center">
-              <button
-                type="button"
-                onClick={() => i <= step && setStep(i)}
-                disabled={i > step}
-                className={cn(
-                  "flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                  active && "bg-primary text-primary-foreground",
-                  done && "bg-accent text-accent-foreground",
-                  !active && !done && "bg-muted text-muted-foreground",
-                )}
-                data-testid={`step-${key}`}
+    );
+  if (!schoolId)
+    return (
+      <EmptyState
+        icon={<Sparkles />}
+        title="Escolha uma escola"
+        description="Selecione a escola no menu para preparar as artes."
+      />
+    );
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Criar artes"
+        description="Escolha os alunos, confira as fotos e descreva a arte para todos."
+      />
+      {TEST_DATA_ONLY && (
+        <p className="rounded-lg border p-3 text-sm text-muted-foreground">
+          Use somente fotos sintéticas ou de demonstração nesta fase.
+        </p>
+      )}
+      {error && (
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive p-3 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
+      {pending.current && (
+        <Button disabled={busy} onClick={() => void generate()}>
+          Retomar o mesmo pedido
+        </Button>
+      )}
+      {pendingRetry.current && (
+        <Button
+          disabled={busy}
+          onClick={() => void retry(pendingRetry.current!.itemIds)}
+        >
+          Retomar a mesma tentativa
+        </Button>
+      )}
+      {batchId ? (
+        <>
+          <Button
+            variant="outline"
+            disabled={
+              busy ||
+              Boolean(pendingRetry.current) ||
+              Boolean(pending.current) ||
+              Boolean(batch.data && batchIsActive(batch.data))
+            }
+            onClick={() => setBatchId(null)}
+          >
+            Preparar outro lote
+          </Button>
+          {batch.isLoading ? (
+            <CardsSkeleton />
+          ) : batch.isError ? (
+            <ErrorState
+              message="Não foi possível consultar o lote. A geração continua no servidor."
+              onRetry={() => void batch.refetch()}
+            />
+          ) : (
+            batch.data && (
+              <GenerationBatchProgress
+                batch={batch.data}
+                students={students.data ?? []}
+                onRetry={(ids) => void retry(ids)}
+                retrying={busy || Boolean(pendingRetry.current)}
+                onRefresh={() => void batch.refetch()}
+              />
+            )
+          )}
+        </>
+      ) : (
+        <section className="space-y-5 rounded-xl border bg-card p-4 sm:p-6">
+          <ol className="flex gap-4 text-sm" aria-label="Etapas">
+            {["Alunos", "Fotos", "Arte"].map((label, index) => (
+              <li
+                key={label}
+                className={
+                  step === index
+                    ? "font-semibold text-primary"
+                    : "text-muted-foreground"
+                }
+                aria-current={step === index ? "step" : undefined}
               >
-                {done ? <Check className="size-3.5" /> : <Icon className="size-3.5" />}
-                <span className="hidden sm:inline">{STEP_LABEL[key]}</span>
-              </button>
-              {i < steps.length - 1 && (
-                <div className="mx-1 h-px w-4 bg-border sm:w-6" />
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <Card className="border-border">
-        <CardContent className="p-6">
-          <div className="mb-4 flex items-center gap-2">
-            <StepIcon className="size-5 text-primary" />
-            <h2 className="text-lg font-bold">{STEP_TITLE[stepKey]}</h2>
-          </div>
-
-          <div key={step} className="animate-in fade-in slide-in-from-right-2 duration-300">
-            {/* STEP 0 — aluno + foto */}
-            {stepKey === "aluno" && (
-              <div className="space-y-5">
-                {outOfSessionName && (
-                  <div
-                    className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm"
-                    data-testid="box-school-out-of-session"
-                  >
-                    A escola de {outOfSessionName} não está na sua sessão. O
-                    passo não avança. O acesso à escola não foi ampliado.
-                  </div>
-                )}
-                {roster.length === 0 ? (
+                {index + 1}. {label}
+              </li>
+            ))}
+          </ol>
+          {eligibility.isLoading ? (
+            <CardsSkeleton />
+          ) : eligibility.isError ? (
+            <ErrorState
+              message="Não foi possível conferir as autorizações e fotos."
+              onRetry={() => void eligibility.refetch()}
+            />
+          ) : (
+            <>
+              {step === 0 && (
+                <>
+                  <h2 className="font-semibold">Para quem vamos criar?</h2>
                   <p className="text-sm text-muted-foreground">
-                    Nenhum aluno desta escola.
+                    Só aparecem alunos com foto e autorização ativa. Turmas
+                    incluem todos os alunos aptos, sem repetir ninguém.
                   </p>
-                ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {roster.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => pickStudent(s)}
-                      className={cn(
-                        "flex items-center gap-3 rounded-md border p-3 text-left transition-colors",
-                        student?.id === s.id
-                          ? "border-primary bg-accent"
-                          : "border-border hover:border-primary/50",
-                      )}
-                      data-testid={`select-student-${s.id}`}
-                    >
-                      <Avatar className="size-10">
-                        {s.photos?.[0] && (
-                          <AvatarImage
-                            src={s.photos[0].url}
-                            alt={s.name}
-                            className="object-cover"
-                          />
-                        )}
-                        <AvatarFallback className="text-xs">{initials(s.name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{s.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {studentContactLine(s, s.classId ? classLabels.get(s.classId) : undefined)}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-                )}
-
-                {student && blockers.length > 0 && (
-                  <div
-                    className="rounded-md border border-destructive/50 bg-destructive/10 p-4"
-                    data-testid="box-generation-blockers"
+                  <GenerationStudentPicker
+                    students={students.data ?? []}
+                    eligible={roster}
+                    classes={classes.data ?? []}
+                    selection={selection}
+                    onChange={setSelection}
+                    disabled={busy || Boolean(pending.current)}
+                  />
+                  {classes.isError && (
+                    <ErrorState
+                      message="Não foi possível carregar as turmas."
+                      onRetry={() => void classes.refetch()}
+                    />
+                  )}
+                  <Button
+                    disabled={!selected.length || Boolean(pending.current)}
+                    onClick={() => setStep(1)}
                   >
-                    <div className="flex items-start gap-2">
-                      <ShieldAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium text-destructive">
-                          Não é possível gerar imagem deste aluno
-                        </p>
-                        <ul className="space-y-1 text-xs text-muted-foreground">
-                          {blockers.map((b) => (
-                            <li key={b.code}>
-                              {b.message}{" "}
-                              <span className="opacity-70">({b.legalBasis})</span>
-                            </li>
-                          ))}
-                        </ul>
-                        <Link
-                          href={`/alunos/${student.id}`}
-                          className="inline-block text-xs underline"
-                          data-testid="link-fix-student"
-                        >
-                          Completar o cadastro do aluno
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {student && (
-                  <div>
-                    <p className="mb-2 text-sm font-medium">Escolha a foto do aluno</p>
-                    {student.photos.length === 0 ? (
-                      <div className="rounded-md border border-dashed border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-                        Este aluno não tem fotos.{" "}
-                        <Link href="/alunos" className="underline" data-testid="link-add-photo">
-                          Adicione uma foto
-                        </Link>{" "}
-                        para continuar.
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-3">
-                        {student.photos.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => setPhoto(p)}
-                            className={cn(
-                              "size-20 overflow-hidden rounded-md border-2 transition-all",
-                              photo?.id === p.id
-                                ? "border-primary ring-2 ring-primary/30"
-                                : "border-border",
-                            )}
-                            data-testid={`select-photo-${p.id}`}
-                          >
-                            <img src={p.url} alt="Foto" className="h-full w-full object-cover" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {stepKey === "escola" && (
-              <div className="space-y-5">
-                {schoolBrands.isError ? (
-                  <ErrorState onRetry={() => schoolBrands.refetch()} />
-                ) : (
-                  <>
-                    <p className="text-sm text-muted-foreground">
-                      A escola do aluno já vem marcada. As cores dessa escola
-                      entram na arte. O logo não é colocado. Para mudar o
-                      cadastro, abra a página Escola.
-                    </p>
-
-                    {choosableSchools.length === 0 ? (
-                      <div className="rounded-md border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
-                        Sua conta ainda não está vinculada a nenhuma escola.
-                      </div>
-                    ) : (
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {choosableSchools.map((b) => (
-                          <button
-                            key={b.id}
-                            type="button"
-                            onClick={() => selectSchoolBrand(b.id)}
-                            className={cn(
-                              "flex items-center gap-3 rounded-md border p-3 text-left transition-colors",
-                              brandId === b.id
-                                ? "border-primary bg-accent"
-                                : "border-border hover:border-primary/50",
-                            )}
-                            data-testid={`select-school-brand-${b.id}`}
-                          >
-                            <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-                              {b.logo ? (
-                                <img
-                                  src={b.logo.url}
-                                  alt=""
-                                  className="h-full w-full object-contain"
-                                />
-                              ) : (
-                                <School className="size-5 text-muted-foreground" />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="truncate font-medium">
-                                {b.name}
-                                {student?.schoolId === b.id && (
-                                  <span className="ml-2 text-xs font-normal text-muted-foreground">
-                                    (escola do aluno)
-                                  </span>
-                                )}
-                              </p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                {b.colors.length === 0
-                                  ? "Sem cores cadastradas"
-                                  : b.colors.length === 1
-                                    ? "1 cor na arte"
-                                    : `${b.colors.length} cores na arte`}
-                              </p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
-            {stepKey === "modelo" && (
-              <div className="space-y-5">
-                {(references.data?.length ?? 0) === 0 ? (
-                  <div className="rounded-md border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
-                    Nenhum modelo de arte disponível.{" "}
-                    <Link
-                      href="/referencias"
-                      className="underline"
-                      data-testid="link-goto-referencias"
-                    >
-                      Adicione modelos
-                    </Link>{" "}
-                    para escolher o estilo.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                    {references.data!.map((r) => (
+                    Conferir {selected.length} {selected.length === 1 ? "foto" : "fotos"}
+                  </Button>
+                </>
+              )}
+              {step === 1 && (
+                <>
+                  <h2 className="font-semibold">Uma foto para cada aluno</h2>
+                  <p className="text-sm text-muted-foreground">
+                    A foto principal já está escolhida. Clique para trocar por
+                    outra foto de perfil ou de evento com o aluno sozinho.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {selectedPhotos.map(({ studentId, photo }) => (
                       <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => setReference(r)}
-                        className={cn(
-                          "aspect-square overflow-hidden rounded-md border-2 transition-all",
-                          reference?.id === r.id
-                            ? "border-primary ring-2 ring-primary/30"
-                            : "border-border",
-                        )}
-                        data-testid={`select-reference-${r.id}`}
+                        key={studentId}
+                        className="rounded-lg border p-3 text-left focus-visible:ring-2 focus-visible:ring-primary"
+                        disabled={Boolean(pending.current)}
+                        onClick={() => setPhotoStudent(studentId)}
                       >
                         <img
-                          src={r.image.url}
-                          alt="Modelo de arte"
-                          className="h-full w-full object-cover"
+                          src={photo.url}
+                          alt={`Foto escolhida de ${selected.find((s) => s.id === studentId)?.name}`}
+                          className="aspect-square w-full rounded-md object-contain"
                         />
+                        <span className="mt-2 block text-sm font-medium">
+                          {selected.find((s) => s.id === studentId)?.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Trocar foto
+                        </span>
                       </button>
                     ))}
                   </div>
-                )}
-
-                <div>
-                  <p className="mb-1 text-sm font-medium">
-                    Tema do evento e instruções (opcional)
-                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setStep(0)}>
+                      Voltar
+                    </Button>
+                    <Button
+                      disabled={!selected.length}
+                      onClick={() => setStep(2)}
+                    >
+                      Descrever a arte
+                    </Button>
+                  </div>
+                </>
+              )}
+              {step === 2 && (
+                <>
+                  <label className="block font-semibold" htmlFor="arte-prompt">
+                    Como você quer a arte?
+                  </label>
                   <Textarea
-                    value={auxiliaryPrompt}
-                    onChange={(e) => setAuxiliaryPrompt(e.target.value)}
-                    rows={3}
-                    placeholder="Ex.: Festa Junina, bandeirinhas coloridas ao fundo, tom alegre..."
-                    data-testid="input-instrucoes-adicionais"
+                    id="arte-prompt"
+                    value={prompt}
+                    disabled={busy || Boolean(pending.current)}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    maxLength={3000}
+                    rows={5}
+                    placeholder="Ex.: Uma arte alegre para a festa da escola, com cores suaves e o nome do evento."
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Essas instruções entram no prompt enviado à IA apenas nesta
-                    geração.
+                  <p className="text-sm">
+                    {selected.length} {selected.length === 1 ? "aluno" : "alunos"} = {selected.length} {selected.length === 1 ? "arte" : "artes"}. Cota
+                    disponível: {eligibility.data?.remainingQuota ?? 0}.
                   </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* navegação */}
-          <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
-            <Button
-              variant="ghost"
-              onClick={back}
-              disabled={step === 0}
-              data-testid="button-wizard-back"
-            >
-              <ArrowLeft className="size-4" /> Voltar
-            </Button>
-
-            {step < steps.length - 1 ? (
-              <Button
-                onClick={next}
-                disabled={!canAdvance(step)}
-                data-testid="button-wizard-next"
-              >
-                Continuar <ArrowRight className="size-4" />
-              </Button>
-            ) : (
-              <div className="flex flex-col items-end gap-1.5">
-                <Button
-                  onClick={generate}
-                  disabled={
-                    !canAdvance(step) || !reference || quota.data?.remaining === 0
-                  }
-                  data-testid="button-wizard-generate"
-                >
-                  <Sparkles className="size-4" /> Gerar arte
-                </Button>
-                {quota.data && (
-                  <p
-                    className={cn(
-                      "text-xs",
-                      quota.data.remaining === 0
-                        ? "font-medium text-destructive"
-                        : quota.data.remaining <= Math.max(3, Math.ceil(quota.data.limit * 0.1))
-                          ? "font-medium text-amber-500"
-                          : "text-muted-foreground",
-                    )}
-                    data-testid="text-quota-restante"
-                  >
-                    {quota.data.remaining === 0
-                      ? "Cota diária esgotada — tente novamente amanhã."
-                      : quota.data.remaining <= Math.max(3, Math.ceil(quota.data.limit * 0.1))
-                        ? `Atenção: só ${quota.data.remaining === 1 ? "resta 1 geração" : `restam ${quota.data.remaining} gerações`} hoje.`
-                        : `${quota.data.remaining} de ${quota.data.limit} gerações restantes hoje`}
+                  {reviewError && (
+                    <p className="text-sm text-muted-foreground">
+                      {reviewError}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    A IA pode alterar detalhes da foto. Confira cada arte antes
+                    de usar.
                   </p>
-                )}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* resumo do aluno selecionado */}
-      {student && (
-        <p className="mt-3 text-center text-xs text-muted-foreground">
-          Aluno: <span className="font-medium text-foreground">{student.name}</span>
-          {" · "}
-          {studentContactLine(
-            student,
-            student.classId ? classLabels.get(student.classId) : undefined,
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={busy || Boolean(pending.current)}
+                      onClick={() => setStep(1)}
+                    >
+                      Voltar
+                    </Button>
+                    <Button
+                      disabled={
+                        busy || (!pending.current && Boolean(reviewError))
+                      }
+                      onClick={() => void generate()}
+                    >
+                      <Sparkles className="size-4" />
+                      {busy
+                        ? "Enviando pedido…"
+                        : pending.current
+                          ? "Retomar o mesmo pedido"
+                          : `Gerar ${selected.length} ${selected.length === 1 ? "arte" : "artes"}`}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </>
           )}
-          {" · "}Escola:{" "}
-          <span className="font-medium text-foreground">
-            {schoolBrand?.name ?? "Escola indisponível"}
-          </span>
-        </p>
+        </section>
       )}
-
-      <GuardianVerifyDialog
-        open={guardianDialogOpen}
-        onOpenChange={setGuardianDialogOpen}
-        student={student}
-      />
+      {Boolean(batches.data?.length) && (
+        <section className="space-y-2">
+          <h2 className="font-semibold">Seus lotes</h2>
+          {batches.data?.map((item) => (
+            <Button
+              key={item.id}
+              variant="outline"
+              className="mr-2"
+              onClick={() => setBatchId(item.id)}
+            >
+              {item.completed}/{item.total} prontas
+              {item.failed ? ` · ${item.failed} com falha` : ""}
+              {item.status === "processing" || item.status === "pending"
+                ? " · em andamento"
+                : ""}
+            </Button>
+          ))}
+        </section>
+      )}
+      {batches.isError && (
+        <ErrorState
+          message="Não foi possível carregar os lotes anteriores."
+          onRetry={() => void batches.refetch()}
+        />
+      )}
+      {photoStudent && selected.find((s) => s.id === photoStudent) && (
+        <GenerationPhotoPicker
+          student={selected.find((s) => s.id === photoStudent)!}
+          onClose={() => setPhotoStudent(null)}
+          onSelect={(photo) => {
+            setChoices((previous) => ({ ...previous, [photoStudent]: photo }));
+            setPhotoStudent(null);
+          }}
+        />
+      )}
     </div>
   );
 }
-
-

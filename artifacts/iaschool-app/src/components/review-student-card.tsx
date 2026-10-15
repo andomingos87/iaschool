@@ -9,8 +9,10 @@ import {
   CardTitle,
 } from "@workspace/iaschool-ui/components/ui/card";
 import type { ReviewFace, ReviewStudentGroup } from "@/lib/data";
+import { changeReviewSelection, reconcileReviewSelection, reviewSelectionBatch } from "@/lib/review-selection";
 
 interface ReviewStudentCardProps {
+  eventId: string;
   group: ReviewStudentGroup;
   /** `faceId` → URL assinada do recorte; sem recorte, cai para a miniatura. */
   cropUrls: Map<string, string>;
@@ -26,11 +28,13 @@ interface ReviewStudentCardProps {
  *
  * A grade é partida por confiança: a faixa alta nasce marcada e o botão de
  * lote a alcança; "precisa de atenção" nasce desmarcada e só entra no lote
- * com clique. Isso não é bypass da D6 — cada linha confirmada continua
+ * com clique individual ou "Selecionar todas", que avisa sobre ambiguidade.
+ * Isso não é bypass da D6 — cada linha confirmada continua
  * gravando `reviewed_by` e `reviewed_at`; o que muda é que um ato humano
  * cobre os N recortes que a pessoa olhou nesta grade.
  */
 export function ReviewStudentCard({
+  eventId,
   group,
   cropUrls,
   thumbUrls,
@@ -38,25 +42,25 @@ export function ReviewStudentCard({
   onConfirm,
   onOpenPhoto,
 }: ReviewStudentCardProps) {
-  const [checked, setChecked] = useState<Set<string>>(
-    () => new Set(group.confident.map((f) => f.id)),
-  );
   const all = useMemo(
     () => [...group.confident, ...group.needsAttention],
     [group.confident, group.needsAttention],
   );
+  const context = JSON.stringify([eventId, group.studentId]);
+  const [selection, setSelection] = useState(() => reconcileReviewSelection(
+    undefined, context, all.map((face) => face.id), group.confident.map((face) => face.id),
+  ));
+  const current = reconcileReviewSelection(
+    selection, context, all.map((face) => face.id), group.confident.map((face) => face.id),
+  );
+  if (current !== selection) setSelection(current);
+  const checked = current.checked;
 
   function toggle(id: string) {
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setSelection(changeReviewSelection(current, { toggle: id }, pending));
   }
 
-  const selected = all.filter((f) => checked.has(f.id)).map((f) => f.id);
-  const deferred = all.filter((f) => !checked.has(f.id)).map((f) => f.id);
+  const { selected, deferred } = reviewSelectionBatch(current);
 
   return (
     <Card className="border-border" data-testid={`card-review-student-${group.studentId}`}>
@@ -71,6 +75,25 @@ export function ReviewStudentCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" disabled={pending || all.length === 0}
+            onClick={() => setSelection(changeReviewSelection(current, "all", pending))}>
+            Selecionar todas
+          </Button>
+          <Button variant="outline" size="sm" disabled={pending || selected.length === 0}
+            onClick={() => setSelection(changeReviewSelection(current, "none", pending))}>
+            Desmarcar todas
+          </Button>
+          <span className="text-xs text-muted-foreground" aria-live="polite">
+            {selected.length} de {all.length} selecionadas
+          </span>
+        </div>
+        {group.needsAttention.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Selecionar todas inclui fotos ambíguas em “Precisa de atenção”. Confira os rostos antes de confirmar.
+          </p>
+        )}
+        {all.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma sugestão neste cartão.</p>}
         <FaceGrid
           faces={group.confident}
           checked={checked}
@@ -79,6 +102,7 @@ export function ReviewStudentCard({
           thumbUrls={thumbUrls}
           onOpenPhoto={onOpenPhoto}
           studentName={group.studentName}
+          pending={pending}
         />
 
         {group.needsAttention.length > 0 && (
@@ -99,13 +123,14 @@ export function ReviewStudentCard({
               thumbUrls={thumbUrls}
               onOpenPhoto={onOpenPhoto}
               studentName={group.studentName}
+              pending={pending}
             />
           </div>
         )}
 
         <div className="flex flex-wrap items-center gap-3">
           <Button
-            onClick={() => onConfirm(selected, deferred)}
+            onClick={() => { if (!pending && selected.length > 0) onConfirm(selected, deferred); }}
             disabled={pending || selected.length === 0}
             data-testid={`button-confirm-student-${group.studentId}`}
           >
@@ -132,6 +157,7 @@ function FaceGrid({
   thumbUrls,
   onOpenPhoto,
   studentName,
+  pending,
 }: {
   faces: ReviewFace[];
   checked: Set<string>;
@@ -140,6 +166,7 @@ function FaceGrid({
   thumbUrls: Map<string, string>;
   onOpenPhoto: (face: ReviewFace) => void;
   studentName: string;
+  pending: boolean;
 }) {
   if (faces.length === 0) return null;
   return (
@@ -159,15 +186,14 @@ function FaceGrid({
           >
             <button
               type="button"
+              disabled={pending}
               onClick={() => onToggle(face.id)}
               className="relative block w-full"
               aria-pressed={isChecked}
               aria-label={`${isChecked ? "Desmarcar" : "Marcar"} foto de ${studentName}`}
             >
               <div className="aspect-square min-h-[150px] bg-muted">
-                {url ? (
-                  <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                ) : null}
+                <FacePreview url={url} />
               </div>
               {/* Marcador desenhado, não um <Checkbox>: a célula inteira já é
                   o botão, e um controle dentro de outro é HTML inválido. */}
@@ -200,4 +226,12 @@ function FaceGrid({
       })}
     </div>
   );
+}
+
+function FacePreview({ url }: { url: string | undefined }) {
+  const [failedUrl, setFailedUrl] = useState<string>();
+  if (!url || failedUrl === url) {
+    return <span className="flex h-full items-center justify-center p-2 text-xs text-muted-foreground">Imagem indisponível. Use “ver foto” para conferir.</span>;
+  }
+  return <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => setFailedUrl(url)} />;
 }

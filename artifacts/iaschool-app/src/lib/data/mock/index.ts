@@ -1,3 +1,4 @@
+import { createMockReviewMediaRepository } from "../review-media";
 // Implementação mock (localStorage) do contrato Supabase — ver ../contract.ts
 // Troca futura: substituir createMockDataLayer() por createSupabaseDataLayer()
 // em ../index.ts, mantendo as mesmas interfaces.
@@ -1658,6 +1659,7 @@ const shareLogs: ShareLogRepository = {
 
 export function createMockDataLayer(): DataLayer {
   return {
+    reviewMedia: createMockReviewMediaRepository(),
     auth,
     approvals,
     storage,

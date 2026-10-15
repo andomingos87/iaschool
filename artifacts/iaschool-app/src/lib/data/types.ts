@@ -146,9 +146,9 @@ export interface SchoolContact {
 }
 
 /**
- * Cadastro da escola. As cores entram na arte. O logo fica no cadastro e
- * não é enviado ao modelo. Também guarda dados administrativos (CNPJ,
- * endereço, contato). Desde o M1 é a própria
+ * Cadastro da escola (CNPJ, endereço, contato). `logo` e `colors` podem
+ * existir em linhas antigas de `public.schools` e não são apagados aqui;
+ * a ficha não os edita e a geração não os lê. Desde o M1 é a própria
  * linha de `schools`: `id` é o id do tenant, e só aparecem as escolas de que
  * a pessoa é membro.
  */
@@ -584,11 +584,14 @@ export interface DeliveryBatchDetail {
   recipients: DeliveryBatchRecipientDetail[];
 }
 
+export type DeliveryPreviewProblem = "refresh_required" | "render_failed" | "unavailable";
+
 export interface DeliveryPreviewItem {
   itemId: string;
   studentId?: string;
   studentName: string;
-  url: string;
+  url?: string;
+  problem?: DeliveryPreviewProblem;
 }
 
 export const DELIVERY_BATCH_STATUS_LABEL: Record<DeliveryBatchStatus, string> = {
@@ -629,7 +632,8 @@ export const DELIVERY_BLOCKED_REASON_LABEL: Record<string, string> = {
   revisao_pendente: "Revisão de rostos pendente",
   number_unverified: "Número mudou ou perdeu a verificação",
   authorization_revoked: "Aceite revogado",
-  render_incomplete: "Derivado pendente ou falho",
+  render_incomplete: "Foto pendente ou com falha",
+  render_atualizacao_necessaria: "Atualize as fotos do álbum",
 };
 
 /**
@@ -717,14 +721,51 @@ export interface ReferencePost {
   createdAt: string;
 }
 
+/**
+ * Atalhos de instrução da tela de geração (S02, ART-03). São preferências do
+ * professor para esta geração; nenhum deles — nem desligar "Manter a foto
+ * original" — autoriza redesenhar o aluno. A regra fixa de preservação da
+ * pessoa é aplicada no servidor e não pode ser anulada por atalho.
+ */
+export interface ArtShortcuts {
+  /** "Não usar logo": tira todos os logos, inclusive o do modelo de arte. */
+  noLogo: boolean;
+  /** "Não usar texto": tira títulos, legendas e o nome do aluno. */
+  noText: boolean;
+  /**
+   * "Trocar o texto": insere a instrução com marcador no texto livre e foca a
+   * edição. Incompatível com `noText` (um desliga o outro).
+   */
+  replaceText: boolean;
+  /**
+   * "Manter a foto original": reforça a regra fixa. Ligado por padrão; desligar
+   * muda a instrução, mas nunca libera redesenho.
+   */
+  keepOriginal: boolean;
+}
+
 export interface GenerationRequest {
+  /** Compatibilidade com clientes anteriores; não usado na tela atual. */
+  mode?: "original_composition";
   student: Student;
   studentPhoto: StoredImage;
   schoolBrand?: SchoolBrand;
+  /** Ignorado na geração. O cliente não anexa o logo da escola. */
   showSchoolLogo: boolean;
   reference: ReferencePost;
   /** instruções extras digitadas na tela de geração (opcional) */
   auxiliaryPrompt?: string;
+  /** atalhos de instrução escolhidos na tela (S02, ART-03) */
+  shortcuts?: ArtShortcuts;
+}
+
+/** Fluxo simples vigente: uma foto de referência e instruções livres. */
+export interface PhotoPromptGenerationRequest {
+  mode: "photo_prompt";
+  student: Student;
+  studentPhoto: StoredImage;
+  schoolBrand?: SchoolBrand;
+  prompt: string;
 }
 
 /** Configuração global do template do prompt de geração (editada pelo admin). */

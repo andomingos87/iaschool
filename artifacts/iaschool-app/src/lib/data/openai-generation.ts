@@ -4,7 +4,11 @@
 import imageCompression from "browser-image-compression";
 import type { GenerationQuota, ImageGenerationService } from "./contract";
 import type { GenerationPayloadImage } from "./types";
-import { buildGenerationPrompt } from "../prompt-template";
+import { compositionForPhoto } from "../original-composition";
+import {
+  buildGenerationPrompt,
+  DEFAULT_PROMPT_TEMPLATE,
+} from "../prompt-template";
 
 // Espelham o payload montado pelo servidor (api-server/routes/generation.ts).
 const GENERATION_MODEL = "gpt-image-2.5-flare";
@@ -19,11 +23,19 @@ const COMPRESS_OPTIONS = {
   useWebWorker: true,
 };
 
-async function toUploadFile(url: string, name: string): Promise<File> {
+async function toUploadFile(
+  url: string,
+  name: string,
+  compress = true,
+): Promise<File> {
   const res = await fetch(url);
   if (!res.ok) throw new Error("Falha ao carregar imagem para envio");
   let blob: Blob = await res.blob();
-  if (blob.size > COMPRESS_THRESHOLD_BYTES && blob.type.startsWith("image/")) {
+  if (
+    compress &&
+    blob.size > COMPRESS_THRESHOLD_BYTES &&
+    blob.type.startsWith("image/")
+  ) {
     try {
       const file = new File([blob], name, { type: blob.type });
       blob = await imageCompression(file, COMPRESS_OPTIONS);
@@ -79,7 +91,11 @@ function uploadWithProgress(
     xhr.ontimeout = () =>
       reject(new Error("A geração demorou demais. Tente novamente."));
     xhr.onerror = () =>
-      reject(new Error("Falha de conexão ao enviar as fotos. Verifique sua internet e tente novamente."));
+      reject(
+        new Error(
+          "Falha de conexão ao enviar as fotos. Verifique sua internet e tente novamente.",
+        ),
+      );
     xhr.send(formData);
   });
 }
@@ -117,6 +133,59 @@ export function createOpenAIGenerationService(
     },
 
     async generate(request, onUploadProgress) {
+      if (request.mode === "photo_prompt") {
+        const prompt = request.prompt.trim();
+        if (!prompt || prompt.length > 3000)
+          throw new Error(
+            "Escreva o que deseja na arte, com até 3.000 caracteres.",
+          );
+        const photo = await toUploadFile(
+          request.studentPhoto.url,
+          "foto-referencia.png",
+          false,
+        );
+        const headers: Record<string, string> = {};
+        if (getAccessToken) {
+          const token = await getAccessToken();
+          if (!token)
+            throw new Error(
+              "Sua sessão expirou. Entre novamente para gerar a arte.",
+            );
+          headers.Authorization = `Bearer ${token}`;
+        }
+        const formData = new FormData();
+        formData.append("mode", "photo_prompt");
+        formData.append("prompt", prompt);
+        formData.append("images", photo, photo.name);
+        const { status, body } = await uploadWithProgress(
+          "/api/generation/post-image",
+          formData,
+          headers,
+          180_000,
+          onUploadProgress,
+        );
+        if (status < 200 || status >= 300 || !body?.imageUrl)
+          throw new Error(
+            body?.error ?? "Não foi possível gerar a arte. Tente novamente.",
+          );
+        return {
+          imageUrl: body.imageUrl,
+          logId: body.logId,
+          details: {
+            prompt,
+            model: GENERATION_MODEL,
+            size: GENERATION_SIZE,
+            images: [
+              {
+                role: "Foto de referência",
+                fileName: photo.name,
+                sizeBytes: photo.size,
+              },
+            ],
+          },
+        };
+      }
+      const composition = compositionForPhoto(request);
       const files: File[] = [];
       // Metadados de cada imagem enviada (papel/nome/tamanho) — nunca bytes.
       const imagesMeta: GenerationPayloadImage[] = [];
@@ -131,22 +200,19 @@ export function createOpenAIGenerationService(
         "Referência",
       );
       pushFile(
-        await toUploadFile(request.studentPhoto.url, "foto-aluno.png"),
+        await toUploadFile(request.studentPhoto.url, "foto-aluno.png", false),
         "Foto do aluno",
       );
-      if (request.showSchoolLogo && request.schoolBrand?.logo) {
-        pushFile(
-          await toUploadFile(request.schoolBrand.logo.url, "logo-escola.png"),
-          "Logo da escola",
-        );
-      }
+      // O logo gravado na escola não é anexo, mesmo com flag ou template antigo.
 
       // Sem Content-Type manual: o navegador define o boundary do multipart.
       const headers: Record<string, string> = {};
       if (getAccessToken) {
         const token = await getAccessToken();
         if (!token) {
-          throw new Error("Sua sessão expirou. Entre novamente para gerar posts.");
+          throw new Error(
+            "Sua sessão expirou. Entre novamente para gerar posts.",
+          );
         }
         headers["Authorization"] = `Bearer ${token}`;
       }
@@ -164,16 +230,18 @@ export function createOpenAIGenerationService(
       const prompt = buildGenerationPrompt(request, template);
       const formData = new FormData();
       formData.append("prompt", prompt);
+      formData.append("composition", JSON.stringify(composition));
       // Metadados p/ o log de auditoria do admin (nunca bytes de imagem).
       formData.append(
         "meta",
         JSON.stringify({
-          studentName: request.student.name,
+          templateSource: template?.trim() ? "saved" : "fallback",
+          template: template?.trim() ? template : DEFAULT_PROMPT_TEMPLATE,
+          compositionVersion: composition.version,
           model: GENERATION_MODEL,
           size: GENERATION_SIZE,
-          showSchoolLogo: request.showSchoolLogo,
-          schoolName: request.schoolBrand?.name ?? null,
-          auxiliaryPrompt: request.auxiliaryPrompt ?? null,
+          showSchoolLogo: false,
+
           images: imagesMeta,
         }),
       );

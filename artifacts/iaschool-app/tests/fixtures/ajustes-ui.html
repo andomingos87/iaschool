@@ -1,0 +1,45 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>IAschool — ensaio sintético</title></head>
+<body><div id="root"></div><script type="module">
+// Fixture funcional de UI: SOMENTE localhost e DataLayer mock, sem API remota.
+// Inicializa fotos sintéticas pela mesma memória de upload usada no produto.
+import { getDataLayer } from '../../src/lib/data/index.ts';
+if (!['localhost', '127.0.0.1'].includes(location.hostname) || !getDataLayer().isMock) throw new Error('Fixture exige localhost em modo demonstração.');
+for (const key of Object.keys(localStorage)) if (key.startsWith('iaschool:')) localStorage.removeItem(key);
+const store = (key, value) => localStorage.setItem(`iaschool:${key}`, JSON.stringify(value));
+const now = new Date().toISOString();
+const school = 'user-escola';
+const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 240;
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#d4e9e2'; ctx.fillRect(0, 0, 320, 240);
+ctx.fillStyle = '#246a5c'; ctx.fillRect(100, 90, 110, 150);
+ctx.fillStyle = '#eaab80'; ctx.beginPath(); ctx.arc(155, 60, 40, 0, Math.PI * 2); ctx.fill();
+const url = canvas.toDataURL('image/jpeg', .95);
+const blob = await (await fetch(url)).blob();
+const original = { id: 'original-sintetico', url, path: 'test/original.jpg', createdAt: now };
+store('schools', [{ id: school, name: 'Escola Horizonte', logo: original, colors: ['#ff0088'], address: { zip: '01001000', street: 'Rua manual', number: '123', complement: 'Sala teste', city: 'São Paulo', state: 'SP' }, createdAt: now, updatedAt: now }]);
+store('students', ['a', 'b'].map(id => ({ id: `aluno-${id}`, name: `Aluno Sintético ${id.toUpperCase()}`, birthDate: '1990-01-01', schoolId: school, ownerId: school, classId: 'turma-sintetica', photos: [original], createdAt: now, updatedAt: now })));
+store('classes', [{id:'turma-sintetica',schoolId:school,schoolYear:2026,grade:'1EF',name:'A',createdAt:now,updatedAt:now}]);
+store('authorizations', ['a', 'b'].map(id => ({ id: `autorizacao-${id}`, studentId: `aluno-${id}`, schoolId: school, scope: 'biometric_sorting', grantedAt: now, createdAt: now })));
+store('events', ['a', 'b', 'vazio'].map(id => ({ id: `evento-${id}`, schoolId: school, name: id === 'vazio' ? 'Evento sem fotos' : 'Evento Sintético', eventDate: id === 'a' ? '2026-10-11' : '2026-10-12', status: 'review', keepOriginals: false, photoRetentionUntil: '2028-10-12', imageRightsDeclaredAt: now, imageRightsDeclaredBy: school, createdBy: school, createdAt: now, updatedAt: now })));
+store('references', [{ id: 'modelo-teste', schoolId: school, name: 'Modelo sintético', image: original, createdAt: now }]);
+const data = getDataLayer();
+await data.auth.signIn('professor@iaschool.demo', 'teste-local');
+const faces = [];
+const manyPhotos = new URLSearchParams(location.search).get('fotos') === '50';
+const totalPhotos = manyPhotos ? 50 : 4;
+for (let index = 0; index < totalPhotos; index++) {
+  const eventId = manyPhotos ? (index < 25 ? 'evento-a' : 'evento-b') : (index === 0 ? 'evento-a' : 'evento-b');
+  const upload = await data.photos.upload({ eventId, schoolId: school, batchId: 'lote-sintetico', contentHash: String(index).padStart(64, '0'), originalFilename: `sintetica-${index}.jpg`, blob, width: 320, height: 240 });
+  if (upload.outcome !== 'uploaded') throw new Error('Foto de fixture duplicada');
+  const p = upload.photo;
+  faces.push({ id: `rosto-${index}`, eventId, schoolId: school, photoId: p.id, storagePath: p.storagePath, thumbPath: p.storagePath.replace('.jpg','.webp'), bbox: { x: 115, y: 20, w: 80, h: 80 }, detScore: .95, state: manyPhotos || index < 2 ? 'confirmed' : 'suggested', studentId: 'aluno-a', studentName: 'Aluno Sintético A', matchScore: .9, highConfidence: index !== 3, reviewedAt: index < 2 ? now : undefined });
+}
+// Mantém as URLs dos uploads na memória, mas evita que o simulador gere novos rostos.
+const photos = JSON.parse(localStorage.getItem('iaschool:photos'));
+store('photos', photos.map(p => ({ ...p, status: 'processed', thumbPath: p.storagePath.replace('.jpg','.webp'), facesCount: 1 })));
+store('photo-faces', faces);
+const { prepareAdjustmentsUi } = await import('./ajustes-ui.ts');
+await prepareAdjustmentsUi(data, url, canvas.toDataURL('image/png'));
+history.replaceState(null, '', new URLSearchParams(location.search).get('tela') === 'album' ? `/album#${'a'.repeat(64)}` : new URLSearchParams(location.search).get('tela') === 'entregas' ? '/eventos/evento-b/entregas' : new URLSearchParams(location.search).get('tela') === 'gerar' ? '/gerar' : '/alunos/aluno-a');
+await import('../../src/main.tsx');
+</script></body></html>

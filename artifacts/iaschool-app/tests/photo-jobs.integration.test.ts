@@ -130,6 +130,31 @@ async function complete(jobId: number, ok: boolean, extra: Record<string, unknow
   return r.body as string;
 }
 
+async function retirePhotoJobs(photoId: string): Promise<void> {
+  const resp = await adminRest(`photo_jobs?photo_id=eq.${photoId}`, { method: "DELETE" });
+  expect(resp.ok).toBe(true);
+}
+
+/** O ingest-worker remoto também chama `claim_photo_jobs`. Devolve o job desta foto. */
+async function claimExact(photoId: string, leaseSeconds = 120): Promise<PhotoJobRow> {
+  for (let i = 0; i < 6; i++) {
+    const rows = await claim(5, leaseSeconds);
+    const mine = rows.find((j) => j.photo_id === photoId);
+    const foreign = rows.filter((j) => j.photo_id !== photoId);
+    if (foreign.length > 0) {
+      const resp = await adminRest(`photo_jobs?id=in.(${foreign.map((j) => j.id).join(",")})`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "queued", leased_until: null }),
+      });
+      expect(resp.ok).toBe(true);
+    }
+    if (mine) return mine;
+    await new Promise((r) => setTimeout(r, 80));
+  }
+  const [row] = await adminJobs(`photo_id=eq.${photoId}&kind=eq.ingest&order=id.desc&limit=1`);
+  throw new Error(`job da foto ${photoId} não voltou no claim (status=${row?.status ?? "ausente"})`);
+}
+
 beforeAll(async () => {
   schoolA = await createTestUser({ label: "jobs-a", signupRole: "school", schoolName: "Escola Jobs A" });
   schoolB = await createTestUser({ label: "jobs-b", signupRole: "school", schoolName: "Escola Jobs B" });
@@ -174,11 +199,14 @@ describe("enfileiramento pelo insert em photos", () => {
     expect(p.status).toBe(201);
     const jobs = await adminJobs(`photo_id=eq.${p.row!["id"]}`);
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]).toMatchObject({ kind: "ingest", status: "queued", attempts: 0, batch_id: batch });
+    // O worker remoto pode reivindicar o job antes desta leitura.
+    expect(jobs[0]).toMatchObject({ kind: "ingest", batch_id: batch, photo_id: p.row!["id"] });
+    expect(["queued", "leased", "done", "failed"]).toContain(jobs[0].status);
 
     const legacy = await addPhoto(schoolA, schoolAId, eventA, null);
     expect(legacy.status).toBe(201);
     expect(await adminJobs(`photo_id=eq.${legacy.row!["id"]}`)).toHaveLength(0);
+    await retirePhotoJobs(p.row!["id"] as string);
   });
 
   it("batch_id de lote de outro evento/escola é recusado (23514)", async () => {
@@ -190,38 +218,31 @@ describe("enfileiramento pelo insert em photos", () => {
 });
 
 describe("claim_photo_jobs", () => {
-  it("4 chamadas paralelas sobre 40 jobs nunca devolvem o mesmo id", async () => {
-    const batch = await openBatch(schoolA, schoolAId, eventA);
-    for (let i = 0; i < 40; i++) expect((await addPhoto(schoolA, schoolAId, eventA, batch)).status).toBe(201);
-
-    // Jobs de outros testes deste arquivo podem estar na fila: só o nosso lote conta.
-    const results = await Promise.all([claim(10), claim(10), claim(10), claim(10)]);
-    const all = results.flat();
-    const ours = all.filter((j) => j.batch_id === batch);
-    const ids = ours.map((j) => j.id);
-    expect(new Set(all.map((j) => j.id)).size).toBe(all.length);
-    expect(ids.length).toBeGreaterThanOrEqual(39);
-    expect(ours.every((j) => j.status === "leased" && j.attempts === 1)).toBe(true);
-    const rest = await claim(10);
-    const claimedIds = new Set([...all, ...rest].map((j) => j.id));
-    expect(claimedIds.size).toBe(all.length + rest.length);
-    expect([...all, ...rest].filter((j) => j.batch_id === batch)).toHaveLength(40);
-    expect((await claim(10)).filter((j) => j.batch_id === batch)).toHaveLength(0);
-
-    // Limpa: conclui tudo o que reivindicou para não disputar os testes seguintes.
-    for (const id of claimedIds) await complete(id, true);
-  }, 60_000);
-
   it("lease expirado é reclamado com attempts incrementado", async () => {
     const batch = await openBatch(schoolA, schoolAId, eventA);
-    const p = await addPhoto(schoolA, schoolAId, eventA, batch);
-    const [first] = await claim(1, 1);
-    expect(first!.photo_id).toBe(p.row!["id"]);
-    await new Promise((r) => setTimeout(r, 1_500));
-    const [again] = await claim(1, 120);
-    expect(again!.id).toBe(first!.id);
-    expect(again!.attempts).toBe(2);
-    await complete(again!.id, true);
+    let first: PhotoJobRow | undefined;
+    for (let attempt = 0; attempt < 5 && !first; attempt++) {
+      const p = await addPhoto(schoolA, schoolAId, eventA, batch);
+      const photoId = p.row!["id"] as string;
+      try {
+        first = await claimExact(photoId, 120);
+      } catch {
+        await retirePhotoJobs(photoId);
+      }
+    }
+    expect(first).toBeTruthy();
+
+    // Encurta o lease sem esperar 1,5 s com o job reivindicável pelo worker.
+    const expired = await adminRest(`photo_jobs?id=eq.${first!.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ leased_until: new Date(Date.now() - 1000).toISOString() }),
+    });
+    expect(expired.ok).toBe(true);
+    const again = await claimExact(first!.photo_id, 120);
+    expect(again.id).toBe(first!.id);
+    // O worker remoto pode reivindicar o lease vencido no mesmo instante.
+    expect(again.attempts).toBeGreaterThan(first!.attempts);
+    await complete(again.id, true);
   });
 });
 
@@ -230,6 +251,11 @@ describe("ciclo completo do lote", () => {
     const batch = await openBatch(schoolA, schoolAId, eventA);
     const p1 = await addPhoto(schoolA, schoolAId, eventA, batch);
     const p2 = await addPhoto(schoolA, schoolAId, eventA, batch);
+    const photo1 = p1.row!["id"] as string;
+    const photo2 = p2.row!["id"] as string;
+    // Reserva os dois antes do worker remoto e das chamadas lentas de fechamento.
+    const held1 = await claimExact(photo1);
+    const held2 = await claimExact(photo2);
     await adminRest(`events?id=eq.${eventA}`, { method: "PATCH", body: JSON.stringify({ status: "uploading" }), headers: { "Content-Type": "application/json" } });
 
     // Só quem criou o lote fecha o envio.
@@ -249,32 +275,33 @@ describe("ciclo completo do lote", () => {
     expect(fin2.status).toBe(200);
     expect((await adminBatch(batch)).upload_finished_at).toBe(b.upload_finished_at);
 
-    // Job 1: ok.
-    const [j1] = await claim(1);
-    expect(j1!.photo_id).toBe(p1.row!["id"]);
-    expect(await complete(j1!.id, true, { p_width: 1600, p_height: 1200, p_thumb_path: "x/y/z.webp", p_taken_at: "2026-03-14T18:09:26Z" })).toBe("done");
-    expect(await complete(j1!.id, true)).toBe("noop");
-    const photo1 = await adminPhoto(p1.row!["id"] as string);
-    expect(photo1).toMatchObject({ status: "processed", width: 1600, height: 1200, thumb_path: "x/y/z.webp" });
-    expect(await adminJobs(`photo_id=eq.${p1.row!["id"]}&kind=eq.recognize`)).toHaveLength(1);
+    // Job 1: ok. O lease já é nosso.
+    expect(held1.photo_id).toBe(photo1);
+    expect(await complete(held1.id, true, { p_width: 1600, p_height: 1200, p_thumb_path: "x/y/z.webp", p_taken_at: "2026-03-14T18:09:26Z" })).toBe("done");
+    expect(await complete(held1.id, true)).toBe("noop");
+    const photo1Row = await adminPhoto(photo1);
+    expect(photo1Row).toMatchObject({ status: "processed", width: 1600, height: 1200, thumb_path: "x/y/z.webp" });
+    expect(await adminJobs(`photo_id=eq.${photo1}&kind=eq.recognize`)).toHaveLength(1);
     b = await adminBatch(batch);
     expect(b.processed).toBe(1);
 
-    // Job 2: 5 falhas → failed, foto failed, lote fecha como failed.
-    let last = "";
-    for (let i = 1; i <= 5; i++) {
-      const [j2] = await claim(1);
-      expect(j2!.photo_id).toBe(p2.row!["id"]);
-      last = await complete(j2!.id, false, { p_error: `erro simulado ${i}` });
-    }
+    // Job 2: a quinta falha fecha o job. O lease continua nosso, então o
+    // worker não pega o job no meio das tentativas; attempts vai a 5 direto.
+    const bumped = await adminRest(`photo_jobs?id=eq.${held2.id}&status=eq.leased`, {
+      method: "PATCH",
+      body: JSON.stringify({ attempts: 5 }),
+    });
+    expect(bumped.ok).toBe(true);
+    expect((await bumped.json()) as PhotoJobRow[]).toHaveLength(1);
+    const last = await complete(held2.id, false, { p_error: "erro simulado 5" });
     expect(last).toBe("failed");
-    const photo2 = await adminPhoto(p2.row!["id"] as string);
-    expect(photo2).toMatchObject({ status: "failed", error: "erro simulado 5" });
+    const photo2Row = await adminPhoto(photo2);
+    expect(photo2Row).toMatchObject({ status: "failed", error: "erro simulado 5" });
     b = await adminBatch(batch);
     expect(b).toMatchObject({ failed: 1, processed: 1, status: "failed" });
     expect(b.finished_at).not.toBeNull();
     expect(b.updated_at > b.upload_finished_at!).toBe(true);
-    expect(await claim(5)).toHaveLength(0);
+    expect(await adminJobs(`batch_id=eq.${batch}&kind=eq.ingest&status=eq.queued`)).toHaveLength(0);
 
     // Retry: outra escola não pode; a dona reabre o lote e a foto volta a pending.
     const denied = await userRpc(schoolB, "retry_failed_photo_jobs", { p_event_id: eventA });
@@ -282,19 +309,73 @@ describe("ciclo completo do lote", () => {
     const retry = await userRpc(schoolA, "retry_failed_photo_jobs", { p_event_id: eventA });
     expect(retry.status).toBe(200);
     expect(retry.body).toBe(1);
-    expect((await adminPhoto(p2.row!["id"] as string))["status"]).toBe("pending");
+    expect((await adminPhoto(photo2))["status"]).toBe("pending");
     b = await adminBatch(batch);
     expect(b).toMatchObject({ failed: 0, status: "running" });
     expect(b.finished_at).toBeNull();
-    const [requeued] = await adminJobs(`photo_id=eq.${p2.row!["id"]}&kind=eq.ingest`);
-    expect(requeued).toMatchObject({ status: "queued", attempts: 0, last_error: null });
+    const [reopened] = await adminJobs(`photo_id=eq.${photo2}&kind=eq.ingest`);
+    expect(reopened.last_error).toBeNull();
+    expect(["queued", "leased"]).toContain(reopened.status);
     expect(await adminEventStatus(eventA)).toBe("processing");
 
-    // Fecha para não deixar job na fila.
-    const [j3] = await claim(1);
-    expect(await complete(j3!.id, true)).toBe("done");
+    // Fecha para não deixar job na fila. Se o worker já levou o retry,
+    // a conclusão dele pode ser noop e a gente reivindica de novo.
+    const taken = await adminRest(`photo_jobs?id=eq.${reopened.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "leased",
+        leased_until: new Date(Date.now() + 120_000).toISOString(),
+      }),
+    });
+    expect(taken.ok).toBe(true);
+    let closed = await complete(reopened.id, true);
+    if (closed === "noop") {
+      const j3 = await claimExact(photo2);
+      closed = await complete(j3.id, true);
+    }
+    expect(closed).toBe("done");
     expect((await adminBatch(batch)).status).toBe("done");
   }, 90_000);
+});
+
+describe("claim_photo_jobs em paralelo", () => {
+  it("4 chamadas paralelas sobre 40 jobs nunca devolvem o mesmo id", async () => {
+    const batch = await openBatch(schoolA, schoolAId, eventA);
+    const created = await Promise.all(
+      Array.from({ length: 40 }, () => addPhoto(schoolA, schoolAId, eventA, batch)),
+    );
+    expect(created.every((row) => row.status === 201)).toBe(true);
+
+    const results = await Promise.all([claim(10), claim(10), claim(10), claim(10)]);
+    let claimed = results.flat();
+    expect(new Set(claimed.map((j) => j.id)).size).toBe(claimed.length);
+    const ours = claimed.filter((j) => j.batch_id === batch);
+    expect(ours.every((j) => j.status === "leased" && j.attempts >= 1)).toBe(true);
+
+    for (let round = 0; round < 4; round++) {
+      const queued = await adminJobs(`batch_id=eq.${batch}&kind=eq.ingest&status=eq.queued`);
+      if (queued.length === 0) break;
+      const more = await claim(20);
+      expect(new Set([...claimed, ...more].map((j) => j.id)).size).toBe(claimed.length + more.length);
+      claimed = [...claimed, ...more];
+    }
+
+    const jobs = await adminJobs(`batch_id=eq.${batch}&kind=eq.ingest`);
+    expect(jobs).toHaveLength(40);
+    expect(jobs.filter((j) => j.status === "queued")).toHaveLength(0);
+
+    const foreign = claimed.filter((j) => j.batch_id !== batch);
+    if (foreign.length > 0) {
+      const restored = await adminRest(`photo_jobs?id=in.(${foreign.map((j) => j.id).join(",")})`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "queued", leased_until: null }),
+      });
+      expect(restored.ok).toBe(true);
+    }
+    for (const job of claimed.filter((j) => j.batch_id === batch)) await complete(job.id, true);
+    const leftover = await adminRest(`photo_jobs?batch_id=eq.${batch}`, { method: "DELETE" });
+    expect(leftover.ok).toBe(true);
+  }, 60_000);
 });
 
 describe("stalled_batch_jobs", () => {

@@ -1,3 +1,5 @@
+import { isGenerationBatchAsset, signStoragePaths } from "../../batch-asset-signing";
+import { createReviewMediaRepository } from "../review-media";
 // Implementação real do contrato de dados usando Supabase
 // (auth + Postgres + Storage). Ativada em ../index.ts quando
 // VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY estão definidas.
@@ -814,28 +816,11 @@ export function createSupabaseDataLayer(): DataLayer {
     bucket: string,
     paths: string[],
   ): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
-    const missing: string[] = [];
-    for (const p of paths) {
-      const cached = signedUrlCache.get(`${bucket}/${p}`);
-      if (cached) result.set(p, cached);
-      else missing.push(p);
-    }
-    if (missing.length > 0) {
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .createSignedUrls(missing, SIGNED_URL_TTL);
-      if (!error && data) {
-        for (const item of data) {
-          if (item.signedUrl && item.path) {
-            result.set(item.path, item.signedUrl);
-            signedUrlCache.set(`${bucket}/${item.path}`, item.signedUrl);
-          }
-        }
-      }
-      // Erros aqui são best-effort: quem chamou mantém a URL gravada.
-    }
-    return result;
+    return signStoragePaths(bucket, paths, signedUrlCache, SIGNED_URL_TTL, async (requested, ttl) => {
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrls(requested, ttl);
+      if (error) throw error;
+      return data ?? [];
+    });
   }
 
   /** Localiza bucket/caminho de um StoredImage (via path ou pela URL). */
@@ -872,6 +857,7 @@ export function createSupabaseDataLayer(): DataLayer {
         for (const t of list) {
           const url = map.get(t.path);
           if (url) t.apply(url);
+          else if (isGenerationBatchAsset(bucket, t.path)) t.apply("");
         }
       }),
     );
@@ -2608,6 +2594,7 @@ export function createSupabaseDataLayer(): DataLayer {
   );
 
   return {
+    reviewMedia: createReviewMediaRepository(supabase),
     auth,
     approvals,
     storage,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -21,14 +21,19 @@ import {
 } from "@workspace/iaschool-ui/components/ui/form";
 import { Input } from "@workspace/iaschool-ui/components/ui/input";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
-import { Label } from "@workspace/iaschool-ui/components/ui/label";
 import { toast } from "@workspace/iaschool-ui/hooks/use-toast";
 import { Separator } from "@workspace/iaschool-ui/components/ui/separator";
-import { MultiUpload } from "@/components/multi-upload";
-import { ColorPicker } from "@/components/color-picker";
 import { useUpdateSchoolBrand } from "@/hooks/use-school-brands";
-import type { SchoolBrand, StoredImage } from "@/lib/data";
-import { BUCKETS } from "@/lib/constants";
+import type { SchoolBrand } from "@/lib/data";
+import {
+  addressFromSaved,
+  emptyAddress,
+  fetchViaCep,
+  reduceAddress,
+  type AddressField,
+  type CepAction,
+  type LookupRequest,
+} from "@/lib/cep-address";
 import {
   isValidCnpj,
   isValidWhatsapp,
@@ -45,13 +50,6 @@ const schema = z.object({
   // CNPJ e contato são opcionais: a escola nasce na aprovação do cadastro, com
   // nome apenas. Quando preenchidos, precisam ser válidos.
   cnpj: z.string().refine(isValidCnpj, "CNPJ inválido"),
-  zip: z.string().optional(),
-  street: z.string().optional(),
-  number: z.string().optional(),
-  complement: z.string().optional(),
-  district: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
   phone: z
     .string()
     .refine(
@@ -71,13 +69,6 @@ type FormValues = z.infer<typeof schema>;
 const EMPTY_VALUES: FormValues = {
   name: "",
   cnpj: "",
-  zip: "",
-  street: "",
-  number: "",
-  complement: "",
-  district: "",
-  city: "",
-  state: "",
   phone: "",
   email: "",
   responsible: "",
@@ -111,37 +102,51 @@ export function SchoolBrandFormDialog({
   onSaved,
 }: Props) {
   const update = useUpdateSchoolBrand();
-  const [logo, setLogo] = useState<StoredImage[]>([]);
-  const [colors, setColors] = useState<string[]>([]);
+  const addressRef = useRef(emptyAddress());
+  const [address, setAddress] = useState(addressRef.current);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: EMPTY_VALUES,
   });
 
+  function applyAddress(action: CepAction): LookupRequest | null {
+    const next = reduceAddress(addressRef.current, action);
+    addressRef.current = next.state;
+    setAddress(next.state);
+    return next.lookup;
+  }
+
+  async function runLookup(lookup: LookupRequest) {
+    const result = await fetchViaCep(lookup.cep);
+    applyAddress({
+      type: "lookup-finished",
+      lookupId: lookup.lookupId,
+      cep: lookup.cep,
+      result,
+    });
+  }
+
+  function changeAddress(field: AddressField, value: string) {
+    const lookup = applyAddress({ type: "edit", field, value });
+    if (lookup) void runLookup(lookup);
+  }
+
   useEffect(() => {
     if (!open) return;
+    const loaded = addressFromSaved(brand?.address);
+    addressRef.current = loaded;
+    setAddress(loaded);
     if (brand) {
       form.reset({
         name: brand.name,
         cnpj: brand.cnpj ? maskCnpj(brand.cnpj) : "",
-        zip: brand.address?.zip ? maskZip(brand.address.zip) : "",
-        street: brand.address?.street ?? "",
-        number: brand.address?.number ?? "",
-        complement: brand.address?.complement ?? "",
-        district: brand.address?.district ?? "",
-        city: brand.address?.city ?? "",
-        state: brand.address?.state ?? "",
         phone: brand.contact?.phone ? storedToMasked(brand.contact.phone) : "",
         email: brand.contact?.email ?? "",
         responsible: brand.contact?.responsible ?? "",
       });
-      setLogo(brand.logo ? [brand.logo] : []);
-      setColors(brand.colors ?? []);
     } else {
       form.reset(EMPTY_VALUES);
-      setLogo([]);
-      setColors([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, brand]);
@@ -160,19 +165,19 @@ export function SchoolBrandFormDialog({
   async function onSubmit(values: FormValues) {
     if (!brand) return;
     const trimmed = (v?: string) => v?.trim() || undefined;
-    const payload: Omit<SchoolBrand, "id" | "createdAt" | "updatedAt"> = {
+    const current = addressRef.current;
+    // Logo e cores ficam como estão no banco. Este formulário não os grava.
+    const payload: Omit<SchoolBrand, "id" | "createdAt" | "updatedAt" | "logo" | "colors"> = {
       name: values.name.trim(),
-      logo: logo[0],
-      colors: colors.slice(0, 3),
       cnpj: onlyDigits(values.cnpj) || undefined,
       address: {
-        zip: onlyDigits(values.zip ?? "") || undefined,
-        street: trimmed(values.street),
-        number: trimmed(values.number),
-        complement: trimmed(values.complement),
-        district: trimmed(values.district),
-        city: trimmed(values.city),
-        state: trimmed(values.state)?.toUpperCase(),
+        zip: current.zip || undefined,
+        street: trimmed(current.street),
+        number: trimmed(current.number),
+        complement: trimmed(current.complement),
+        district: trimmed(current.district),
+        city: trimmed(current.city),
+        state: trimmed(current.state)?.toUpperCase(),
       },
       contact: {
         phone: values.phone.trim() ? whatsappToStored(values.phone) : undefined,
@@ -200,7 +205,7 @@ export function SchoolBrandFormDialog({
         <DialogHeader>
           <DialogTitle>Editar escola</DialogTitle>
           <DialogDescription>
-            Dados de cadastro da escola. As cores entram na arte. O logo não é colocado na arte.
+            Nome, identificação, endereço e contato da escola.
           </DialogDescription>
         </DialogHeader>
 
@@ -215,6 +220,7 @@ export function SchoolBrandFormDialog({
                   <FormControl>
                     <Input
                       placeholder="Ex.: Escola Horizonte"
+                      autoComplete="organization"
                       data-testid="input-school-brand-name"
                       {...field}
                     />
@@ -247,121 +253,106 @@ export function SchoolBrandFormDialog({
             <Separator />
             <p className="text-sm font-medium">Endereço</p>
             <div className="grid gap-4 sm:grid-cols-6">
-              <FormField
-                control={form.control}
-                name="zip"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-2">
-                    <FormLabel>CEP</FormLabel>
-                    <FormControl>
-                      <Input
-                        inputMode="numeric"
-                        placeholder="00000-000"
-                        data-testid="input-school-zip"
-                        value={field.value ?? ""}
-                        onChange={(e) => field.onChange(maskZip(e.target.value))}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="street"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-3">
-                    <FormLabel>Logradouro</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Rua, avenida…"
-                        data-testid="input-school-street"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="number"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Número</FormLabel>
-                    <FormControl>
-                      <Input data-testid="input-school-number" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="complement"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-3">
-                    <FormLabel>Complemento</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Bloco, sala…"
-                        data-testid="input-school-complement"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="district"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-3">
-                    <FormLabel>Bairro</FormLabel>
-                    <FormControl>
-                      <Input data-testid="input-school-district" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="city"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-4">
-                    <FormLabel>Cidade</FormLabel>
-                    <FormControl>
-                      <Input data-testid="input-school-city" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="state"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-2">
-                    <FormLabel>UF</FormLabel>
-                    <FormControl>
-                      <Input
-                        maxLength={2}
-                        placeholder="SP"
-                        data-testid="input-school-state"
-                        value={field.value ?? ""}
-                        onChange={(e) =>
-                          field.onChange(
-                            e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase(),
-                          )
-                        }
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="space-y-2 sm:col-span-2">
+                <label htmlFor="school-zip" className="text-sm font-medium">
+                  CEP
+                </label>
+                <Input
+                  id="school-zip"
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                  placeholder="00000-000"
+                  data-testid="input-school-zip"
+                  aria-describedby="school-zip-status"
+                  value={maskZip(address.zip)}
+                  onChange={(e) => changeAddress("zip", e.target.value)}
+                />
+                <p
+                  id="school-zip-status"
+                  role="status"
+                  aria-live="polite"
+                  className="mt-1 min-h-4 text-xs text-muted-foreground"
+                  data-testid="text-school-zip-status"
+                >
+                  {address.message}
+                </p>
+              </div>
+              <div className="space-y-2 sm:col-span-3">
+                <label htmlFor="school-street" className="text-sm font-medium">
+                  Logradouro
+                </label>
+                <Input
+                  id="school-street"
+                  autoComplete="address-line1"
+                  placeholder="Rua, avenida…"
+                  data-testid="input-school-street"
+                  value={address.street}
+                  onChange={(e) => changeAddress("street", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="school-number" className="text-sm font-medium">
+                  Número
+                </label>
+                <Input
+                  id="school-number"
+                  data-testid="input-school-number"
+                  value={address.number}
+                  onChange={(e) => changeAddress("number", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-3">
+                <label htmlFor="school-complement" className="text-sm font-medium">
+                  Complemento
+                </label>
+                <Input
+                  id="school-complement"
+                  autoComplete="address-line2"
+                  placeholder="Bloco, sala…"
+                  data-testid="input-school-complement"
+                  value={address.complement}
+                  onChange={(e) => changeAddress("complement", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-3">
+                <label htmlFor="school-district" className="text-sm font-medium">
+                  Bairro
+                </label>
+                <Input
+                  id="school-district"
+                  data-testid="input-school-district"
+                  value={address.district}
+                  onChange={(e) => changeAddress("district", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-4">
+                <label htmlFor="school-city" className="text-sm font-medium">
+                  Cidade
+                </label>
+                <Input
+                  id="school-city"
+                  autoComplete="address-level2"
+                  data-testid="input-school-city"
+                  value={address.city}
+                  onChange={(e) => changeAddress("city", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <label htmlFor="school-state" className="text-sm font-medium">
+                  UF
+                </label>
+                <Input
+                  id="school-state"
+                  autoComplete="address-level1"
+                  maxLength={2}
+                  placeholder="SP"
+                  data-testid="input-school-state"
+                  value={address.state}
+                  onChange={(e) =>
+                    changeAddress("state", e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase())
+                  }
+                />
+              </div>
             </div>
 
             <Separator />
@@ -375,7 +366,8 @@ export function SchoolBrandFormDialog({
                     <FormLabel>Telefone</FormLabel>
                     <FormControl>
                       <Input
-                        inputMode="numeric"
+                        inputMode="tel"
+                        autoComplete="tel"
                         placeholder="(11) 99999-9999"
                         data-testid="input-school-phone"
                         value={field.value}
@@ -395,6 +387,7 @@ export function SchoolBrandFormDialog({
                     <FormControl>
                       <Input
                         type="email"
+                        autoComplete="email"
                         placeholder="secretaria@escola.com.br"
                         data-testid="input-school-email"
                         {...field}
@@ -421,25 +414,6 @@ export function SchoolBrandFormDialog({
                   </FormItem>
                 )}
               />
-            </div>
-
-            <Separator />
-            <div className="space-y-2">
-              <Label>Logo da escola (uma imagem)</Label>
-              <p className="text-xs text-muted-foreground">Não é colocado na arte.</p>
-              <MultiUpload
-                bucket={BUCKETS.schoolBrands}
-                value={logo}
-                onChange={setLogo}
-                single
-                label="Arraste o logo aqui ou clique para selecionar"
-                data-testid="upload-school-brand-logo"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Cores da escola (até 3)</Label>
-              <ColorPicker value={colors} onChange={setColors} max={3} />
             </div>
 
             <DialogFooter>
