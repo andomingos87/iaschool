@@ -11,6 +11,9 @@ quem não consentiu: o worker nem tenta, e o banco recusa se tentar (D5).
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+
+import cv2
 from typing import Any
 
 from .engine import FaceEngine, crop_face, decode_image, vector_literal
@@ -156,13 +159,37 @@ def handle_reference(job: ReferenceJob, deps: Deps) -> ReferenceOutcome:
     min_det_score = _float_setting(cfg, "min_det_score", 0.5)
     min_detect_px = _int_setting(cfg, "min_detect_px", 40)
 
-    data = deps.api.download(STUDENT_REFS_BUCKET, job.storage_path)
+    event_source = None
+    if job.source_kind == "event":
+        event_source = deps.api.rpc("reference_event_source", {"p_job_id": job.id})
+        if not event_source:
+            return ReferenceOutcome(deps.queue.complete_reference(
+                job.id, False, error="autorização ou rosto confirmado não está mais válido",
+                permanent=True), 0)
+        data = deps.api.download(EVENT_PHOTOS_BUCKET, event_source["storage_path"])
+    else:
+        data = deps.api.download(STUDENT_REFS_BUCKET, job.storage_path)
     try:
         image = decode_image(data)
+        if event_source is not None:
+            # Caixa EXATA do rosto validado pela escola. Sem margem arbitrária
+            # nem seleção de maior rosto da cena de grupo.
+            box = event_source.get("bbox", {})
+            raw = [box.get(k) for k in ("x", "y", "w", "h")]
+            if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in raw):
+                raise ValueError("caixa do rosto inválida")
+            x, y, w, h = raw
+            height, width = image.shape[:2]
+            if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > width or y + h > height:
+                raise ValueError("caixa do rosto fora da foto")
+            image = image[math.floor(y):math.ceil(y + h), math.floor(x):math.ceil(x + w)].copy()
+            if image.size == 0:
+                raise ValueError("recorte do rosto vazio")
     except ValueError:
         return ReferenceOutcome(
             deps.queue.complete_reference(
-                job.id, False, error="o arquivo enviado não é uma imagem legível",
+                job.id, False, error=("o rosto confirmado não possui um recorte aproveitável; confira a revisão do evento"
+                       if event_source is not None else "o arquivo enviado não é uma imagem legível"),
                 permanent=True,
             ),
             0,
@@ -197,10 +224,20 @@ def handle_reference(job: ReferenceJob, deps: Deps) -> ReferenceOutcome:
         )
 
     face = detected[0]
+    if event_source is not None:
+        ok, encoded = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        if not ok:
+            raise ValueError("falha ao preparar o recorte de referência")
+        deps.api.upload(STUDENT_REFS_BUCKET, job.storage_path, encoded.tobytes(), "image/jpeg")
     result = deps.queue.complete_reference(
         job.id,
         True,
         embedding=vector_literal(face.embedding),
         quality=round(face.det_score, 4),
     )
+    if event_source is not None and result in ("revoked", "missing", "failed"):
+        # noop pode significar que outra tentativa já concluiu o MESMO job:
+        # nesse caso o recorte pertence à referência válida e deve permanecer.
+        # Revogação, cancelamento ou revisão concorrente não deixa recorte órfão.
+        deps.api.remove(STUDENT_REFS_BUCKET, [job.storage_path])
     return ReferenceOutcome(result, 1)

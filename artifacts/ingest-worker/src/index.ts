@@ -16,6 +16,7 @@ import { startRenderLoop } from "./render-loop";
 import { makeRenderQueueApi } from "./render-queue";
 import { makeStorage } from "./storage";
 import { createWorkerClient } from "./supabase";
+import { makeGenerationLoopDeps, startGenerationLoop } from "./generation-loop";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -75,8 +76,14 @@ async function main(): Promise<void> {
     queue: renderQueue,
     handle: makeRenderHandler({ queue: renderQueue, storage, cfg }),
     cfg,
-    onError: (err) =>
-      logger.error({ err: err instanceof Error ? err.message : String(err) }, "erro no laço de render"),
+    onError: () =>
+      logger.error({ err: "render_fila_indisponivel" }, "erro no laço de render"),
+  });
+
+  // Fila persistida de arte: o worker existente acorda a API sob demanda.
+  const generationLoop = startGenerationLoop({
+    ...makeGenerationLoopDeps(client, cfg.serviceRoleKey, process.env.GENERATION_API_URL ?? "https://iaschool-api.fly.dev"),
+    onError: () => logger.warn("fila de geração temporariamente indisponível"),
   });
 
   const health = startHealthServer(
@@ -103,7 +110,7 @@ async function main(): Promise<void> {
     logger.info({ signal, inFlight: loop.inFlight }, "encerrando: sem novos claims, aguardando o lote em voo");
     clearInterval(stallTimer);
     clearInterval(purgeTimer);
-    await Promise.all([loop.stop(), renderLoop.stop()]);
+    await Promise.all([loop.stop(), renderLoop.stop(), generationLoop.stop()]);
     await health.close();
     logger.info("ingest-worker encerrado");
     process.exit(0);
