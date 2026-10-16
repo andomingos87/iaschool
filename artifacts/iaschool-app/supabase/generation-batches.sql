@@ -1,8 +1,8 @@
 -- Geração em lote: aplicada via MCP local supabase-iaschool em 12/10/2026.
 -- Migration iaschool_generation_batches, versão 20261012194454.
--- 15/10/2026: reference_post_id, reference_path e a fonte reference_face estão
--- neste SQL de referência e no ensaio local. Ainda não há migration nova no
--- projeto jtyyauivokutperouqyh.
+-- 16/10/2026: reference_post_id, reference_path e a fonte reference_face.
+-- Migration iaschool_generation_batch_reference, versão 20261016192755,
+-- aplicada via MCP local supabase-iaschool no projeto jtyyauivokutperouqyh.
 -- Dependências: fase1-min-schools-events.sql, fase3-authorizations-reference-faces.sql,
 -- setup.sql (generation_usage/generated_posts), fase5-review-media.sql.
 -- RPCs do usuário exigem escola ativa e perfil aprovado; dados internos nunca

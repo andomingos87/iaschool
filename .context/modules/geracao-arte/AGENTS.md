@@ -1,6 +1,6 @@
 # geracao-arte
 
-Índice de domínio, sem pasta própria. UI e SQL no `app`, geração na `api`, execução persistente no `ingest`. Atualizado em 15/10/2026.
+Índice de domínio, sem pasta própria. UI e SQL no `app`, geração na `api`, execução persistente no `ingest`. Atualizado em 16/10/2026.
 
 ## Fluxo vigente — wizard com modelo
 
@@ -8,7 +8,7 @@
 
 O app envia IDs, escola, texto livre, `referenceId`, atalhos e requestId para `/api/generation/batches`. O servidor compõe o prompt e revalida vínculo, modelo e autorização. A primeira imagem da edição é o modelo em `public.reference_posts` (bucket `references`, só a escola ativa; modelo global fica de fora). A segunda é a foto do aluno. Foto de perfil continua o padrão. `reference_face` usa `public.student_reference_faces.source_photo_path` no bucket `student-refs`, com retenção vigente. Evento continua exigindo aluno sozinho e revisão. Identidade é orientação à IA, sem promessa de pixels iguais.
 
-`public.generation_batches.reference_post_id` e `public.generation_batches.reference_path` estão no SQL de referência `artifacts/iaschool-app/supabase/generation-batches.sql`. A migration nova ainda não foi aplicada no projeto.
+`public.generation_batches.reference_post_id` e `public.generation_batches.reference_path` estão no SQL de referência `artifacts/iaschool-app/supabase/generation-batches.sql`. Migration `iaschool_generation_batch_reference`, versão `20261016192755`, aplicada via MCP local em 16/10/2026.
 
 `public.generation_batches`, `public.generation_batch_items` e `public.generation_batch_retries` (`artifacts/iaschool-app/supabase/generation-batches.sql`, migration `iaschool_generation_batches` aplicada via MCP local em 12/10/2026) persistem o lote e reservam cota completa atomicamente em `public.generation_usage` (mesmo SQL e `generation-quota.sql`). Pedido repetido não duplica cota/lote. O ingest existente reivindica um item e aciona a API com assinatura interna; SDK sem retry automático. Fechar a página não cancela o lote. Falha parcial continua os outros; nova tentativa paga somente por ação explícita para falhos/incertos. Resultado já persistido recupera salvamento sem gerar novamente.
 
@@ -24,7 +24,7 @@ Cada sucesso salva `public.generated_posts` (`artifacts/iaschool-app/supabase/se
 
 ## Verificação
 
-A rodada de 12/10/2026 (313 testes do app, 49 da API, 58 do ingest, PostgreSQL descartável, typecheck e build) continua o histórico publicado. A rodada de 15/10/2026 cobre o modelo no lote; o resultado fica no backlog. Migration nova e geração paga não rodaram.
+A rodada de 12/10/2026 (313 testes do app, 49 da API, 58 do ingest, PostgreSQL descartável, typecheck e build) continua o histórico publicado. Em 16/10/2026 o typecheck do workspace passou, com 326 testes do app em `src` e 53 testes unitários da API. A migration `iaschool_generation_batch_reference` foi aplicada. Geração paga e deploy não rodaram.
 
 ## Compatibilidade legada
 

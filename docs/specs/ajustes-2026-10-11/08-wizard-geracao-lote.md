@@ -1,7 +1,7 @@
 # Wizard de geração por aluno e turma
 
 **Atualizado em:** 15/10/2026.
-**Estado:** a ordem nova (alunos, modelo, confirmar) está no código local. O SQL de referência inclui modelo e rosto de referência e foi escrito para ensaio em PostgreSQL descartável. A migration ainda não foi aplicada no projeto, e não houve deploy nem geração paga.
+**Estado:** a ordem nova (alunos, modelo, confirmar) está no código local. O SQL de referência inclui modelo e rosto de referência. A migration `iaschool_generation_batch_reference` (`20261016192755`) foi aplicada no projeto em 16/10/2026. Não houve deploy nem geração paga.
 
 ## Atualização de 15/10/2026
 
