@@ -2,14 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
-import { Textarea } from "@workspace/iaschool-ui/components/ui/textarea";
 import { PageHeader } from "@/components/app-shell";
 import { CardsSkeleton, EmptyState, ErrorState } from "@/components/data-state";
 import { GenerationStudentPicker } from "@/components/generation-student-picker";
+import { GenerationModelPicker } from "@/components/generation-model-picker";
 import { GenerationPhotoPicker } from "@/components/generation-photo-picker";
 import { GenerationBatchProgress } from "@/components/generation-batch-progress";
 import { useStudents } from "@/hooks/use-students";
 import { useClasses } from "@/hooks/use-classes";
+import { useReferences } from "@/hooks/use-references";
 import { useAuth } from "@/hooks/use-auth";
 import { TEST_DATA_ONLY } from "@/lib/constants";
 import {
@@ -20,6 +21,7 @@ import {
   eligibleRoster,
   expandGenerationSelection,
   getGenerationBatchService,
+  schoolArtModels,
   type GenerationSelection,
   type GenerationPhotoChoice,
   type CreateGenerationBatch,
@@ -32,7 +34,8 @@ export default function GeneratePage() {
   const contextRef = useRef(`${userId}:${schoolId}`);
   contextRef.current = `${userId}:${schoolId}`;
   const students = useStudents(),
-    classes = useClasses(schoolId);
+    classes = useClasses(schoolId),
+    references = useReferences();
   const service = getGenerationBatchService();
   const [selection, setSelection] = useState<GenerationSelection>(
     EMPTY_GENERATION_SELECTION,
@@ -41,7 +44,10 @@ export default function GeneratePage() {
     {},
   );
   const [step, setStep] = useState(0),
-    [prompt, setPrompt] = useState("");
+    [prompt, setPrompt] = useState(""),
+    [referenceId, setReferenceId] = useState<string | null>(null),
+    [noLogo, setNoLogo] = useState(false),
+    [noText, setNoText] = useState(false);
   const [photoStudent, setPhotoStudent] = useState<string | null>(null),
     [batchId, setBatchId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null),
@@ -91,16 +97,33 @@ export default function GeneratePage() {
       url: student.photos[0]?.url ?? "",
     },
   }));
+  const models = useMemo(
+    () => schoolArtModels(references.data ?? [], schoolId ?? ""),
+    [references.data, schoolId],
+  );
+  const model = models.find((item) => item.id === referenceId) ?? null;
+  const ordered = useMemo(() => {
+    const names = new Intl.Collator("pt-BR", { sensitivity: "base" });
+    return [...selected].sort(
+      (a, b) => names.compare(a.name, b.name) || a.id.localeCompare(b.id),
+    );
+  }, [selected]);
   const reviewError = batchReviewError(
     prompt,
     selectedPhotos,
     eligibility.data?.remainingQuota ?? 0,
+    referenceId,
+    { noLogo, noText },
   );
   useEffect(() => {
     setSelection(EMPTY_GENERATION_SELECTION);
     setChoices({});
     setBatchId(null);
     setStep(0);
+    setPrompt("");
+    setReferenceId(null);
+    setNoLogo(false);
+    setNoText(false);
     setError(null);
     pending.current = null;
     pendingRetry.current = null;
@@ -122,7 +145,12 @@ export default function GeneratePage() {
     }
   }, [batches.data, batchId]);
   async function generate() {
-    if (lock.current || !schoolId || (!pending.current && reviewError)) return;
+    if (
+      lock.current ||
+      !schoolId ||
+      (!pending.current && (reviewError || !referenceId))
+    )
+      return;
     const context = contextRef.current;
     lock.current = true;
     setBusy(true);
@@ -132,6 +160,9 @@ export default function GeneratePage() {
         requestId: crypto.randomUUID(),
         schoolId,
         prompt: prompt.trim(),
+        referenceId: referenceId ?? "",
+        noLogo,
+        noText,
         students: selectedPhotos.map((s) => ({
           studentId: s.studentId,
           photo: { source: s.photo.source, id: s.photo.id },
@@ -221,7 +252,7 @@ export default function GeneratePage() {
     <div className="space-y-6">
       <PageHeader
         title="Criar artes"
-        description="Escolha os alunos, confira as fotos e descreva a arte para todos."
+        description="Escolha quem recebe, o modelo e confira a foto de cada aluno."
       />
       {TEST_DATA_ONLY && (
         <p className="rounded-lg border p-3 text-sm text-muted-foreground">
@@ -284,18 +315,19 @@ export default function GeneratePage() {
         </>
       ) : (
         <section className="space-y-5 rounded-xl border bg-card p-4 sm:p-6">
-          <ol className="flex gap-4 text-sm" aria-label="Etapas">
-            {["Alunos", "Fotos", "Arte"].map((label, index) => (
+          <ol className="grid grid-cols-3 gap-2 text-sm" aria-label="Etapas">
+            {["Alunos", "Modelo", "Confirmar"].map((label, index) => (
               <li
                 key={label}
-                className={
-                  step === index
-                    ? "font-semibold text-primary"
-                    : "text-muted-foreground"
-                }
+                className={`flex min-h-11 items-center gap-2 rounded-lg border px-2 ${step === index ? "border-primary font-semibold text-primary" : "text-muted-foreground"}`}
                 aria-current={step === index ? "step" : undefined}
               >
-                {index + 1}. {label}
+                <span
+                  className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full ${step === index ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                >
+                  {index + 1}
+                </span>
+                {label}
               </li>
             ))}
           </ol>
@@ -310,10 +342,12 @@ export default function GeneratePage() {
             <>
               {step === 0 && (
                 <>
-                  <h2 className="font-semibold">Para quem vamos criar?</h2>
+                  <h2 className="text-lg font-semibold">
+                    Quem vai receber uma arte?
+                  </h2>
                   <p className="text-sm text-muted-foreground">
-                    Só aparecem alunos com foto e autorização ativa. Turmas
-                    incluem todos os alunos aptos, sem repetir ninguém.
+                    Marque uma ou mais turmas. Dá para tirar alguém da turma e
+                    acrescentar aluno de outra.
                   </p>
                   <GenerationStudentPicker
                     students={students.data ?? []}
@@ -330,77 +364,126 @@ export default function GeneratePage() {
                     />
                   )}
                   <Button
-                    disabled={!selected.length || Boolean(pending.current)}
+                    className="min-h-11"
+                    disabled={
+                      !selected.length ||
+                      selected.length > 50 ||
+                      Boolean(pending.current)
+                    }
                     onClick={() => setStep(1)}
                   >
-                    Conferir {selected.length} {selected.length === 1 ? "foto" : "fotos"}
+                    Escolher o modelo
                   </Button>
                 </>
               )}
               {step === 1 && (
                 <>
-                  <h2 className="font-semibold">Uma foto para cada aluno</h2>
+                  <h2 className="text-lg font-semibold">
+                    Qual modelo vamos seguir?
+                  </h2>
                   <p className="text-sm text-muted-foreground">
-                    A foto principal já está escolhida. Clique para trocar por
-                    outra foto de perfil ou de evento com o aluno sozinho.
+                    Uma arte por aluno, no estilo do modelo escolhido.
                   </p>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {selectedPhotos.map(({ studentId, photo }) => (
-                      <button
-                        key={studentId}
-                        className="rounded-lg border p-3 text-left focus-visible:ring-2 focus-visible:ring-primary"
-                        disabled={Boolean(pending.current)}
-                        onClick={() => setPhotoStudent(studentId)}
-                      >
-                        <img
-                          src={photo.url}
-                          alt={`Foto escolhida de ${selected.find((s) => s.id === studentId)?.name}`}
-                          className="aspect-square w-full rounded-md object-contain"
-                        />
-                        <span className="mt-2 block text-sm font-medium">
-                          {selected.find((s) => s.id === studentId)?.name}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          Trocar foto
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                  <GenerationModelPicker
+                    schoolId={schoolId}
+                    models={models}
+                    loading={references.isLoading}
+                    error={references.isError}
+                    onRetry={() => void references.refetch()}
+                    referenceId={referenceId}
+                    onReference={setReferenceId}
+                    prompt={prompt}
+                    onPrompt={setPrompt}
+                    noLogo={noLogo}
+                    noText={noText}
+                    onNoLogo={setNoLogo}
+                    onNoText={setNoText}
+                    disabled={busy || Boolean(pending.current)}
+                  />
                   <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => setStep(0)}>
+                    <Button
+                      variant="outline"
+                      className="min-h-11"
+                      onClick={() => setStep(0)}
+                    >
                       Voltar
                     </Button>
                     <Button
-                      disabled={!selected.length}
+                      className="min-h-11"
+                      disabled={!referenceId}
                       onClick={() => setStep(2)}
                     >
-                      Descrever a arte
+                      Conferir as fotos
                     </Button>
                   </div>
                 </>
               )}
               {step === 2 && (
                 <>
-                  <label className="block font-semibold" htmlFor="arte-prompt">
-                    Como você quer a arte?
-                  </label>
-                  <Textarea
-                    id="arte-prompt"
-                    value={prompt}
-                    disabled={busy || Boolean(pending.current)}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    maxLength={3000}
-                    rows={5}
-                    placeholder="Ex.: Uma arte alegre para a festa da escola, com cores suaves e o nome do evento."
-                  />
+                  <h2 className="text-lg font-semibold">Tudo certo para gerar?</h2>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <h3 className="font-medium">Modelo</h3>
+                      {model ? (
+                        <img
+                          src={model.image.url}
+                          alt={model.title ?? "Modelo escolhido"}
+                          className="aspect-square w-full rounded-lg border object-contain"
+                        />
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Esse modelo não está mais na galeria. Volte e escolha
+                          outro.
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="font-medium">Fotos dos alunos</h3>
+                      <div className="grid grid-cols-3 gap-2">
+                        {ordered.map((student) => {
+                          const photo = selectedPhotos.find(
+                            (item) => item.studentId === student.id,
+                          )?.photo;
+                          return (
+                            <button
+                              key={student.id}
+                              type="button"
+                              className="rounded-lg border p-2 text-left focus-visible:ring-2 focus-visible:ring-ring"
+                              disabled={Boolean(pending.current)}
+                              onClick={() => setPhotoStudent(student.id)}
+                            >
+                              <img
+                                src={photo?.url}
+                                alt={`Foto escolhida de ${student.name}`}
+                                loading="lazy"
+                                className="aspect-square w-full rounded-md object-contain"
+                              />
+                              <span className="mt-1 block text-xs font-medium">
+                                {student.name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                   <p className="text-sm">
-                    {selected.length} {selected.length === 1 ? "aluno" : "alunos"} = {selected.length} {selected.length === 1 ? "arte" : "artes"}. Cota
-                    disponível: {eligibility.data?.remainingQuota ?? 0}.
+                    {selected.length}{" "}
+                    {selected.length === 1 ? "aluno" : "alunos"} ={" "}
+                    {selected.length}{" "}
+                    {selected.length === 1 ? "arte" : "artes"}. Cota disponível:{" "}
+                    {eligibility.data?.remainingQuota ?? 0}.
                   </p>
-                  {reviewError && (
+                  {selectedPhotos.some(
+                    (item) => item.photo.source === "reference_face",
+                  ) && (
                     <p className="text-sm text-muted-foreground">
-                      {reviewError}
+                      Algumas fotos são recorte de rosto. A arte pode ficar mais
+                      fechada no rosto.
                     </p>
+                  )}
+                  {reviewError && (
+                    <p className="text-sm text-muted-foreground">{reviewError}</p>
                   )}
                   <p className="text-xs text-muted-foreground">
                     A IA pode alterar detalhes da foto. Confira cada arte antes
@@ -409,12 +492,14 @@ export default function GeneratePage() {
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
+                      className="min-h-11"
                       disabled={busy || Boolean(pending.current)}
                       onClick={() => setStep(1)}
                     >
                       Voltar
                     </Button>
                     <Button
+                      className="min-h-11"
                       disabled={
                         busy || (!pending.current && Boolean(reviewError))
                       }

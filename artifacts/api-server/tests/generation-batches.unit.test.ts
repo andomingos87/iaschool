@@ -6,7 +6,7 @@ import {processGenerationBatchItem,generationBatchDeps,type BatchItemContext} fr
 
 const school="00000000-0000-4000-8000-000000000001",item="00000000-0000-4000-8000-000000000002",lease="00000000-0000-4000-8000-000000000003";
 let png:Buffer;
-const context:BatchItemContext={school_id:school,student_id:item,source:"profile",source_path:`students/${school}/foto.png`,result_path:`${school}/generation-batches/lote/${item}/1.png`,prompt:"Arte do evento",provider_started:false};
+const context:BatchItemContext={school_id:school,student_id:item,source:"profile",source_path:`students/${school}/foto.png`,reference_path:`references/${school}/modelo.png`,result_path:`${school}/generation-batches/lote/${item}/1.png`,prompt:"Arte do evento",provider_started:false};
 beforeEach(async()=>{png=await sharp({create:{width:20,height:30,channels:3,background:"red"}}).png().toBuffer();});
 function deps() {
   const rpc=vi.fn(async(name:string)=>name==="generation_batch_item_context"?context:name==="begin_generation_batch_item"?true:{status:"completed"});
@@ -25,6 +25,20 @@ describe("geração em lote sem serviços externos",()=>{
   it("recusa URL externa, traversal e caminho de outra escola",()=>{
     for(const path of ["https://external/photo.png",`${school}/../file.png`,`other/photo.png`])expect(()=>safeObjectPath(path,school,"students")).toThrow();
     expect(safeObjectPath(`students/${school}/foto.png`,school,"students")).toBe(`${school}/foto.png`);
+  });
+  it("modelo ausente não chama a IA",async()=>{
+    const d=deps();d.rpc.mockImplementation(async(name)=>name==="generation_batch_item_context"?{...context,reference_path:null}:true);
+    expect(await processGenerationBatchItem(item,lease,d as typeof generationBatchDeps)).toEqual({status:"failed"});
+    expect(d.generate).not.toHaveBeenCalled();
+    expect(d.rpc).toHaveBeenCalledWith("fail_generation_batch_item",expect.objectContaining({p_error_code:"reference_unavailable",p_unknown:false}));
+    expect(d.rpc.mock.calls.map(c=>c[0])).not.toContain("begin_generation_batch_item");
+  });
+  it("lê o modelo antes da foto do aluno",async()=>{
+    const d=deps();const buckets:string[]=[];
+    d.read.mockImplementation(async(bucket:string)=>{buckets.push(bucket);return bucket==="generated"?null:png;});
+    expect(await processGenerationBatchItem(item,lease,d as typeof generationBatchDeps)).toEqual({status:"completed"});
+    expect(buckets.filter(bucket=>bucket!=="generated").slice(0,2)).toEqual(["references","students"]);
+    expect(d.generate.mock.calls[0]?.[2]).toContain("A primeira imagem enviada é somente o modelo de estilo.");
   });
   it("gera uma vez e salva a arte somente após revalidar autorização",async()=>{
     const d=deps();expect(await processGenerationBatchItem(item,lease,d as typeof generationBatchDeps)).toEqual({status:"completed"});

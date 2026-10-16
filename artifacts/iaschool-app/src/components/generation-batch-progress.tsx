@@ -1,9 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Maximize2, RefreshCw } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 import { Button } from "@workspace/iaschool-ui/components/ui/button";
 import { startBlobDownload } from "@/lib/student-folder";
 import { ImageLightbox } from "./image-lightbox";
+import { GenerationBatchWait } from "./generation-batch-wait";
+import { BATCH_WAIT_PHRASES } from "@/lib/generation-phrases";
 import { GuardianVerifyDialog } from "./guardian-verify-dialog";
 import { useAuthorizations, activeByScope } from "@/hooks/use-authorizations";
 import { useGuardianConsentStatus } from "@/hooks/use-guardian-consent";
@@ -42,6 +44,16 @@ export function GenerationBatchProgress({
   const [zoom, setZoom] = useState<string | null>(null),
     [sharing, setSharing] = useState<GenerationBatchItem | null>(null);
   const failures = failedBatchItemIds(batch);
+  const active = batchIsActive(batch);
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => {
+      setPhraseIndex((index) => (index + 1) % BATCH_WAIT_PHRASES.length);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [active]);
   const [assetError, setAssetError] = useState<string | null>(null),
     [assetBusy, setAssetBusy] = useState(false);
   const assetLock = useRef(false);
@@ -105,26 +117,30 @@ export function GenerationBatchProgress({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">
-            {batchIsActive(batch) ? "Preparando suas artes" : "Artes do lote"}
-          </h2>
-          <p className="text-sm text-muted-foreground" role="status">
-            {batch.completed} de {batch.total} prontas
-            {batch.failed
-              ? ` · ${batch.failed} com falha ou resultado incerto`
-              : ""}
-            .
-          </p>
+          {active ? (
+            <GenerationBatchWait
+              phrase={BATCH_WAIT_PHRASES[phraseIndex] ?? BATCH_WAIT_PHRASES[0]}
+              completed={batch.completed}
+              total={batch.total}
+            />
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold">Artes do lote</h2>
+              <p className="text-sm text-muted-foreground" role="status">
+                {batch.completed} de {batch.total} prontas
+                {batch.failed
+                  ? ` · ${batch.failed} com falha ou resultado incerto`
+                  : ""}
+                .
+              </p>
+            </>
+          )}
         </div>
         <Button variant="outline" onClick={onRefresh}>
           <RefreshCw className="size-4" />
           Atualizar progresso
         </Button>
       </div>
-      <p className="text-sm text-muted-foreground">
-        Você pode fechar esta página. A geração continua no servidor e as artes
-        prontas são salvas na galeria.
-      </p>
       <div
         className="h-2 overflow-hidden rounded-full bg-muted"
         role="progressbar"

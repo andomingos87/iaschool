@@ -1,11 +1,12 @@
 import sharp from "sharp";
 import { OpenAI, toFile } from "openai";
-import { photoPromptInstructions } from "./art-protection";
+import { ensureBatchPrompt } from "./art-protection";
 import { BatchError, batchRpc, putObject, readObject, safeObjectPath } from "./generation-batch-service";
 export interface BatchItemContext {
     prompt: string;
-    source: "profile" | "event";
+    source: "profile" | "event" | "reference_face";
     source_path: string;
+    reference_path?: string | null;
     school_id: string;
     student_id: string;
     result_path: string;
@@ -13,12 +14,20 @@ export interface BatchItemContext {
 }
 export const generationBatchDeps = {
     rpc: batchRpc, read: readObject, put: putObject,
-    async generate(photo: Buffer, prompt: string): Promise<Buffer> {
+    async generate(style: Buffer, photo: Buffer, prompt: string): Promise<Buffer> {
         const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey)
             throw new BatchError("configuration_missing");
         const client = new OpenAI({ apiKey, maxRetries: 0, timeout: 150000 });
-        const response = await client.images.edit({ model: "gpt-image-2.5-flare", size: "1024x1024", image: [await toFile(photo, "foto-referencia.png", { type: "image/png" })], prompt: photoPromptInstructions(prompt) });
+        const response = await client.images.edit({
+            model: "gpt-image-2.5-flare",
+            size: "1024x1024",
+            image: [
+                await toFile(style, "modelo-estilo.png", { type: "image/png" }),
+                await toFile(photo, "foto-aluno.png", { type: "image/png" }),
+            ],
+            prompt: ensureBatchPrompt(prompt),
+        });
         const b64 = response.data?.[0]?.b64_json;
         if (!b64 || b64.length > 48000000)
             throw new BatchError("provider_result_invalid");
@@ -62,7 +71,26 @@ export async function processGenerationBatchItem(itemId: string, leaseId: string
         }
         if (!process.env.OPENAI_API_KEY && deps === generationBatchDeps)
             throw new BatchError("configuration_missing");
-        const bucket = context.source === "profile" ? "students" : "event-photos";
+        if (!context.reference_path)
+            throw new BatchError("reference_unavailable", 409);
+        let stylePath: string;
+        try {
+            stylePath = safeObjectPath(context.reference_path, context.school_id, "references");
+        }
+        catch {
+            throw new BatchError("reference_unavailable", 409);
+        }
+        const styleRaw = await deps.read("references", stylePath, 8 * 1024 * 1024);
+        if (!styleRaw)
+            throw new BatchError("reference_unavailable", 409);
+        const styleInput = sharp(styleRaw, { limitInputPixels: 40000000, failOn: "warning" });
+        const styleMeta = await styleInput.metadata();
+        if (!["png", "jpeg", "webp"].includes(styleMeta.format ?? ""))
+            throw new BatchError("reference_unavailable", 409);
+        const style = await styleInput.autoOrient().png().toBuffer();
+        if (style.length > 8 * 1024 * 1024)
+            throw new BatchError("reference_unavailable", 409);
+        const bucket = context.source === "profile" ? "students" : context.source === "reference_face" ? "student-refs" : "event-photos";
         const sourcePath = safeObjectPath(context.source_path, context.school_id, bucket);
         const raw = await deps.read(bucket, sourcePath, 8 * 1024 * 1024);
         if (!raw)
@@ -78,7 +106,7 @@ export async function processGenerationBatchItem(itemId: string, leaseId: string
         if (!await deps.rpc<boolean>("begin_generation_batch_item", args))
             return { status: "stale" };
         started = true;
-        const generated = await deps.generate(photo, context.prompt);
+        const generated = await deps.generate(style, photo, ensureBatchPrompt(context.prompt));
         const png = await sharp(generated, { limitInputPixels: 40000000, failOn: "warning" }).png().toBuffer();
         if (png.length > 32000000)
             throw new BatchError("provider_result_invalid");

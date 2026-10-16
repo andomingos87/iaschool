@@ -1,7 +1,17 @@
 # Wizard de geração por aluno e turma
 
+**Atualizado em:** 15/10/2026.
+**Estado:** a ordem nova (alunos, modelo, confirmar) está no código local. O SQL de referência inclui modelo e rosto de referência e foi escrito para ensaio em PostgreSQL descartável. A migration ainda não foi aplicada no projeto, e não houve deploy nem geração paga.
+
+## Atualização de 15/10/2026
+
+1. Etapa 1 lista turmas sempre visíveis e os alunos escolhidos em ordem alfabética, por turma, com remoção individual.
+2. Etapa 2 mostra só modelos da escola ativa, 8 por página, com envio de modelo, texto opcional, ideias prontas e os atalhos Remover logo e Remover texto.
+3. Etapa 3 mostra o modelo à esquerda e as fotos à direita. O modal tem Perfil, Rosto de referência e Eventos.
+4. A espera do lote explica que a página pode ser fechada. A geração continua no servidor.
+
 **Atualizado em:** 12/10/2026.
-**Estado:** implementado, testado localmente e publicado em 12/10/2026; uma geração real sintética adicional verificada, com fixture removida.
+**Estado da publicação anterior:** implementado, testado localmente e publicado em 12/10/2026; uma geração real sintética adicional verificada, com fixture removida.
 **Origem:** decisões do usuário na entrevista `grill-me` da conversa de 12/10/2026.
 **Módulos:** app, api, ingest; tabelas/RPCs novas em SQL de referência no módulo app.
 

@@ -378,6 +378,65 @@ export function removeReplaceText(text: string): string {
 }
 
 /** Instruções dos atalhos booleanos (troca de texto vive no texto livre). */
+/** Mesmo texto de `artifacts/api-server/src/lib/art-protection.ts`. */
+export const BATCH_STYLE_RULE =
+  "A primeira imagem enviada é somente o modelo de estilo. A segunda imagem é a foto do aluno. Preserve a identidade e os traços reconhecíveis da pessoa da segunda imagem, sua idade e aparência. Não use a pessoa do modelo. Não invente outras pessoas.";
+
+export const ART_ICEBREAKERS = [
+  {
+    id: "festa",
+    label: "Festa da escola",
+    text: "Arte de festa da escola, clima alegre e cores do modelo.",
+  },
+  {
+    id: "formatura",
+    label: "Formatura",
+    text: "Arte de formatura, clima de conquista, no estilo do modelo.",
+  },
+  {
+    id: "criancas",
+    label: "Dia das crianças",
+    text: "Arte de Dia das Crianças, leve e colorida, no estilo do modelo.",
+  },
+  {
+    id: "aulas",
+    label: "Volta às aulas",
+    text: "Arte de volta às aulas, clima de recomeço, no estilo do modelo.",
+  },
+] as const;
+
+/** Acrescenta a ideia uma vez, sem apagar o que a pessoa já escreveu. */
+export function appendIcebreaker(prompt: string, text: string): string {
+  if (prompt.includes(text)) return prompt;
+  const base = prompt.trim();
+  return base.length > 0 ? `${base}\n${text}` : text;
+}
+
+/**
+ * Prompt gravado no lote. O texto livre pode ser vazio; a regra das duas
+ * imagens não. Manter idêntico ao compositor do api-server.
+ */
+export function composeBatchPrompt(input: {
+  userPrompt: string;
+  noLogo: boolean;
+  noText: boolean;
+}): string {
+  const extras: string[] = [];
+  if (input.noLogo) {
+    extras.push(
+      "Não inclua nenhum logo na arte, inclusive o do modelo de arte.",
+    );
+  }
+  if (input.noText) {
+    extras.push("Não inclua títulos, legendas nem o nome do aluno na arte.");
+  }
+  return [BATCH_STYLE_RULE, input.userPrompt.trim(), extras.join(" ")]
+    .filter((part) => part.length > 0)
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function shortcutInstructions(shortcuts?: ArtShortcuts): string {
   if (!shortcuts) return "";
   const parts: string[] = [];

@@ -47,11 +47,15 @@ with tempfile.TemporaryDirectory(prefix='iaschool-generation-sql-') as tmp:
     insert into public.students(id,school_id,name,birth_date,photos)values('{student}','{school}','Adulto sintético','1990-01-01','[{{"id":"profile-a","path":"students/{school}/a.jpg"}}]');
     insert into public.authorizations(school_id,student_id,scope,granted_at)values('{school}','{student}','biometric_sorting',now());""")
   sql(f"insert into storage.objects values('students','{school}/a.jpg'),('students','{school}/b.jpg')")
+  ref='00000000-0000-0000-0000-000000000099'
+  sql(f"""create table if not exists public.reference_posts(id uuid primary key,owner_id uuid not null,image jsonb not null,uploaded_by uuid not null,school_id uuid);
+   insert into public.reference_posts values('{ref}','{u}','{{"id":"modelo","path":"references/{school}/modelo.png"}}','{u}','{school}');
+   insert into storage.objects values('references','{school}/modelo.png');""")
   auth=f"select set_config('request.jwt.claim.sub','{u}',false);"
   def user(s):return sql(auth+s).splitlines()[-1]
   import json
   payload=f"'[{{\"studentId\":\"{student}\",\"source\":\"profile\",\"photoId\":\"profile-a\"}}]'::jsonb"
-  create=f"select public.create_generation_batch('{school}','{req}','Arte sintética',{payload});"
+  create=f"select public.create_generation_batch('{school}','{req}','Arte sintética',{payload},'{ref}');"
   with concurrent.futures.ThreadPoolExecutor(2) as pool:r=list(pool.map(user,[create,create]))
   batch=json.loads(r[0]);assert batch['id']==json.loads(r[1])['id'];assert sql('select sum(count) from public.generation_usage')=='1'
   assert len(json.loads(user(f"select public.generation_batch_eligibility('{school}')"))['students'])==1
@@ -138,7 +142,7 @@ with tempfile.TemporaryDirectory(prefix='iaschool-generation-sql-') as tmp:
   sql(f"update public.generation_batch_items set status='failed' where id='{item2}'")
   retry=f"select public.retry_generation_batch((select batch_id from public.generation_batch_items where id='{item2}'),'{req2}',array['{item2}']::uuid[])"
   user(retry);user(retry);assert sql('select sum(count) from public.generation_usage')=='3'
-  assert sql("select bool_and(not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('generation_batch_source','claim_generation_batch_items','begin_generation_batch_item','complete_generation_batch_item','generation_batch_art_immutable','generation_batches_authorization_revoked')")=='t'
+  assert sql("select bool_and(not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('generation_batch_source','claim_generation_batch_items','begin_generation_batch_item','complete_generation_batch_item','generation_batch_art_immutable','generation_batches_authorization_revoked','generation_batch_reference')")=='t'
   # Event choices require an attested solo image; group/unreviewed are blocked.
   event='00000000-0000-0000-0000-000000000007';photo='00000000-0000-0000-0000-000000000008';face='00000000-0000-0000-0000-000000000009'
   sql(f"""insert into public.events(id,school_id,name)values('{event}','{school}','Evento sintético');
@@ -188,6 +192,29 @@ with tempfile.TemporaryDirectory(prefix='iaschool-generation-sql-') as tmp:
   sql(f"update public.students set birth_date='1990-01-01',primary_guardian_id=null,photos=jsonb_set(photos,'{{0,path}}','\"students/foreign/a.jpg\"') where id='{student}'")
   assert sql(f"select public.generation_batch_source('{student}','profile','profile-a') is null")=='t'
   sql(f"update public.students set photos=jsonb_set(photos,'{{0,path}}','\"students/{school}/a.jpg\"') where id='{student}'")
+  face='00000000-0000-0000-0000-000000000098'
+  auth_id=sql(f"select id from public.authorizations where student_id='{student}' and revoked_at is null limit 1")
+  sql(f"""insert into public.student_reference_faces(id,school_id,student_id,embedding,source_photo_path,authorization_id,retention_until,created_by)
+   values('{face}','{school}','{student}','{{0}}','{school}/{student}/rosto.jpg','{auth_id}',current_date,'{u}');
+   insert into storage.objects values('student-refs','{school}/{student}/rosto.jpg');""")
+  assert sql(f"select public.generation_batch_source('{student}','reference_face','{face}') is not null")=='t'
+  face_choices=json.loads(user(f"select public.generation_batch_photo_choices('{student}')"))
+  face_choice=next(x for x in face_choices['photos'] if x['source']=='reference_face')
+  assert face_choice['id']==face and face_choice['eventId'] is None and face_choice['path']==f'{school}/{student}/rosto.jpg'
+  sql(f"update public.student_reference_faces set source_photo_path='outro/{student}/rosto.jpg' where id='{face}'")
+  assert sql(f"select public.generation_batch_source('{student}','reference_face','{face}') is null")=='t'
+  sql(f"update public.student_reference_faces set source_photo_path='{school}/{student}/rosto.jpg' where id='{face}'")
+  sql(f"delete from storage.objects where bucket_id='student-refs' and name='{school}/{student}/rosto.jpg'")
+  assert sql(f"select public.generation_batch_source('{student}','reference_face','{face}') is null")=='t'
+  sql(f"insert into storage.objects values('student-refs','{school}/{student}/rosto.jpg')")
+  other='00000000-0000-0000-0000-000000000097'
+  sql(f"""insert into public.reference_posts values('{other}','{u}','{{"path":"references/{school}/modelo.png"}}','{u}',null);""")
+  try:
+   user(create.replace(req,'00000000-0000-0000-0000-000000000096').replace(ref,other));raise AssertionError('modelo global aceito')
+  except RuntimeError as e:assert 'reference_unavailable' in str(e)
+  sql(f"delete from storage.objects where bucket_id='references' and name='{school}/modelo.png'")
+  assert sql(f"select public.generation_batch_reference('{school}','{ref}') is null")=='t'
+  sql(f"insert into storage.objects values('references','{school}/modelo.png')")
   # Access cannot cross tenant or user.
   try:user(f"select public.generation_batch_eligibility('{event}')");raise AssertionError('foreign school accepted')
   except RuntimeError as e:assert 'forbidden' in str(e)
@@ -216,6 +243,14 @@ with tempfile.TemporaryDirectory(prefix='iaschool-generation-sql-') as tmp:
   try:user(create.replace(req,'00000000-0000-0000-0000-000000000006'));raise AssertionError('quota accepted')
   except RuntimeError as e:assert 'quota_exceeded' in str(e)
   assert sql('select count(*) from public.generation_batches')==batch_count;assert sql('select sum(count) from public.generation_usage')=='50'
+  sql('update public.generation_usage set count=0')
+  missing=json.loads(user(create.replace(req,'00000000-0000-0000-0000-000000000094')))
+  missing_item=missing['items'][0]['id']
+  sql(f"delete from storage.objects where bucket_id='references' and name='{school}/modelo.png'")
+  sql(f"update public.generation_batch_items set status='processing',lease_id='00000000-0000-0000-0000-000000000093',leased_until=now()+interval '1 minute' where id='{missing_item}'")
+  assert sql(f"select public.generation_batch_item_context('{missing_item}','00000000-0000-0000-0000-000000000093') is null")=='t'
+  assert sql(f"select error_code from public.generation_batch_items where id='{missing_item}'")=='reference_unavailable'
+  sql(f"insert into storage.objects values('references','{school}/modelo.png')")
   # Existing gallery hard-delete and student purge remain possible; orphan
   # recovery enqueues their reserved assets without reopening access.
   sql(f"delete from public.generated_posts where id='{art}'")

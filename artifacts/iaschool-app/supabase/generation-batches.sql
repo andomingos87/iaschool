@@ -1,5 +1,8 @@
 -- Geração em lote: aplicada via MCP local supabase-iaschool em 12/10/2026.
 -- Migration iaschool_generation_batches, versão 20261012194454.
+-- 15/10/2026: reference_post_id, reference_path e a fonte reference_face estão
+-- neste SQL de referência e no ensaio local. Ainda não há migration nova no
+-- projeto jtyyauivokutperouqyh.
 -- Dependências: fase1-min-schools-events.sql, fase3-authorizations-reference-faces.sql,
 -- setup.sql (generation_usage/generated_posts), fase5-review-media.sql.
 -- RPCs do usuário exigem escola ativa e perfil aprovado; dados internos nunca
@@ -21,6 +24,10 @@ create table if not exists public.generation_batch_items (
 );
 create index if not exists generation_batch_items_ready on public.generation_batch_items(status,leased_until);
 create index if not exists generation_batches_owner on public.generation_batches(created_by,school_id,created_at desc);
+alter table public.generation_batches add column if not exists reference_post_id uuid;
+alter table public.generation_batches add column if not exists reference_path text;
+alter table public.generation_batch_items drop constraint if exists generation_batch_items_source_check;
+alter table public.generation_batch_items add constraint generation_batch_items_source_check check (source in ('profile','event','reference_face'));
 create table if not exists public.generation_batch_retries (
  batch_id uuid not null references public.generation_batches(id) on delete cascade, request_id uuid not null, item_ids uuid[] not null,
  primary key(batch_id,request_id)
@@ -79,6 +86,14 @@ begin
    and exists(select 1 from public.photo_faces f where f.photo_id=p.id and f.student_id=s.id and f.school_id=s.school_id and f.state='confirmed' and f.reviewed_by is not null)
    and (select count(*) from public.photo_person_regions r where r.photo_id=p.id)=1
    and exists(select 1 from public.photo_person_regions r join public.photo_faces f on f.id=r.face_id where r.photo_id=p.id and r.kind='own_child' and r.student_id=s.id and r.school_id=s.school_id and r.reviewed_by is not null and r.reviewed_at is not null and f.photo_id=p.id and f.student_id=s.id);
+ elsif p_source='reference_face' then
+  begin photo:=p_photo::uuid; exception when others then return null; end;
+  select f.source_photo_path into path from public.student_reference_faces f
+   where f.id=photo and f.student_id=s.id and f.school_id=s.school_id and f.retention_until>=current_date
+   and f.source_photo_path like s.school_id::text||'/'||s.id::text||'/%'
+   and f.source_photo_path !~ '(^|/)\.\.(/|$)' and f.source_photo_path !~ '[?#]';
+  if path is null or not exists(select 1 from storage.objects o where o.bucket_id='student-refs' and o.name=path) then return null; end if;
+  return jsonb_build_object('student_id',s.id,'school_id',s.school_id,'source_path',path);
  else return null; end if;
  if path is null or (p_source='event' and not exists(select 1 from public.photos p where p.id=photo and path like s.school_id::text||'/'||p.event_id::text||'/%')) or path ~ '(^|/)\.\.(/|$)' or path ~ '[?#]' then return null; end if;
  -- Cadastro sem objeto no Storage não conta como foto disponível.
@@ -106,7 +121,7 @@ begin
  select * into s from public.students where id=p_student_id and deleted_at is null;
  if not found or not public.generation_batch_manage(s.school_id) then raise exception 'forbidden'; end if;
  return jsonb_build_object('schoolId',s.school_id,'photos',coalesce((select jsonb_agg(jsonb_build_object('id',x.id,'source',x.source,'path',public.generation_batch_source(s.id,x.source,x.id)->>'source_path','eventId',case when x.source='event' then (select event_id from public.photos where id=x.id::uuid) end,'eventName',case when x.source='event' then (select e.name from public.events e join public.photos p on p.event_id=e.id where p.id=x.id::uuid) end) order by x.source,x.id) from (
- select item->>'id' id,'profile'::text source from jsonb_array_elements(s.photos)item union all select p.id::text,'event' from public.photos p where p.school_id=s.school_id
+ select item->>'id' id,'profile'::text source from jsonb_array_elements(s.photos)item union all select p.id::text,'event' from public.photos p where p.school_id=s.school_id union all select f.id::text,'reference_face' from public.student_reference_faces f where f.student_id=s.id and f.school_id=s.school_id and f.retention_until>=current_date
  )x where public.generation_batch_source(s.id,x.source,x.id) is not null),'[]'::jsonb));
 end; $$;
 
@@ -133,23 +148,39 @@ begin
  from public.generation_batch_items where batch_id=b.id)summary),'[]'::jsonb));
 end; $$;
 
-create or replace function public.create_generation_batch(p_school_id uuid,p_request_id uuid,p_prompt text,p_students jsonb) returns jsonb
+-- Modelo da escola ativa. Modelo global (school_id nulo) não serve para o lote.
+create or replace function public.generation_batch_reference(p_school uuid,p_reference uuid) returns text
+language plpgsql stable security definer set search_path=public as $$
+declare path text; object_name text;
+begin
+ if p_school is null or p_reference is null then return null; end if;
+ select r.image->>'path' into path from public.reference_posts r where r.id=p_reference and r.school_id=p_school;
+ if path is null or path not like 'references/'||p_school::text||'/%' or path ~ '(^|/)\.\.(/|$)' or path ~ '[?#]' then return null; end if;
+ object_name:=substring(path from length('references/')+1);
+ if object_name is null or object_name='' or not exists(select 1 from storage.objects o where o.bucket_id='references' and o.name=object_name) then return null; end if;
+ return path;
+end; $$;
+
+drop function if exists public.create_generation_batch(uuid,uuid,text,jsonb);
+create or replace function public.create_generation_batch(p_school_id uuid,p_request_id uuid,p_prompt text,p_students jsonb,p_reference_id uuid) returns jsonb
 language plpgsql security definer set search_path=public as $$
-declare batch uuid; entry jsonb; source jsonb; n int; used int;
+declare batch uuid; entry jsonb; source jsonb; n int; used int; ref_path text;
 begin
  if not public.generation_batch_manage(p_school_id) then raise exception 'forbidden'; end if;
- if p_request_id is null or p_prompt is null or (length(p_prompt)>3500 or length(btrim(p_prompt))=0) or p_students is null or jsonb_typeof(p_students)<>'array' then raise exception 'invalid_input'; end if;
+ if p_request_id is null or p_prompt is null or (length(p_prompt)>3500 or length(btrim(p_prompt))=0) or p_students is null or jsonb_typeof(p_students)<>'array' or p_reference_id is null then raise exception 'invalid_input'; end if;
+ ref_path:=public.generation_batch_reference(p_school_id,p_reference_id);
+ if ref_path is null then raise exception 'reference_unavailable'; end if;
  perform pg_advisory_xact_lock(hashtextextended(auth.uid()::text||p_request_id::text,0));
  select id into batch from public.generation_batches where created_by=auth.uid() and request_id=p_request_id;
  if batch is not null then
-  if not exists(select 1 from public.generation_batches where id=batch and school_id=p_school_id and prompt=p_prompt) then raise exception 'request_conflict'; end if;
+  if not exists(select 1 from public.generation_batches where id=batch and school_id=p_school_id and prompt=p_prompt and reference_post_id=p_reference_id) then raise exception 'request_conflict'; end if;
   if (select jsonb_agg(jsonb_build_object('studentId',j.student_id,'source',j.source,'photoId',j.photo_id) order by j.student_id) from public.generation_batch_items j where j.batch_id=batch)
    is distinct from (select jsonb_agg(value order by (value->>'studentId')::uuid) from jsonb_array_elements(p_students)) then raise exception 'request_conflict'; end if;
   return public.generation_batch_detail(batch);
  end if;
  n:=jsonb_array_length(p_students);
  if n not between 1 and 50 or (select count(distinct value->>'studentId') from jsonb_array_elements(p_students))<>n then raise exception 'invalid_input'; end if;
- insert into public.generation_batches(school_id,created_by,request_id,prompt) values(p_school_id,auth.uid(),p_request_id,p_prompt) returning id into batch;
+ insert into public.generation_batches(school_id,created_by,request_id,prompt,reference_post_id,reference_path) values(p_school_id,auth.uid(),p_request_id,p_prompt,p_reference_id,ref_path) returning id into batch;
  for entry in select value from jsonb_array_elements(p_students) loop
   source:=public.generation_batch_source((entry->>'studentId')::uuid,entry->>'source',entry->>'photoId');
   if source is null or (source->>'school_id')::uuid<>p_school_id then raise exception 'student_ineligible'; end if;
@@ -240,13 +271,29 @@ begin
   perform 1 from public.photo_faces where photo_id=i.photo_id::uuid for share;
   perform 1 from public.events where id=(select event_id from public.photos where id=i.photo_id::uuid) for share;
  end if;
+ if i.source='reference_face' then
+  begin
+   perform 1 from public.student_reference_faces where id=i.photo_id::uuid and student_id=i.student_id and school_id=b.school_id for share;
+  exception when others then
+   update public.generation_batch_items set status='failed',error_code='authorization_changed',leased_until=null,lease_id=null,updated_at=now() where id=i.id;
+   return null;
+  end;
+ end if;
  source:=public.generation_batch_source(i.student_id,i.source,i.photo_id);
  if source->>'source_path' is distinct from i.source_snapshot then
   update public.generation_batch_items set status='failed',error_code='authorization_changed',leased_until=null,lease_id=null,updated_at=now() where id=i.id;
   perform public.enqueue_storage_purge('generated',array[b.school_id::text||'/generation-batches/'||b.id::text||'/'||i.id::text||'/'||i.attempt::text||'.png'],'generation_authorization_changed',b.school_id);
   return null;
  end if;
- return source||jsonb_build_object('prompt',b.prompt,'source',i.source,'batch_id',b.id,'attempt',i.attempt,'provider_started',i.provider_started_at is not null,'result_path',b.school_id::text||'/generation-batches/'||b.id::text||'/'||i.id::text||'/'||i.attempt::text||'.png');
+ if b.reference_path is null
+  or b.reference_path not like 'references/'||b.school_id::text||'/%'
+  or b.reference_path ~ '(^|/)\.\.(/|$)'
+  or b.reference_path ~ '[?#]'
+  or not exists(select 1 from storage.objects o where o.bucket_id='references' and o.name=substring(b.reference_path from length('references/')+1)) then
+  update public.generation_batch_items set status='failed',error_code='reference_unavailable',leased_until=null,lease_id=null,updated_at=now() where id=i.id;
+  return null;
+ end if;
+ return source||jsonb_build_object('prompt',b.prompt,'source',i.source,'batch_id',b.id,'attempt',i.attempt,'provider_started',i.provider_started_at is not null,'result_path',b.school_id::text||'/generation-batches/'||b.id::text||'/'||i.id::text||'/'||i.attempt::text||'.png','reference_path',b.reference_path);
 end; $$;
 create or replace function public.begin_generation_batch_item(p_item_id uuid,p_lease_id uuid) returns boolean
 language plpgsql security definer set search_path=public as $$
@@ -384,8 +431,8 @@ create index if not exists generation_batch_items_student_idx on public.generati
 create index if not exists generation_batch_items_text_id_idx on public.generation_batch_items((id::text));
 
 -- Every helper is explicitly closed, including functions only other RPCs call.
-revoke all on function public.generation_batch_art_immutable(),public.generation_batch_trash_asset(text),public.generation_batch_asset_visible(text),public.generation_batch_post_visible(uuid),public.generation_batches_authorization_revoked(),public.discard_generation_batch_asset(uuid,text),public.generation_batch_photo_choices(uuid),public.generation_batch_manage(uuid),public.generation_batch_source(uuid,text,text),public.generation_batch_eligibility(uuid),public.generation_batch_detail(uuid),public.generation_batches_for_school(uuid),public.create_generation_batch(uuid,uuid,text,jsonb),public.retry_generation_batch(uuid,uuid,uuid[]),public.claim_generation_batch_items(int,int),public.generation_batch_item_context(uuid,uuid),public.begin_generation_batch_item(uuid,uuid),public.fail_generation_batch_item(uuid,uuid,text,boolean),public.complete_generation_batch_item(uuid,uuid) from public,anon,authenticated;
-grant execute on function public.generation_batch_photo_choices(uuid),public.generation_batch_eligibility(uuid),public.generation_batch_detail(uuid),public.generation_batches_for_school(uuid),public.create_generation_batch(uuid,uuid,text,jsonb),public.retry_generation_batch(uuid,uuid,uuid[]) to authenticated;
+revoke all on function public.generation_batch_art_immutable(),public.generation_batch_trash_asset(text),public.generation_batch_asset_visible(text),public.generation_batch_post_visible(uuid),public.generation_batches_authorization_revoked(),public.discard_generation_batch_asset(uuid,text),public.generation_batch_photo_choices(uuid),public.generation_batch_manage(uuid),public.generation_batch_source(uuid,text,text),public.generation_batch_reference(uuid,uuid),public.generation_batch_eligibility(uuid),public.generation_batch_detail(uuid),public.generation_batches_for_school(uuid),public.create_generation_batch(uuid,uuid,text,jsonb,uuid),public.retry_generation_batch(uuid,uuid,uuid[]),public.claim_generation_batch_items(int,int),public.generation_batch_item_context(uuid,uuid),public.begin_generation_batch_item(uuid,uuid),public.fail_generation_batch_item(uuid,uuid,text,boolean),public.complete_generation_batch_item(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.generation_batch_photo_choices(uuid),public.generation_batch_eligibility(uuid),public.generation_batch_detail(uuid),public.generation_batches_for_school(uuid),public.create_generation_batch(uuid,uuid,text,jsonb,uuid),public.retry_generation_batch(uuid,uuid,uuid[]) to authenticated;
 grant execute on function public.discard_generation_batch_asset(uuid,text),public.claim_generation_batch_items(int,int),public.generation_batch_item_context(uuid,uuid),public.begin_generation_batch_item(uuid,uuid),public.fail_generation_batch_item(uuid,uuid,text,boolean),public.complete_generation_batch_item(uuid,uuid) to service_role;
 
 grant execute on function public.generation_batch_trash_asset(text),public.generation_batch_asset_visible(text),public.generation_batch_post_visible(uuid) to authenticated,service_role;

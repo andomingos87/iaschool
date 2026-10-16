@@ -34,6 +34,37 @@ export function personEditConflict(prompt: string): boolean {
   return /(?:troqu\w*|mude\w*|alter\w*|redesenh\w*|retoqu\w*|embelez\w*|envelhe\w*|rejuven\w*)[^.!?]{0,80}(?:roupa|expressao|corpo|aluno|pessoa|rosto|cabelo)/i.test(editable);
 }
 
+/** Mesmo texto de `artifacts/iaschool-app/src/lib/prompt-template.ts`. */
+export const BATCH_STYLE_RULE =
+  "A primeira imagem enviada é somente o modelo de estilo. A segunda imagem é a foto do aluno. Preserve a identidade e os traços reconhecíveis da pessoa da segunda imagem, sua idade e aparência. Não use a pessoa do modelo. Não invente outras pessoas.";
+
+/** Prompt do lote. Texto livre vazio continua válido; a regra das duas imagens não sai. */
+export function composeBatchPrompt(input: {
+  userPrompt: string;
+  noLogo: boolean;
+  noText: boolean;
+}): string {
+  const extras: string[] = [];
+  if (input.noLogo) {
+    extras.push("Não inclua nenhum logo na arte, inclusive o do modelo de arte.");
+  }
+  if (input.noText) {
+    extras.push("Não inclua títulos, legendas nem o nome do aluno na arte.");
+  }
+  return [BATCH_STYLE_RULE, input.userPrompt.trim(), extras.join(" ")]
+    .filter((part) => part.length > 0)
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/** Garante a regra das duas imagens se uma chamada direta gravou só o texto livre. */
+export function ensureBatchPrompt(prompt: string): string {
+  const text = prompt.trim();
+  if (text.includes("A primeira imagem enviada é somente o modelo de estilo.")) return text;
+  return composeBatchPrompt({ userPrompt: text, noLogo: false, noText: false });
+}
+
 /** Instrução do fluxo simples; a IA edita a foto sem garantia de pixels idênticos. */
 export function photoPromptInstructions(prompt: string): string {
   return [
