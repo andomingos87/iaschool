@@ -718,6 +718,8 @@ export interface ReferencePost {
   title?: string;
   /** id do usuário que subiu (super admin ou usuário de escola) */
   uploadedBy: string;
+  /** Escola do modelo. Nulo é modelo global e não entra no lote. */
+  schoolId?: string | null;
   createdAt: string;
 }
 

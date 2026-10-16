@@ -52,7 +52,7 @@ export function GenerationPhotoPicker({
         .map((p) => [p.eventId!, p.eventName ?? "Evento"]),
     ).entries(),
   ];
-  const render = (list: GenerationPhotoChoice[]) =>
+  const render = (list: GenerationPhotoChoice[], empty: string) =>
     list.length ? (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {list.map((p, index) => (
@@ -75,15 +75,15 @@ export function GenerationPhotoPicker({
             <span className="block p-2 text-xs text-muted-foreground">
               {p.source === "profile"
                 ? "Foto do perfil"
-                : (p.eventName ?? "Foto de evento")}
+                : p.source === "reference_face"
+                  ? "Rosto de referência"
+                  : (p.eventName ?? "Foto de evento")}
             </span>
           </button>
         ))}
       </div>
     ) : (
-      <p className="p-4 text-sm text-muted-foreground">
-        Nenhuma foto disponível neste filtro.
-      </p>
+      <p className="p-4 text-sm text-muted-foreground">{empty}</p>
     );
   return (
     <Dialog
@@ -96,8 +96,9 @@ export function GenerationPhotoPicker({
         <DialogHeader>
           <DialogTitle>Escolha a foto de {student.name}</DialogTitle>
           <DialogDescription>
-            Use uma foto do perfil ou uma foto de evento liberada para este
-            aluno.
+            A foto de perfil é a padrão. O rosto de referência é um recorte e
+            pode deixar a arte mais fechada no rosto. Em eventos, veja todos ou
+            escolha um.
           </DialogDescription>
         </DialogHeader>
         {failed.length > 0 && (
@@ -122,16 +123,33 @@ export function GenerationPhotoPicker({
             onRetry={() => void query.refetch()}
           />
         ) : (
-          <Tabs defaultValue="all">
+          <Tabs defaultValue="perfil">
             <TabsList className="w-full">
-              <TabsTrigger value="all" className="flex-1">
-                Todas
+              <TabsTrigger value="perfil" className="flex-1">
+                Perfil
+              </TabsTrigger>
+              <TabsTrigger value="rosto" className="flex-1">
+                Rosto de referência
               </TabsTrigger>
               <TabsTrigger value="events" className="flex-1">
                 Eventos
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="all">{render(photos)}</TabsContent>
+            <TabsContent value="perfil">
+              {render(
+                photos.filter((p) => p.source === "profile"),
+                "Nenhuma foto de perfil disponível.",
+              )}
+            </TabsContent>
+            <TabsContent value="rosto">
+              <p className="mb-3 text-sm text-muted-foreground">
+                O recorte de rosto deixa a arte mais fechada no rosto.
+              </p>
+              {render(
+                photos.filter((p) => p.source === "reference_face"),
+                "Nenhum rosto de referência disponível.",
+              )}
+            </TabsContent>
             <TabsContent value="events">
               <label
                 htmlFor="generation-event-filter"
@@ -158,6 +176,7 @@ export function GenerationPhotoPicker({
                     p.source === "event" &&
                     (eventId === "all" || p.eventId === eventId),
                 ),
+                "Nenhuma foto de evento neste filtro.",
               )}
             </TabsContent>
           </Tabs>

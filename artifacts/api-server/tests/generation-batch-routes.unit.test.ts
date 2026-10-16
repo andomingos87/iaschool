@@ -2,6 +2,7 @@ import {beforeEach,describe,it,expect,vi} from "vitest";
 vi.mock("../src/middlewares/supabase-auth",()=>({requireSupabaseUser:vi.fn()}));
 import router,{generationBatchRoutesDeps as deps} from "../src/routes/generation-batches";
 import {BatchError} from "../src/lib/generation-batch-service";
+import {composeBatchPrompt} from "../src/lib/art-protection";
 const school="00000000-0000-4000-8000-000000000001",student="00000000-0000-4000-8000-000000000002",requestId="00000000-0000-4000-8000-000000000003";
 const snapshot={id:requestId,schoolId:school,status:"pending",prompt:"Arte escolar",total:1,completed:0,failed:0,items:[]};
 let rpc:ReturnType<typeof vi.fn>,sign:ReturnType<typeof vi.fn>;
@@ -14,13 +15,24 @@ async function call(path:string,method:string,body={},query={},params={}) {
 }
 describe("contrato público lote sem HTTP/banco",()=>{
   it("encaminha seleção por IDs com JWT usuário e não aceita URLs cliente",async()=>{
-    const result=await call("/generation/batches","post",{requestId,schoolId:school,prompt:"Arte escolar",students:[{studentId:student,photo:{source:"profile",id:"principal"}}]});
-    expect(result.status).toBe(201);expect(rpc).toHaveBeenCalledWith("create_generation_batch",{p_school_id:school,p_request_id:requestId,p_prompt:"Arte escolar",p_students:[{studentId:student,source:"profile",photoId:"principal"}]},"synthetic-user-token");
+    const composed=composeBatchPrompt({userPrompt:"Arte escolar",noLogo:false,noText:false});
+    const result=await call("/generation/batches","post",{requestId,schoolId:school,prompt:"Arte escolar",referenceId:school,students:[{studentId:student,photo:{source:"profile",id:"principal"}}]});
+    expect(result.status).toBe(201);expect(rpc).toHaveBeenCalledWith("create_generation_batch",{p_school_id:school,p_request_id:requestId,p_prompt:composed,p_students:[{studentId:student,source:"profile",photoId:"principal"}],p_reference_id:school},"synthetic-user-token");
+    expect(composed).toContain("A primeira imagem enviada é somente o modelo de estilo.");
+    expect(composed).not.toBe("Arte escolar");
+  });
+  it("aceita texto vazio e recusa lote sem modelo",async()=>{
+    const composed=composeBatchPrompt({userPrompt:"",noLogo:true,noText:false});
+    expect((await call("/generation/batches","post",{requestId,schoolId:school,prompt:"",referenceId:school,noLogo:true,students:[{studentId:student,photo:{source:"profile",id:"principal"}}]})).status).toBe(201);
+    expect(rpc).toHaveBeenCalledWith("create_generation_batch",expect.objectContaining({p_prompt:composed,p_reference_id:school}),"synthetic-user-token");
+    rpc.mockClear();
+    expect((await call("/generation/batches","post",{requestId,schoolId:school,prompt:"Arte",students:[{studentId:student,photo:{source:"profile",id:"principal"}}]})).status).toBe(400);
+    expect(rpc).not.toHaveBeenCalled();
   });
   it("bloqueia alunos duplicados e requestId ausente antes do banco",async()=>{
     const entry={studentId:student,photo:{source:"profile",id:"foto"}};
-    expect((await call("/generation/batches","post",{schoolId:school,requestId,prompt:"Arte",students:[entry,entry]})).status).toBe(400);
-    expect((await call("/generation/batches","post",{schoolId:school,prompt:"Arte",students:[entry]})).status).toBe(400);expect(rpc).not.toHaveBeenCalled();
+    expect((await call("/generation/batches","post",{schoolId:school,requestId,prompt:"Arte",referenceId:school,students:[entry,entry]})).status).toBe(400);
+    expect((await call("/generation/batches","post",{schoolId:school,prompt:"Arte",referenceId:school,students:[entry]})).status).toBe(400);expect(rpc).not.toHaveBeenCalled();
   });
   it("retorna erro de quota seguro sem mensagem do banco",async()=>{
     rpc.mockRejectedValue(new BatchError("quota_exceeded",409));
@@ -31,8 +43,12 @@ describe("contrato público lote sem HTTP/banco",()=>{
     const result=await call("/generation/batches/:id","get",{},{},{id:requestId});expect(result.status).toBe(200);expect(sign).toHaveBeenCalledTimes(1);expect(JSON.stringify(result.response)).not.toContain("resultPath");expect(JSON.stringify(result.response)).not.toContain("bad.png");
   });
   it("foto modal remove path e assina somente escolhas autorizadas RPC",async()=>{
-    rpc.mockResolvedValue({schoolId:school,photos:[{id:"perfil",source:"profile",path:`students/${school}/foto.png`}]});
-    const result=await call("/generation/batches/photos","get",{},{studentId:student});expect(result.response).toEqual({photos:[{id:"perfil",source:"profile",url:"https://signed.test/image"}]});expect(sign).toHaveBeenCalledWith("students",`${school}/foto.png`);
+    rpc.mockResolvedValue({schoolId:school,photos:[{id:"perfil",source:"profile",path:`students/${school}/foto.png`},{id:requestId,source:"reference_face",path:`${school}/${student}/rosto.jpg`}]});
+    const result=await call("/generation/batches/photos","get",{},{studentId:student});
+    expect(result.response).toEqual({photos:[{id:"perfil",source:"profile",url:"https://signed.test/image"},{id:requestId,source:"reference_face",url:"https://signed.test/image"}]});
+    expect(sign).toHaveBeenCalledWith("students",`${school}/foto.png`);
+    expect(sign).toHaveBeenCalledWith("student-refs",`${school}/${student}/rosto.jpg`);
+    expect(JSON.stringify(result.response)).not.toContain("rosto.jpg");
   });
   it("rota interna nega assinatura ausente antes de processar",async()=>{
     vi.stubEnv("SUPABASE_URL","https://synthetic.test");vi.stubEnv("SUPABASE_ANON_KEY","synthetic");vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","synthetic-service");

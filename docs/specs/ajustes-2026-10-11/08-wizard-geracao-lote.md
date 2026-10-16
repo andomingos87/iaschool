@@ -1,7 +1,17 @@
 # Wizard de geração por aluno e turma
 
+**Atualizado em:** 15/10/2026.
+**Estado:** a ordem nova (alunos, modelo, confirmar) está no código local. O SQL de referência inclui modelo e rosto de referência. A migration `iaschool_generation_batch_reference` (`20261016192755`) foi aplicada no projeto em 16/10/2026. A API `iaschool-api` v7 foi publicada na Fly no mesmo dia. O app de produção não mudou e não houve geração paga.
+
+## Atualização de 15/10/2026
+
+1. Etapa 1 lista turmas sempre visíveis e os alunos escolhidos em ordem alfabética, por turma, com remoção individual.
+2. Etapa 2 mostra só modelos da escola ativa, 8 por página, com envio de modelo, texto opcional, ideias prontas e os atalhos Remover logo e Remover texto.
+3. Etapa 3 mostra o modelo à esquerda e as fotos à direita. O modal tem Perfil, Rosto de referência e Eventos.
+4. A espera do lote explica que a página pode ser fechada. A geração continua no servidor.
+
 **Atualizado em:** 12/10/2026.
-**Estado:** implementado, testado localmente e publicado em 12/10/2026; uma geração real sintética adicional verificada, com fixture removida.
+**Estado da publicação anterior:** implementado, testado localmente e publicado em 12/10/2026; uma geração real sintética adicional verificada, com fixture removida.
 **Origem:** decisões do usuário na entrevista `grill-me` da conversa de 12/10/2026.
 **Módulos:** app, api, ingest; tabelas/RPCs novas em SQL de referência no módulo app.
 

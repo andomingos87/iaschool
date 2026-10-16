@@ -9,7 +9,7 @@ import { ANON_KEY, SERVICE_KEY, SUPABASE_URL, adminRest, adminUpdateProfile, cle
 
 const enabled = process.env["IASCHOOL_BATCH_REAL_SMOKE"] === "approved_single_synthetic_generation";
 const origin = "https://iaschool-app.vercel.app";
-let conta = "", token = "", aluno = "", lote = "", caminhoEntrada = "", caminhoResultado = "";
+let conta = "", token = "", aluno = "", lote = "", caminhoEntrada = "", caminhoModelo = "", caminhoResultado = "";
 let pedidoEnviado = false;
 function check(value: unknown, label: string): asserts value { if (!value) throw new Error(`Lote sintético: ${label}`); }
 async function rows(path: string): Promise<Record<string, unknown>[]> {
@@ -73,7 +73,7 @@ afterAll(async () => {
   const removedJobs = await adminRest(`student_reference_jobs?school_id=eq.${conta}`, { method: "DELETE" }); check(removedJobs.ok, "limpeza fila recusada");
   const removedAluno = await adminRest(`students?school_id=eq.${conta}`, { method: "DELETE" }); check(removedAluno.ok, "limpeza aluno recusada");
   const purge = await rows(`storage_purge_queue?school_id=eq.${conta}&select=bucket,path`);
-  const buckets = new Map<string, Set<string>>([["students", new Set(caminhoEntrada ? [caminhoEntrada] : [])], ["generated", resultPaths]]);
+  const buckets = new Map<string, Set<string>>([["students", new Set(caminhoEntrada ? [caminhoEntrada] : [])], ["generated", resultPaths], ["references", new Set(caminhoModelo ? [caminhoModelo] : [])]]);
   for (const row of [...jobs.map(j => ({ bucket: "student-refs", path: j.storage_path })), ...purge]) {
     if (typeof row.bucket === "string" && typeof row.path === "string" && row.path.startsWith(`${conta}/`)) {
       if (!buckets.has(row.bucket)) buckets.set(row.bucket, new Set()); buckets.get(row.bucket)!.add(row.path);
@@ -113,7 +113,13 @@ describe.skipIf(!enabled)("lote real único com material sintético", () => {
     await insert("authorizations", { school_id: conta, student_id: aluno, scope: "biometric_sorting", granted_at: new Date().toISOString(), created_by: conta, guardian_channel: "synthetic_no_send", evidence: { synthetic: true, source: "synthetic_test" } });
     const eligible = await api(`/eligibility?schoolId=${conta}`); check(eligible.students.length === 1 && eligible.students[0].photoId === foto, "principal não elegível");
     const photos = await api(`/photos?studentId=${aluno}`); check(photos.photos.length === 1 && photos.photos[0].id === foto, "seletor de fotos divergente");
-    const requestId = randomUUID(), body = { requestId, schoolId: conta, prompt: "Crie uma arte escolar alegre com o personagem ilustrado sintético da referência no centro, fundo com formas geométricas em azul e verde, sem texto, sem logo, sem outras pessoas. Preserve as características do personagem.", students: [{ studentId: aluno, photo: { source: "profile", id: foto } }] };
+    const modelo = randomUUID(); caminhoModelo = `${conta}/modelo-sintetico.png`;
+    const modeloBytes = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#2563eb" } }).png().toBuffer();
+    const modeloUp = await fetch(`${SUPABASE_URL}/storage/v1/object/references/${caminhoModelo}`, { method: "POST",
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "image/png" }, body: new Uint8Array(modeloBytes), signal: AbortSignal.timeout(30_000) });
+    check(modeloUp.ok, "upload do modelo sintético recusado");
+    await insert("reference_posts", { id: modelo, owner_id: conta, uploaded_by: conta, school_id: conta, image: { id: modelo, path: `references/${caminhoModelo}`, url: "synthetic" } });
+    const requestId = randomUUID(), body = { requestId, schoolId: conta, prompt: "Crie uma arte escolar alegre com o personagem ilustrado sintético da referência no centro, fundo com formas geométricas em azul e verde, sem texto, sem logo, sem outras pessoas. Preserve as características do personagem.", referenceId: modelo, noLogo: true, noText: true, students: [{ studentId: aluno, photo: { source: "profile", id: foto } }] };
     // Uma única criação de tentativa; repetir o mesmo requestId valida idempotência.
     pedidoEnviado = true; lote = (await api("", body)).id; check(lote, "lote sem identificação");
     check((await api("", body)).id === lote, "resposta repetida criou outro lote");

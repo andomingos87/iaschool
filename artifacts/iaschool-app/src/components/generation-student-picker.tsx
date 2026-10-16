@@ -22,6 +22,8 @@ import {
   expandGenerationSelection,
   toggleGenerationStudent,
   toggleGenerationClass,
+  selectionGroups,
+  selectionLimitMessage,
   type GenerationSelection,
 } from "@/lib/generation-batches";
 export function GenerationStudentPicker({
@@ -41,7 +43,10 @@ export function GenerationStudentPicker({
 }) {
   const [open, setOpen] = useState(false);
   const selected = expandGenerationSelection(selection, eligible);
+  const selectedIds = new Set(selected);
   const groups = classes.map((c) => classSelection(c, students, eligible));
+  const chosen = selectionGroups(selection, classes, students, eligible);
+  const limit = selectionLimitMessage(selected.length);
   function toggle(id: string) {
     onChange(toggleGenerationStudent(selection, id, eligible));
   }
@@ -128,65 +133,93 @@ export function GenerationStudentPicker({
           </Command>
         </PopoverContent>
       </Popover>
-      {selection.classIds.length > 0 && (
-        <div className="flex flex-wrap gap-2" aria-label="Turmas selecionadas">
-          {groups
-            .filter((g) => selection.classIds.includes(g.id))
-            .map((group) => (
-              <span
+      <div className="space-y-2" aria-label="Turmas">
+        {groups.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nenhuma turma nesta escola. Dá para buscar alunos pelo nome.
+          </p>
+        ) : (
+          groups.map((group) => {
+            const picked = group.eligibleIds.filter((id) =>
+              selectedIds.has(id),
+            ).length;
+            const outside = group.total - group.eligibleIds.length;
+            const pressed = selection.classIds.includes(group.id);
+            return (
+              <button
                 key={group.id}
-                className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-accent px-3 py-1 text-sm"
+                type="button"
+                aria-pressed={pressed}
+                disabled={disabled || group.eligibleIds.length === 0}
+                className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border px-3 text-left focus-visible:ring-2 focus-visible:ring-ring ${pressed ? "border-primary bg-accent" : "bg-background"}`}
+                onClick={() =>
+                  onChange(toggleGenerationClass(selection, group.id, eligible))
+                }
               >
-                {group.label} · {group.eligibleIds.length} aptos
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  disabled={disabled}
-                  className="size-7 rounded-full"
-                  aria-label={`Remover turma ${group.label}`}
-                  onClick={() =>
-                    onChange(
-                      toggleGenerationClass(selection, group.id, eligible),
-                    )
-                  }
-                >
-                  <X className="size-3" />
-                </Button>
-              </span>
-            ))}
+                <span className="font-medium">{group.label}</span>
+                <span className="text-sm text-muted-foreground">
+                  {picked} de {group.total}
+                  {outside > 0
+                    ? ` · ${outside} fora, sem foto ou sem autorização.`
+                    : ""}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+      {chosen.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nenhum aluno ainda. Escolha uma turma ou busque pelo nome.
+        </p>
+      ) : (
+        <div className="space-y-4" aria-label="Alunos selecionados">
+          {chosen.map((group) => (
+            <section key={group.classId ?? "sem-turma"} className="space-y-2">
+              <h3 className="text-sm font-semibold">
+                {group.label}
+                <span className="ml-2 font-normal text-muted-foreground">
+                  {group.selectedCount} de {group.totalCount}
+                </span>
+              </h3>
+              {group.ineligibleCount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {group.ineligibleCount} fora, sem foto ou sem autorização.
+                </p>
+              )}
+              <ul className="divide-y rounded-lg border">
+                {group.students.map((student) => (
+                  <li
+                    key={student.id}
+                    className="flex min-h-11 items-center justify-between gap-2 px-3"
+                  >
+                    <span className="break-words">{student.name}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      disabled={disabled}
+                      className="size-11 shrink-0"
+                      aria-label={`Remover ${student.name} da seleção`}
+                      onClick={() => toggle(student.id)}
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
         </div>
       )}
-      {selected.length > 0 && (
-        <div className="flex flex-wrap gap-2" aria-label="Alunos selecionados">
-          {selected.map((id) => {
-            const student = eligible.find((s) => s.id === id);
-            return student ? (
-              <span
-                key={id}
-                className="inline-flex max-w-full items-center gap-1 rounded-full border bg-muted px-3 py-1 text-sm"
-              >
-                <span className="break-words">{student.name}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  disabled={disabled}
-                  className="size-7 shrink-0 rounded-full"
-                  aria-label={`Remover ${student.name}`}
-                  onClick={() => toggle(id)}
-                >
-                  <X className="size-3" />
-                </Button>
-              </span>
-            ) : null;
-          })}
-        </div>
+      {limit && (
+        <p className="text-sm text-destructive" role="status">
+          {limit}
+        </p>
       )}
       <p className="text-sm text-muted-foreground" aria-live="polite">
         {selected.length}{" "}
         {selected.length === 1 ? "aluno selecionado" : "alunos selecionados"}.
-        Só aparecem alunos com foto e autorização ativa.
       </p>
     </div>
   );

@@ -19,6 +19,9 @@ import {
   shortcutInstructions,
   toggleArtShortcut,
   validatePromptTemplate,
+  ART_ICEBREAKERS,
+  appendIcebreaker,
+  composeBatchPrompt,
 } from "./prompt-template";
 import type { GenerationRequest } from "./data/types";
 
@@ -564,6 +567,22 @@ describe("geração sem cores — bloco {{#cores_escola}} omitido do prompt fina
 // ---------------------------------------------------------------------------
 // S02 — atalhos de instrução e regra fixa (ART-03 a ART-06)
 // ---------------------------------------------------------------------------
+
+describe("ideias e prompt do lote", () => {
+  it("texto vazio ainda descreve as duas imagens e o atalho entra uma vez", () => {
+    const vazio = composeBatchPrompt({
+      userPrompt: "  ",
+      noLogo: true,
+      noText: false,
+    });
+    expect(vazio).toContain("A primeira imagem enviada é somente o modelo de estilo.");
+    expect(vazio).toContain("Não inclua nenhum logo");
+    expect(vazio.length).toBeLessThanOrEqual(3500);
+    const comTexto = appendIcebreaker("Festa", ART_ICEBREAKERS[0].text);
+    expect(appendIcebreaker(comTexto, ART_ICEBREAKERS[0].text)).toBe(comTexto);
+    expect(comTexto.startsWith("Festa")).toBe(true);
+  });
+});
 
 describe("atalhos de instrução (S02)", () => {
   it("os atalhos padrão mantêm só 'Manter a foto original' ligado", () => {

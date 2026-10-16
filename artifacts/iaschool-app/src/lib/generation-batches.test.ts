@@ -7,6 +7,11 @@ import {
   toggleGenerationClass,
   toggleGenerationStudent,
   classSelection,
+  selectionGroups,
+  modelPage,
+  modelPageOf,
+  schoolArtModels,
+  selectionLimitMessage,
   batchReviewError,
   createGenerationBatchService,
   createMockGenerationBatchService,
@@ -89,8 +94,10 @@ describe("seleção escolar de artes em lote", () => {
         photo: { source: "profile" as const, id: "principal" },
       },
     ];
-    expect(batchReviewError("Festa", items, 1)).toBeNull();
-    expect(batchReviewError("Festa", items, 0)).toBeTruthy();
+    expect(batchReviewError("Festa", items, 1, "modelo")).toBeNull();
+    expect(batchReviewError("", items, 1, "modelo")).toBeNull();
+    expect(batchReviewError("Festa", items, 1)).toBeTruthy();
+    expect(batchReviewError("Festa", items, 0, "modelo")).toBeTruthy();
     expect(batchReviewError("Festa", [...items, ...items], 5)).toBeTruthy();
     expect(
       batchReviewError(
@@ -118,6 +125,9 @@ describe("contrato HTTP de lotes", () => {
       requestId: "same-request",
       schoolId: "school",
       prompt: "Festa",
+      referenceId: "modelo",
+      noLogo: false,
+      noText: false,
       students: [
         { studentId: "a", photo: { source: "profile", id: "principal" } },
       ],
@@ -129,6 +139,9 @@ describe("contrato HTTP de lotes", () => {
         requestId: "same-request",
         schoolId: "school",
         prompt: "Festa",
+        referenceId: "modelo",
+        noLogo: false,
+        noText: false,
         students: [
           { studentId: "a", photo: { source: "profile", id: "principal" } },
         ],
@@ -207,6 +220,9 @@ describe("simulação local recuperável", () => {
       requestId: "batch",
       schoolId: "school",
       prompt: "Festa",
+      referenceId: "modelo",
+      noLogo: true,
+      noText: false,
       students: alunos.slice(0, 2).map((s) => ({
         studentId: s.id,
         photo: { source: "profile" as const, id: "principal" },
@@ -237,6 +253,87 @@ describe("simulação local recuperável", () => {
   });
 });
 
+
+describe("lista do wizard", () => {
+  const turma = (id: string, name: string) =>
+    ({ id, schoolId: "school", name, grade: "1EF", schoolYear: 2026 }) as SchoolClass;
+  const aluno = (id: string, name: string, classId: string | null) =>
+    ({
+      id,
+      schoolId: "school",
+      classId,
+      name,
+      photos: [{ id: "p", url: "synthetic" }],
+    }) as unknown as Student;
+  it("agrupa parcial, turma cheia e aluno de outra turma em ordem pt-BR", () => {
+    const classes = [turma("t1", "B"), turma("t2", "A"), turma("t3", "C")];
+    const students = [
+      aluno("z", "Zeca", "t1"),
+      aluno("a", "ana", "t1"),
+      aluno("b", "Bruno", "t1"),
+      ...Array.from({ length: 17 }, (_, index) =>
+        aluno(`x${index}`, `Nome ${index}`, "t1"),
+      ),
+      ...Array.from({ length: 10 }, (_, index) =>
+        aluno(`y${index}`, `Turma Dois ${String.fromCharCode(65 + index)}`, "t2"),
+      ),
+      aluno("solo", "Caio", "t3"),
+      aluno("livre", "Ágata", null),
+      aluno("fora", "Sem foto", "t1"),
+    ];
+    const eligible = students.filter((s) => s.id !== "fora");
+    let selected = toggleGenerationClass(EMPTY_GENERATION_SELECTION, "t1", eligible);
+    selected = toggleGenerationClass(selected, "t2", eligible);
+    for (const id of ["z", "a", "b", "x0", "x1"]) {
+      selected = toggleGenerationStudent(selected, id, eligible);
+    }
+    selected = toggleGenerationStudent(selected, "solo", eligible);
+    selected = toggleGenerationStudent(selected, "livre", eligible);
+    const groups = selectionGroups(selected, classes, students, eligible);
+    expect(groups.map((g) => g.label)).toEqual([
+      "1º ano — Fundamental · A",
+      "1º ano — Fundamental · B",
+      "1º ano — Fundamental · C",
+      "Sem turma",
+    ]);
+    const turma1 = groups[1]!;
+    expect(turma1.selectedCount).toBe(15);
+    expect(turma1.totalCount).toBe(21);
+    expect(turma1.ineligibleCount).toBe(1);
+    expect(turma1.students.some((s) => s.name === "ana")).toBe(false);
+    expect(turma1.students.map((s) => s.name)).toEqual(
+      [...turma1.students.map((s) => s.name)].sort((a, b) =>
+        a.localeCompare(b, "pt-BR"),
+      ),
+    );
+    expect(groups[0]?.selectedCount).toBe(10);
+    expect(groups[0]?.totalCount).toBe(10);
+    expect(groups[2]?.students.map((s) => s.name)).toEqual(["Caio"]);
+    expect(groups[3]?.students.map((s) => s.name)).toEqual(["Ágata"]);
+    expect(expandGenerationSelection(selected, eligible)).toHaveLength(27);
+  });
+  it("página de 8, página inválida e modelo de outra escola", () => {
+    const ids = Array.from({ length: 9 }, (_, index) => `m${index}`);
+    expect(modelPage(ids, 1).items).toHaveLength(8);
+    expect(modelPage(ids, 2).items).toEqual(["m8"]);
+    expect(modelPage(ids, 9).page).toBe(2);
+    expect(modelPage([], 4)).toMatchObject({ page: 1, pages: 1, items: [] });
+    expect(modelPageOf(ids, "m8")).toBe(2);
+    expect(modelPageOf(ids, "sumiu")).toBeNull();
+    expect(
+      schoolArtModels(
+        [
+          { id: "ok", schoolId: "school" },
+          { id: "global", schoolId: null },
+          { id: "outra", schoolId: "other" },
+        ],
+        "school",
+      ).map((m) => m.id),
+    ).toEqual(["ok"]);
+    expect(selectionLimitMessage(60)).toMatch(/Tire 10/);
+    expect(selectionLimitMessage(50)).toBeNull();
+  });
+});
 
 describe("busca do wizard", () => {
   it("busca nome com espaços e acentos sem depender de IDs", () => {

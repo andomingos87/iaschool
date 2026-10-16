@@ -2,9 +2,24 @@ import { Router, type Request, type Response, type IRouter } from "express";
 import { requireSupabaseUser } from "../middlewares/supabase-auth";
 import { BatchError, BATCH_PROCESS_PATH, UUID, batchConfig, batchRpc, safeObjectPath, signObject, validWorkerSignature } from "../lib/generation-batch-service";
 import { processGenerationBatchItem } from "../lib/generation-batch-process";
+import { composeBatchPrompt } from "../lib/art-protection";
 const router: IRouter = Router();
 export const generationBatchRoutesDeps = { rpc: batchRpc, sign: signObject, process: processGenerationBatchItem };
-const errors: Record<string, string> = { quota_exceeded: "O lote ultrapassa sua cota diária disponível.", student_ineligible: "Um aluno deixou de estar apto. Atualize a seleção.", photo_ineligible: "Uma foto deixou de estar disponível para este aluno.", forbidden: "Você não tem permissão para esta escola.", invalid_input: "Confira os dados do lote.", retry_not_allowed: "Só itens que falharam podem ser repetidos manualmente.", request_conflict: "Esta solicitação já foi usada para outro lote." };
+const errors: Record<string, string> = { reference_unavailable: "O modelo de arte não está mais disponível. Escolha outro.", quota_exceeded: "O lote ultrapassa sua cota diária disponível.", student_ineligible: "Um aluno deixou de estar apto. Atualize a seleção.", photo_ineligible: "Uma foto deixou de estar disponível para este aluno.", forbidden: "Você não tem permissão para esta escola.", invalid_input: "Confira os dados do lote.", retry_not_allowed: "Só itens que falharam podem ser repetidos manualmente.", request_conflict: "Esta solicitação já foi usada para outro lote." };
+function photoBucket(source: string): string {
+    if (source === "profile")
+        return "students";
+    if (source === "reference_face")
+        return "student-refs";
+    return "event-photos";
+}
+function flag(value: unknown): boolean {
+    if (value === undefined)
+        return false;
+    if (typeof value !== "boolean")
+        throw new BatchError("invalid_input", 400);
+    return value;
+}
 function fail(res: Response, error: unknown) {
     const e = error instanceof BatchError ? error : new BatchError("batch_unavailable");
     res.status(e.status).json({ code: e.code, error: errors[e.code] ?? "Não foi possível acessar o lote. Tente novamente." });
@@ -65,14 +80,17 @@ router.get("/generation/batches/photos", requireSupabaseUser, async (req, res) =
         const data = await generationBatchRoutesDeps.rpc<{
             schoolId: string;
             photos: Array<{
-                source: "profile" | "event";
+                source: "profile" | "event" | "reference_face";
                 id: string;
                 path: string;
                 eventId?: string;
                 eventName?: string;
             }>;
         }>("generation_batch_photo_choices", { p_student_id: uuid(req.query.studentId) }, token(req));
-        const photos = await Promise.all(data.photos.map(async ({ path, ...photo }) => ({ ...photo, url: await generationBatchRoutesDeps.sign(photo.source === "profile" ? "students" : "event-photos", safeObjectPath(path, data.schoolId, photo.source === "profile" ? "students" : "event-photos")) })));
+        const photos = await Promise.all(data.photos.map(async ({ path, ...photo }) => {
+            const bucket = photoBucket(photo.source);
+            return { ...photo, url: await generationBatchRoutesDeps.sign(bucket, safeObjectPath(path, data.schoolId, bucket)) };
+        }));
         res.json({ photos });
     }
     catch (error) {
@@ -85,9 +103,16 @@ router.post("/generation/batches", requireSupabaseUser, async (req, res) => {
             requestId?: unknown;
             schoolId?: unknown;
             prompt?: unknown;
+            referenceId?: unknown;
+            noLogo?: unknown;
+            noText?: unknown;
             students?: unknown;
         };
-        if (typeof body.prompt !== "string" || !body.prompt.trim() || body.prompt.length > 3500 || !Array.isArray(body.students) || body.students.length < 1 || body.students.length > 50)
+        if (typeof body.prompt !== "string" || body.prompt.trim().length > 3000 || !Array.isArray(body.students) || body.students.length < 1 || body.students.length > 50)
+            throw new BatchError("invalid_input", 400);
+        const noLogo = flag(body.noLogo), noText = flag(body.noText);
+        const prompt = composeBatchPrompt({ userPrompt: body.prompt, noLogo, noText });
+        if (prompt.length > 3500)
             throw new BatchError("invalid_input", 400);
         const students = body.students.map((raw: unknown) => {
             const item = raw as {
@@ -98,15 +123,15 @@ router.post("/generation/batches", requireSupabaseUser, async (req, res) => {
                 };
             };
             const studentId = uuid(item?.studentId), source = item?.photo?.source, photoId = item?.photo?.id;
-            if (!["profile", "event"].includes(String(source)) || typeof photoId !== "string" || photoId.length < 1 || photoId.length > 1024)
+            if (!["profile", "event", "reference_face"].includes(String(source)) || typeof photoId !== "string" || photoId.length < 1 || photoId.length > 1024)
                 throw new BatchError("invalid_input", 400);
-            if (source === "event")
+            if (source === "event" || source === "reference_face")
                 uuid(photoId);
             return { studentId, source, photoId };
         });
         if (new Set(students.map(s => s.studentId)).size !== students.length)
             throw new BatchError("invalid_input", 400);
-        const data = await generationBatchRoutesDeps.rpc<Detail>("create_generation_batch", { p_school_id: uuid(body.schoolId), p_request_id: uuid(body.requestId), p_prompt: body.prompt, p_students: students }, token(req));
+        const data = await generationBatchRoutesDeps.rpc<Detail>("create_generation_batch", { p_school_id: uuid(body.schoolId), p_request_id: uuid(body.requestId), p_prompt: prompt, p_students: students, p_reference_id: uuid(body.referenceId) }, token(req));
         res.status(201).json(await detailProjection(data));
     }
     catch (error) {

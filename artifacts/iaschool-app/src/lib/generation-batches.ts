@@ -7,9 +7,10 @@ import {
   classLabel,
 } from "./data";
 import { generationBlockers } from "./eca";
+import { composeBatchPrompt } from "./prompt-template";
 
 export interface BatchPhoto {
-  source: "profile" | "event";
+  source: "profile" | "event" | "reference_face";
   id: string;
 }
 export interface GenerationBatchItem {
@@ -44,6 +45,9 @@ export interface CreateGenerationBatch {
   requestId: string;
   schoolId: string;
   prompt: string;
+  referenceId: string;
+  noLogo: boolean;
+  noText: boolean;
   students: { studentId: string; photo: BatchPhoto }[];
 }
 export interface GenerationBatchService {
@@ -99,9 +103,23 @@ export function batchReviewError(
   prompt: string,
   students: readonly { studentId: string; photo: BatchPhoto }[],
   remaining: number,
+  referenceId?: string | null,
+  shortcuts: { noLogo: boolean; noText: boolean } = {
+    noLogo: false,
+    noText: false,
+  },
 ) {
-  if (!prompt.trim() || prompt.trim().length > 3000)
-    return "Descreva a arte com até 3.000 caracteres.";
+  if (!referenceId) return "Escolha um modelo de arte.";
+  if (prompt.trim().length > 3000)
+    return "O texto da arte aceita até 3.000 caracteres.";
+  if (
+    composeBatchPrompt({
+      userPrompt: prompt,
+      noLogo: shortcuts.noLogo,
+      noText: shortcuts.noText,
+    }).length > 3500
+  )
+    return "O texto ficou longo demais. Encurte um pouco para continuar.";
   if (students.length > 50) return "Escolha até 50 alunos por lote.";
   if (!students.length) return "Escolha pelo menos um aluno.";
   if (new Set(students.map((s) => s.studentId)).size !== students.length)
@@ -121,6 +139,8 @@ export class GenerationBatchRequestError extends Error {
   }
 }
 const safeErrors: Record<string, string> = {
+  reference_unavailable:
+    "O modelo de arte não está mais disponível. Escolha outro.",
   quota_exceeded:
     "A cota não é suficiente para este lote. Ajuste a seleção ou tente amanhã.",
   student_ineligible: "Uma autorização mudou. Atualize os alunos aptos.",
@@ -191,6 +211,7 @@ export function createMockGenerationBatchService(
   opts: {
     failStudentIds?: string[];
     eventPhotos?: Record<string, GenerationPhotoChoice[]>;
+    referencePhotos?: Record<string, GenerationPhotoChoice[]>;
   } = {},
 ): GenerationBatchService {
   const key = "iaschool:demo-generation-batches";
@@ -226,6 +247,7 @@ export function createMockGenerationBatchService(
           url: p.url,
         })),
         ...(opts.eventPhotos?.[id] ?? []),
+        ...(opts.referencePhotos?.[id] ?? []),
       ],
     };
   }
@@ -349,6 +371,8 @@ export function createMockGenerationBatchService(
           input.prompt,
           input.students,
           eligible.remainingQuota,
+          input.referenceId,
+          { noLogo: input.noLogo, noText: input.noText },
         );
         if (error || input.students.some((s) => !allowed.has(s.studentId)))
           throw new Error(error ?? "Aluno não está apto.");
@@ -496,6 +520,93 @@ export function toggleGenerationStudent(
         ),
       };
 }
+const pt = new Intl.Collator("pt-BR", { sensitivity: "base" });
+
+export interface SelectionGroup {
+  classId: string | null;
+  label: string;
+  selectedCount: number;
+  totalCount: number;
+  ineligibleCount: number;
+  students: { id: string; name: string }[];
+}
+
+/** Selecionados em ordem alfabética, agrupados pela turma do aluno. */
+export function selectionGroups(
+  selection: GenerationSelection,
+  classes: readonly SchoolClass[],
+  students: readonly Student[],
+  eligible: readonly Student[],
+): SelectionGroup[] {
+  const schoolId = eligible[0]?.schoolId;
+  if (!schoolId) return [];
+  const selected = new Set(expandGenerationSelection(selection, eligible));
+  const roster = students.filter((student) => student.schoolId === schoolId);
+  const eligibleIds = new Set(eligible.map((student) => student.id));
+  const classById = new Map(classes.map((schoolClass) => [schoolClass.id, schoolClass]));
+  const buckets = new Map<string | null, Student[]>();
+  for (const student of roster) {
+    if (!selected.has(student.id)) continue;
+    const key = student.classId ?? null;
+    buckets.set(key, [...(buckets.get(key) ?? []), student]);
+  }
+  return [...buckets.entries()]
+    .map(([classId, members]) => {
+      const schoolClass = classId ? classById.get(classId) : undefined;
+      const inClass = (student: Student) =>
+        classId ? student.classId === classId : !student.classId;
+      const total = roster.filter(inClass);
+      const eligibleCount = total.filter((student) => eligibleIds.has(student.id)).length;
+      return {
+        classId,
+        label: schoolClass ? classLabel(schoolClass) : "Sem turma",
+        selectedCount: members.length,
+        totalCount: total.length,
+        ineligibleCount: total.length - eligibleCount,
+        students: members
+          .map((student) => ({ id: student.id, name: student.name }))
+          .sort(
+            (a, b) => pt.compare(a.name, b.name) || a.id.localeCompare(b.id),
+          ),
+      };
+    })
+    .sort((a, b) => {
+      if (a.classId === null) return 1;
+      if (b.classId === null) return -1;
+      return pt.compare(a.label, b.label) || (a.classId ?? "").localeCompare(b.classId ?? "");
+    });
+}
+
+export const MODEL_PAGE_SIZE = 8;
+
+/** Página 1-based. Página inválida cai na última. Lista vazia fica na página 1. */
+export function modelPage<T>(items: readonly T[], page: number) {
+  const pages = Math.max(1, Math.ceil(items.length / MODEL_PAGE_SIZE));
+  const current = Math.min(Math.max(1, Math.floor(page) || 1), pages);
+  const start = (current - 1) * MODEL_PAGE_SIZE;
+  return { page: current, pages, items: items.slice(start, start + MODEL_PAGE_SIZE) };
+}
+
+export function modelPageOf(ids: readonly string[], selectedId: string | null): number | null {
+  if (!selectedId) return null;
+  const index = ids.indexOf(selectedId);
+  if (index < 0) return null;
+  return Math.floor(index / MODEL_PAGE_SIZE) + 1;
+}
+
+export function schoolArtModels<T extends { schoolId?: string | null }>(
+  models: readonly T[],
+  schoolId: string,
+): T[] {
+  return models.filter((model) => model.schoolId === schoolId);
+}
+
+export function selectionLimitMessage(count: number, limit = 50): string | null {
+  if (count <= limit) return null;
+  const extra = count - limit;
+  return `O lote aceita até ${limit} alunos. Você marcou ${count}. Tire ${extra} para continuar.`;
+}
+
 export function toggleGenerationClass(
   selection: GenerationSelection,
   id: string,

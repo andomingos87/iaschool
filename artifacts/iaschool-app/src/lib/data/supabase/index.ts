@@ -419,6 +419,7 @@ function toReference(r: Row): ReferencePost {
     image: r["image"] as StoredImage,
     title: (r["title"] as string | null) ?? undefined,
     uploadedBy: r["uploaded_by"] as string,
+    schoolId: (r["school_id"] as string | null) ?? null,
     createdAt: r["created_at"] as string,
   };
 }
