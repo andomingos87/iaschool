@@ -435,4 +435,8 @@ revoke all on function public.generation_batch_art_immutable(),public.generation
 grant execute on function public.generation_batch_photo_choices(uuid),public.generation_batch_eligibility(uuid),public.generation_batch_detail(uuid),public.generation_batches_for_school(uuid),public.create_generation_batch(uuid,uuid,text,jsonb,uuid),public.retry_generation_batch(uuid,uuid,uuid[]) to authenticated;
 grant execute on function public.discard_generation_batch_asset(uuid,text),public.claim_generation_batch_items(int,int),public.generation_batch_item_context(uuid,uuid),public.begin_generation_batch_item(uuid,uuid),public.fail_generation_batch_item(uuid,uuid,text,boolean),public.complete_generation_batch_item(uuid,uuid) to service_role;
 
+-- 16/10/2026: iaschool_generation_batch_reference (20261016192755) revogou o
+-- execute destas três funções e não devolveu. A policy restritiva de
+-- public.generated_posts passou a responder 403. A migration
+-- iaschool_generation_batch_visibility_grant (20261016194853) devolveu o grant.
 grant execute on function public.generation_batch_trash_asset(text),public.generation_batch_asset_visible(text),public.generation_batch_post_visible(uuid) to authenticated,service_role;
