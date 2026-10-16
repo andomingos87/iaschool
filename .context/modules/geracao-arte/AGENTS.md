@@ -24,7 +24,7 @@ Cada sucesso salva `public.generated_posts` (`artifacts/iaschool-app/supabase/se
 
 ## Verificação
 
-A rodada de 12/10/2026 (313 testes do app, 49 da API, 58 do ingest, PostgreSQL descartável, typecheck e build) continua o histórico publicado. Em 16/10/2026 o typecheck do workspace passou, com 326 testes do app em `src` e 53 testes unitários da API. A migration `iaschool_generation_batch_reference` foi aplicada. A API `iaschool-api` v7 está na Fly desde 16/10/2026 (`ec460c7`). O app de produção ainda é o anterior. Geração paga não rodou.
+A rodada de 12/10/2026 (313 testes do app, 49 da API, 58 do ingest, PostgreSQL descartável, typecheck e build) continua o histórico publicado. Em 16/10/2026 o typecheck do workspace passou, com 326 testes do app em `src` e 53 testes unitários da API. A migration `iaschool_generation_batch_reference` foi aplicada. A API `iaschool-api` v7 está na Fly desde 16/10/2026. O app de produção é o wizard com modelo desde o PR #27 (`a656cca`, `dpl_4wmzoWgVmJUxn8qk1ft66H51aDmp`). Geração paga não rodou.
 
 ## Compatibilidade legada
 
