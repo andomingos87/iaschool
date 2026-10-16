@@ -1,7 +1,7 @@
 # Wizard de geração por aluno e turma
 
 **Atualizado em:** 15/10/2026.
-**Estado:** a ordem nova (alunos, modelo, confirmar) está no código local. O SQL de referência inclui modelo e rosto de referência. A migration `iaschool_generation_batch_reference` (`20261016192755`) foi aplicada no projeto em 16/10/2026. A API `iaschool-api` v7 foi publicada na Fly no mesmo dia. O app de produção não mudou e não houve geração paga.
+**Estado:** a ordem nova (alunos, modelo, confirmar) está no código local. O SQL de referência inclui modelo e rosto de referência. A migration `iaschool_generation_batch_reference` (`20261016192755`) foi aplicada no projeto em 16/10/2026. A API `iaschool-api` v7 foi publicada na Fly no mesmo dia. O app de produção passou a ser esse wizard em 16/10/2026 (`a656cca`, `dpl_4wmzoWgVmJUxn8qk1ft66H51aDmp`). Não houve geração paga.
 
 ## Atualização de 15/10/2026
 
