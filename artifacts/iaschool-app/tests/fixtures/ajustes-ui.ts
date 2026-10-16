@@ -94,11 +94,15 @@ export async function prepareAdjustmentsUi(data: DataLayer, syntheticUrl: string
   };
   installGenerationBatchFixtureService(createMockGenerationBatchService(data, {failStudentIds:["aluno-b"],eventPhotos:{"aluno-a":[{source:"event",id:"solo-evento-sintetico",url:syntheticUrl,eventId:"evento-a",eventName:"Evento Sintético (aluno sozinho)"}]}}));
   const realFetch = window.fetch.bind(window);
-  let session = false; let consumed = false;
+  let session = false;
   const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
   const album = () => ({ eventName: draft.batch.fields.eventName, signature: draft.batch.fields.signature,
     sessionExpiresAt: new Date(Date.now() + 86400_000).toISOString(), filesExpireAt: new Date(Date.now() + 7 * 86400_000).toISOString(),
-    items: draft.recipients[0]!.items.filter(i => i.selected).sort((a, b) => a.order - b.order).map(i => ({ id: i.id, photoId: i.photoId, width: 320, height: 240, thumbUrl: syntheticUrl })) });
+    items: draft.recipients[0]!.items.filter(i => i.selected).sort((a, b) => a.order - b.order).map((item, index) => ({
+      id: item.id, photoId: item.photoId, width: 320, height: 240, thumbUrl: syntheticUrl,
+      eventId: index % 2 === 0 ? "20000000-0000-4000-8000-0000000000a1" : "20000000-0000-4000-8000-0000000000a2",
+      eventName: index % 2 === 0 ? "Formatura" : "Festa junina",
+    })) });
   window.fetch = async (input, init) => {
     const endpoint = String(input);
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
@@ -120,7 +124,7 @@ export async function prepareAdjustmentsUi(data: DataLayer, syntheticUrl: string
       return json({ status: draft.recipients[0]!.status });
     }
     if (endpoint === "/api/guardian-album") {
-      if (body.action === "consume") { if (consumed && !session) return json({ error: "used" }, 410); consumed = true; session = true; }
+      if (body.action === "consume") session = true;
       if (!session) return json({ error: "unavailable" }, 401);
       if (body.action === "download") {
         // Bytes de imagem são fornecidos pela própria fixture, sem Storage real.

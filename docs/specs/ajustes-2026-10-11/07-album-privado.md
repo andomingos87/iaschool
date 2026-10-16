@@ -1,5 +1,7 @@
 # S07 — Álbum privado, sessão temporária e reenvio pela escola
 
+> **Atualização de 16/10/2026 (código local, sem migration remota e sem publicação):** o uso único do link deixa de valer neste MVP. O mesmo token opaco abre de novo. `public.delivery_album_tokens.used_at` marca a primeira abertura e não bloqueia a próxima. Cada abertura sem cookie cria outra sessão de 24 h em `public.delivery_access_sessions`, sem renovar a anterior. `public.delivery_album_session` devolve as fotos aprovadas ainda disponíveis do mesmo responsável na mesma escola, em todos os eventos, e a página agrupa, busca e filtra. Revogação, autorização retirada e foto de outra família continuam negadas. O risco de encaminhamento aceito em N-D8 permanece. OTP fica para depois do contrato. Referência nova: `artifacts/iaschool-app/supabase/fase5-album-open-link.sql`, aplicada só no ensaio local, depois de `artifacts/iaschool-app/supabase/fase5-adjustments-delivery-album.sql`. O texto abaixo descreve o que foi publicado em 12/10/2026.
+
 > **Decisão de produto — 13/10/2026:** nas novas entregas, todas as fotos ficam nítidas. A exigência de desfoque e conferência de regiões foi substituída por seleção das fotos e aprovação do álbum. A implementação anterior abaixo é histórica. A nova política usa `public.delivery_items.render_policy` em `artifacts/iaschool-app/supabase/delivery-original-photos.sql`, sem mudar a autorização do destinatário, os limites de acesso ou a retenção. Nova política publicada e verificada em 13/10/2026; validação abaixo.
 
 **Atualizado em:** 12/10/2026.

@@ -273,7 +273,7 @@ describe.skipIf(!enabled)("ajustes integrados com material sintético e envio de
     check(!JSON.stringify(opened.data).includes(token), "segredo do link foi exposto no corpo do álbum");
     const sessionLifetime = Date.parse(String(opened.data.sessionExpiresAt)) - Date.now();
     check(sessionLifetime > 23 * 3600_000 && sessionLifetime <= 24 * 3600_000, "sessão de álbum não tem validade de 24 horas");
-    const second = await album({ action: "consume", token });check(second.status === 410 && second.data.error === "used", "link de álbum permitiu segundo navegador");
+    const second = await album({ action: "consume", token });check(second.ok && second.data.error !== "used" && Array.isArray(second.data.items), "segunda abertura do link reutilizável foi recusada");
     const returned = await album({ action: "consume", token }, opened.cookie);check(returned.ok && returned.cookie === undefined && returned.data.sessionExpiresAt === opened.data.sessionExpiresAt, "retorno renovou/consumiu a sessão");
     const download = await album({ action: "download", itemId: item.id }, opened.cookie);
     check(download.ok && typeof download.data.url === "string", "download da versão aprovada não assinou");
