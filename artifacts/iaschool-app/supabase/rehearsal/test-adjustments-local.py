@@ -41,14 +41,16 @@ with tempfile.TemporaryDirectory(prefix='iaschool-local-sql-') as temporary:
         # Somente a tipagem pgvector é substituída no fixture; produto não muda.
         review = base / 'review.sql'
         review.write_text((ROOT / 'fase5-review-media.sql').read_text().replace('extensions.vector(512)', 'extensions.vector'))
+        open_link = ROOT / 'fase5-album-open-link.sql'
         paths = [fixture, ROOT / 'fase5-delivery-batches.sql', ROOT / 'fase5-person-regions.sql', review,
-                 ROOT / 'fase5-adjustments-delivery-album.sql', ROOT / 'rehearsal/adjustments-reference-checks.sql', ROOT / 'rehearsal/adjustments-delivery-checks.sql']
+                 ROOT / 'fase5-adjustments-delivery-album.sql', open_link, ROOT / 'rehearsal/adjustments-reference-checks.sql', ROOT / 'rehearsal/adjustments-delivery-checks.sql']
         command = psql + ['-q']
         for path in paths:
             command += ['-f', str(path)]
         run(command, env=env)
         # Repetir DDL prova idempotência. O fixture e o roundtrip são exclusivos locais.
         run(psql + ['-q', '-f', str(ROOT / 'fase5-adjustments-delivery-album.sql')], env=env)
+        run(psql + ['-q', '-f', str(ROOT / 'fase5-album-open-link.sql')], env=env)
         setup = base / 'setup.sql'
         setup.write_text((ROOT / 'rehearsal/adjustments-delivery-checks.sql').read_text().replace('rollback;', 'commit;'))
         run(psql + ['-q', '-f', str(setup)], env=env)
@@ -57,9 +59,9 @@ with tempfile.TemporaryDirectory(prefix='iaschool-local-sql-') as temporary:
         with concurrent.futures.ThreadPoolExecutor(2) as pool:
             results = list(pool.map(sql, [f"select public.consume_delivery_album_token(repeat('2',64),repeat('{value}',64))" for value in ['3','4']]))
         results = [json.loads(value) for value in results]
-        assert sum(value.get('ok') is True for value in results) == 1
-        assert sum(value.get('error') == 'used' for value in results) == 1
-        assert sql("select count(*) from public.delivery_access_sessions where session_hash in(repeat('3',64),repeat('4',64))") == '1'
+        assert sum(value.get('ok') is True for value in results) == 2
+        assert sum(value.get('error') == 'used' for value in results) == 0
+        assert sql("select count(*) from public.delivery_access_sessions where session_hash in(repeat('3',64),repeat('4',64))") == '2'
         sql(f"insert into public.delivery_album_tokens(recipient_id,approval_version,token_hash,expires_at,created_by)values('{recipient}',(select approved_version from public.delivery_batches where id='{batch}'),repeat('5',64),now()+interval '24 hours','{user}')")
         with concurrent.futures.ThreadPoolExecutor(2) as pool:
             operations = [pool.submit(sql, "select public.consume_delivery_album_token(repeat('5',64),repeat('6',64))"),
@@ -72,7 +74,7 @@ with tempfile.TemporaryDirectory(prefix='iaschool-local-sql-') as temporary:
         run(psql + ['-q', '-f', str(ROOT / 'delivery-original-photos.sql')], env=env)
         run(psql + ['-q', '-f', str(ROOT / 'delivery-original-photos.sql')], env=env)
         run(psql + ['-q', '-f', str(ROOT / 'rehearsal/original-delivery-checks.sql')], env=env)
-        print('SQL local S04–S07 + fotos nítidas: roundtrip, migração sem reprocessamento, consentimento, tenant, CAS, seleção, snapshot, uso único e revogação passaram.')
+        print('SQL local S04–S07 + fotos nítidas: roundtrip, migração sem reprocessamento, consentimento, tenant, CAS, seleção, snapshot, link reutilizável e revogação passaram.')
     finally:
         if started:
             run([binary('pg_ctl'), '-D', str(data), '-m', 'immediate', 'stop'], env=env)

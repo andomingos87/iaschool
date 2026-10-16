@@ -70,9 +70,13 @@ export function makeAlbumHandler(deps: AlbumDeps) {
       const filename = `foto-${String(Number(item.order) + 1).padStart(3, "0")}.jpg`;
       const url = await deps.sign(item[download ? "assetPath" : "thumbPath"] as string, ttl, download ? filename : undefined);
       if (!url) return json({ error: "unavailable" }, 503, cookieHeader);
-      signed.push(download ? { url, filename, expiresAt: new Date(now() + ttl * 1000).toISOString() } : {
-        id: item.id, photoId: item.photoId, width: item.width, height: item.height, thumbUrl: url,
-      });
+      const listed: Row = { id: item.id, photoId: item.photoId, width: item.width, height: item.height, thumbUrl: url };
+      if (typeof item.eventId === "string" && UUID.test(item.eventId)) listed.eventId = item.eventId;
+      if (typeof item.eventName === "string") {
+        const eventName = item.eventName.trim();
+        if (eventName.length >= 1 && eventName.length <= 120) listed.eventName = eventName;
+      }
+      signed.push(download ? { url, filename, expiresAt: new Date(now() + ttl * 1000).toISOString() } : listed);
     }
     // Revalida depois da assinatura: revogação concorrente não devolve URL nova.
     const fresh = await session(hash, download ? body.itemId as string : undefined);

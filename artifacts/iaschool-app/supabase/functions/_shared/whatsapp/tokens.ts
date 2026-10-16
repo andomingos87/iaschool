@@ -1,5 +1,5 @@
 /**
- * Tokens opacos de uso único (consentimento e, no W4, acesso ao álbum).
+ * Tokens opacos. O consentimento continua de uso único; o álbum reabre o mesmo link.
  *
  * 256 bits em hexadecimal; o banco guarda só o SHA-256 (`token_hash`). Hash
  * rápido é suficiente porque o valor é aleatório e impossível de adivinhar —

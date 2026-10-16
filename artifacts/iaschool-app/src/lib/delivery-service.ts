@@ -7,7 +7,7 @@ import {
   type RecipientSelection,
 } from "./delivery-workspace";
 
-export interface AlbumPhoto { id: string; photoId: string; width: number; height: number; thumbUrl: string }
+export interface AlbumPhoto { id: string; photoId: string; width: number; height: number; thumbUrl: string; eventId?: string; eventName?: string }
 export interface GuardianAlbum {
   eventName: string; signature: string; sessionExpiresAt: string; filesExpireAt: string; items: AlbumPhoto[];
 }

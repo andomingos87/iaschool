@@ -10,5 +10,5 @@ export function renderDeliveryMessage(fields: DeliveryMessageFields, link: strin
   if (!validateDeliveryFields(fields) || !/^https:\/\/[^\s?#]+\/album#[0-9a-f]{64}$/.test(link)) throw new Error("invalid_delivery_message");
   return [fields.eventName.trim(), fields.callToAction.trim(), fields.signature.trim(),
     `Acesse seu álbum pelo link exclusivo: ${link}`,
-    "O primeiro acesso abre uma sessão de 24 horas. Os arquivos ficam disponíveis por até 7 dias. Para recuperar o acesso, procure a escola."].filter(Boolean).join("\n\n");
+    "O mesmo link abre de novo enquanto as fotos continuarem disponíveis. A escola pode revogar o acesso."].filter(Boolean).join("\n\n");
 }

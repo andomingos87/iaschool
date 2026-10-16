@@ -44,6 +44,28 @@ Deno.test("sessão de outro álbum não captura o novo link",async()=>{
  if(!response.headers.get('Set-Cookie'))throw new Error('nova sessão ausente');
 });
 
+Deno.test("segunda abertura sem cookie devolve os dois eventos e não recusa como usado",async()=>{
+ const eventA="20000000-0000-0000-0000-000000000001";
+ const eventB="20000000-0000-0000-0000-000000000002";
+ const itemB="10000000-0000-0000-0000-000000000002";
+ const multi={...snapshot,items:[
+  {...snapshot.items[0],eventId:eventA,eventName:"Teste"},
+  {id:itemB,photoId:itemB,order:0,assetPath:"private-b.jpg",thumbPath:"private-b.webp",width:200,height:150,retentionUntil:snapshot.items[0].retentionUntil,eventId:eventB,eventName:"Festa dois",studentIds:["aluno"]},
+ ]};
+ let consumes=0;
+ const handler=makeAlbumHandler({now:()=>now,rpc:async name=>{
+  if(name==="consume_delivery_album_token")consumes+=1;
+  return {data:name==="consume_delivery_album_token"?{ok:true,expiresAt:new Date(now+86400000).toISOString()}:multi,error:null};
+ },sign:async()=>"https://signed.test/file"});
+ const first=await handler(request({action:"consume",token:secret}));
+ const second=await handler(request({action:"consume",token:"b".repeat(64)}));
+ eq(first.status,200);eq(second.status,200);eq(consumes,2);
+ const body=await second.json() as {items:{eventId:string;eventName:string}[]};
+ const text=JSON.stringify(body);
+ if(text.includes("used")||text.includes("private")||text.includes("aluno"))throw new Error("resposta indevida");
+ eq(body.items.map(item=>item.eventName).sort(),["Festa dois","Teste"]);
+ eq(body.items.map(item=>item.eventId).sort(),[eventA,eventB]);
+});
 Deno.test("falha ao assinar depois do consumo mantém cookie para retornar à sessão",async()=>{
  const handler=makeAlbumHandler({now:()=>now,rpc:async name=>({data:name==='consume_delivery_album_token'?{ok:true,expiresAt:new Date(now+86400000).toISOString()}:snapshot,error:null}),sign:async()=>null});
  const response=await handler(request({action:'consume',token:secret}));eq(response.status,503);

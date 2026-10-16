@@ -143,7 +143,7 @@ describe("rascunho aprovado por família", () => {
     expect(
       validateDeliveryFields({ ...fields, callToAction: "quebra\nlinha" }),
     ).toBeTruthy();
-    expect(deliveryMessage(fields)).toContain("sessão de 24 horas");
+    expect(deliveryMessage(fields)).toContain("abre de novo");
   });
   it("não oferece retry para resultado incerto nem envia estados terminais", () => {
     for (const state of [

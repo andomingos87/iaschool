@@ -104,10 +104,67 @@ begin
  insert into public.whatsapp_controlled_allowlist(school_id,phone_e164)values(school,'+5511999999999');
 
  result:=public.consume_delivery_album_token(token_a,sess_a);if result->>'ok'<>'true' then raise exception 'consume failed';end if;
- result:=public.consume_delivery_album_token(token_a,sess_c);if result->>'error'<>'used' then raise exception 'single use broken';end if;
+ result:=public.consume_delivery_album_token(token_a,sess_c);if result->>'ok'<>'true' or result->>'error'='used' then raise exception 'reusable link refused';end if;
  select expires_at into expiry from public.delivery_access_sessions where session_hash=sess_a;
  result:=public.delivery_album_session(sess_a);
  if jsonb_array_length(result->'items')<>1 then raise exception 'album mismatch';end if;
+ declare
+  evento2 uuid:=gen_random_uuid(); photo2 uuid:=gen_random_uuid(); face2 uuid:=gen_random_uuid();
+  batch2 uuid; recipient2 uuid; item2 uuid; job2 bigint; ver2 int; rv2 int; lease2 int;
+  other_guardian uuid:=gen_random_uuid(); other_aluno uuid:=gen_random_uuid(); other_event uuid:=gen_random_uuid();
+  other_photo uuid:=gen_random_uuid(); other_face uuid:=gen_random_uuid(); other_batch uuid; other_recipient uuid; other_item uuid;
+  other_job bigint; other_ver int; other_rv int; other_lease int; names text;
+ begin
+  insert into public.events(id,school_id,name) values(evento2,school,'Festa dois');
+  insert into public.photos(id,school_id,event_id,storage_path,width,height) values(photo2,school,evento2,'synthetic-2.jpg',200,150);
+  insert into public.photo_faces(id,school_id,photo_id,student_id,state,bbox,reviewed_by,reviewed_at)
+   values(face2,school,photo2,aluno_a,'confirmed','{"x":10,"y":10,"w":20,"h":20}',u,now());
+  select regions_version into rv2 from public.photos where id=photo2;
+  perform public.save_photo_person_review(photo2,rv2,200,150,jsonb_build_array(jsonb_build_object('face_id',face2,'student_id',aluno_a,'kind','own_child','shape','rect','points',jsonb_build_array(5,5,50,100))),true);
+  batch2:=public.create_delivery_batch(evento2,array[guardian],'v1');
+  select id into recipient2 from public.delivery_recipients where batch_id=batch2;
+  select id into item2 from public.delivery_items where recipient_id=recipient2 and photo_id=photo2;
+  select id into job2 from public.claim_delivery_render_jobs(1,60) where batch_id=batch2;
+  result:=public.delivery_render_context(job2);
+  rv2:=(result->'review'->>'regionsVersion')::int; ver2:=(result->>'draftVersion')::int;
+  select lease_version into lease2 from public.delivery_render_jobs where id=job2;
+  if public.complete_delivery_render_job(job2,true,null,school||'/'||batch2||'/'||recipient2||'/'||item2||'/v'||ver2||'-r'||rv2||'-a'||lease2||'.jpg',
+   school||'/'||batch2||'/'||recipient2||'/'||item2||'/v'||ver2||'-r'||rv2||'-a'||lease2||'.webp',repeat('2',64),200,150,rv2,ver2,lease2)<>'done' then raise exception 'event2 render failed'; end if;
+  result:=public.approve_delivery_batch(batch2);
+  if (result->>'approved')::int<>1 then raise exception 'event2 approval failed'; end if;
+  insert into public.guardians(id,school_id,whatsapp,whatsapp_verified_at,name) values(other_guardian,school,'+5511988887777',now(),'Outra família');
+  insert into public.students(id,school_id,primary_guardian_id,name) values(other_aluno,school,other_guardian,'Aluno de outra família');
+  insert into public.events(id,school_id,name) values(other_event,school,'Evento de outra família');
+  insert into public.authorizations(school_id,student_id,guardian_id,scope,granted_at,evidence)
+   values(school,other_aluno,other_guardian,'delivery_whatsapp',now(),'{"source":"guardian_link"}');
+  insert into public.photos(id,school_id,event_id,storage_path,width,height) values(other_photo,school,other_event,'other-family.jpg',200,150);
+  insert into public.photo_faces(id,school_id,photo_id,student_id,state,bbox,reviewed_by,reviewed_at)
+   values(other_face,school,other_photo,other_aluno,'confirmed','{"x":10,"y":10,"w":20,"h":20}',u,now());
+  select regions_version into other_rv from public.photos where id=other_photo;
+  perform public.save_photo_person_review(other_photo,other_rv,200,150,jsonb_build_array(jsonb_build_object('face_id',other_face,'student_id',other_aluno,'kind','own_child','shape','rect','points',jsonb_build_array(5,5,50,100))),true);
+  other_batch:=public.create_delivery_batch(other_event,array[other_guardian],'v1');
+  select id into other_recipient from public.delivery_recipients where batch_id=other_batch;
+  select id into other_item from public.delivery_items where recipient_id=other_recipient and photo_id=other_photo;
+  select id into other_job from public.claim_delivery_render_jobs(1,60) where batch_id=other_batch;
+  result:=public.delivery_render_context(other_job);
+  other_rv:=(result->'review'->>'regionsVersion')::int; other_ver:=(result->>'draftVersion')::int;
+  select lease_version into other_lease from public.delivery_render_jobs where id=other_job;
+  if public.complete_delivery_render_job(other_job,true,null,school||'/'||other_batch||'/'||other_recipient||'/'||other_item||'/v'||other_ver||'-r'||other_rv||'-a'||other_lease||'.jpg',
+   school||'/'||other_batch||'/'||other_recipient||'/'||other_item||'/v'||other_ver||'-r'||other_rv||'-a'||other_lease||'.webp',repeat('3',64),200,150,other_rv,other_ver,other_lease)<>'done' then raise exception 'other family render failed'; end if;
+  result:=public.approve_delivery_batch(other_batch);
+  if (result->>'approved')::int<>1 then raise exception 'other family approval failed'; end if;
+  result:=public.delivery_album_session(sess_a);
+  if jsonb_array_length(result->'items')<>2 then raise exception 'two events missing'; end if;
+  select string_agg(distinct x->>'eventName','|') into names from jsonb_array_elements(result->'items') x;
+  if names is distinct from 'Festa dois|Teste' and names is distinct from 'Teste|Festa dois' then raise exception 'event names missing'; end if;
+  if result::text like '%'||other_item::text||'%' then raise exception 'other family leaked'; end if;
+  result:=public.delivery_album_session(sess_a,other_item);
+  if result->>'error'<>'unavailable' then raise exception 'other family photo accepted'; end if;
+  raise exception using errcode='P0004',message='two_events_checked';
+ exception when sqlstate 'P0004' then null;
+ end;
+ result:=public.delivery_album_session(sess_a);
+ if jsonb_array_length(result->'items')<>1 then raise exception 'two event fixture leaked'; end if;
  update public.students set primary_guardian_id=null where id=aluno_a;
  result:=public.delivery_album_session(sess_a);if result->>'error'<>'authorization_revoked' then raise exception 'null guardian retained access';end if;
  update public.students set primary_guardian_id=guardian where id=aluno_a;
