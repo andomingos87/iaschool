@@ -1,5 +1,12 @@
 # IASchool — Plano de pivotagem do sistema
 
+> **Documento histórico de 30/08/2026.** O diagnóstico “sistema atual” abaixo
+> descreve o produto antes da pivotagem, não o código atual. Fundação escolar,
+> upload, reconhecimento/revisão, consentimento, entregas e artes em lote já
+> têm implementação. Estado reconciliado em 25/10/2026 no
+> [BACKLOG](../BACKLOG.md) e na [operação](operacao-agentes.md).
+
+
 **De:** app de geração de cards de desempenho para escolinha de futebol (R9 / IAsport)
 **Para:** plataforma de gestão e distribuição de fotos escolares (educação infantil, fundamental e médio)
 **Data:** 30/08/2026

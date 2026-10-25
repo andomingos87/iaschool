@@ -1,5 +1,22 @@
 # Spec — WhatsApp oficial para OTP e entrega privada de fotos
 
+> **Leitura atualizada em 25/10/2026:** esta é a especificação histórica de
+> setembro, com decisões posteriores que prevalecem sobre trechos antigos.
+> Código/publicação/pendências estão no [BACKLOG](../BACKLOG.md).
+> OTP sem `demoCode`, consentimento direto e álbum já existem; W0–W4 têm
+> entregas parciais publicadas. Novas fotos são nítidas desde a publicação
+> registrada em 13/10, substituindo desfoque obrigatório de §6.4/S05.
+> Envio usa `school-delivery` por ação explícita; `process-whatsapp-deliveries`
+> e `guardian-delivery` são nomes propostos, não funções implementadas.
+> O runtime reconhece `paused`, `controlled_zapi`, `meta_test`; somente
+> `controlled_zapi` cria provedor. `simulation`, `pilot` e `production` abaixo
+> são proposta histórica, sem implementação atual desses modos.
+> Álbum reutilizável de 16/10 segue local, sem migration/publicação registrada;
+> o requisito antigo de uso único não descreve esse código local.
+> Meta, termo compatível com fotos nítidas, E2E operacional e gates de uso real
+> continuam pendentes. As checklists especificam aceite, não prova de conclusão.
+
+
 **Fases cobertas:** conclusão da pendência de produção #7, parte da Fase 4
 (consentimento do responsável) e Fase 5 (entrega de fotos).
 **Data:** 27/09/2026.
@@ -14,7 +31,8 @@ estado. Este documento define produto, arquitetura, segurança e aceite.
 **Atualização documental em 11/10/2026:**
 [lote de ajustes](specs/ajustes-2026-10-11/overview.md) complementa o alvo de
 proteção (§6.4), editor/seleção/versionamento e álbum/reenvio. S05–S07 detalham
-esses requisitos, ainda sem implementação/aceite nesta rodada. N-D1–N-D13 são
+esses requisitos, ainda sem implementação/aceite naquela rodada de 11/10;
+publicação posterior registrada em 12/10. N-D1–N-D13 são
 decisões do Notion de 11/10 e não substituem a numeração D1–D8 deste documento.
 Mantêm-se provedores, papéis, filas, limites e gates. As descrições de estado
 verificado em setembro não revalidam serviços remotos em outubro; o backlog

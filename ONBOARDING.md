@@ -1,89 +1,83 @@
 # Onboarding — IAschool
 
-> Porta de entrada do projeto. Leia isto e você sabe o que é, onde mexer e o que cuidar.
-> Gerado a partir da camada de contexto (`AGENTS.md` + `.context/`). Mantenha vivo: doc velha engana.
-> **Última atualização:** 2026-10-09
+**Atualizado em 25/10/2026 contra o código local.** Comece pelo
+[README](README.md), consulte o [BACKLOG](BACKLOG.md) para o estado e siga
+[AGENTS.md](AGENTS.md) para alterar o projeto. Registro de publicação não é
+verificação atual do serviço remoto.
 
-## O que é
+## Começar
 
-A escola sobe as fotos de um evento. O sistema separa por aluno e entrega ao responsável, com autorização e trilha de auditoria. O estado do que está feito e do que falta está em [BACKLOG.md](BACKLOG.md). Regras curtas para quem altera o código: [AGENTS.md](AGENTS.md). Mapa longo de fases e schema: [docs/operacao-agentes.md](docs/operacao-agentes.md).
+Node 24, pnpm 11.17.0, Corepack no PATH e Python 3.12 no reconhecimento.
 
-## Stack e comandos do dia a dia
+```bash
+corepack pnpm install --frozen-lockfile
+PORT=5174 BASE_PATH=/ pnpm --filter @workspace/iaschool-app run dev
+```
 
-TypeScript e Node 24 no app, na API, no ingest e nas libs. Python 3.12 no reconhecimento. UI com Vite 7, React 19, wouter e Tailwind 4. API de geração em Express 5. Banco Supabase (Postgres, Auth, RLS, Storage, pgvector). pnpm 11.17.0. Perfil completo: [.context/conventions.md](.context/conventions.md).
+Para dados de demonstração, não configure Supabase. Para conexão real, as
+variáveis públicas ficam em `artifacts/iaschool-app/.env.local`; a API e os
+workers recebem variáveis exportadas no terminal. O Vite não lê o `.env.local`
+da raiz nem faz proxy local de `/api`. Veja o
+[setup completo](docs/development/cross-platform-web.md).
 
-- **Instalar:** `corepack pnpm install --frozen-lockfile`
-- **Rodar o app:** `pnpm --filter @workspace/iaschool-app run dev`
-- **Rodar a API:** `pnpm --filter @workspace/api-server run dev`
-- **Rodar o ingest:** `pnpm --filter @workspace/ingest-worker run dev`
-- **Rodar o reconhecimento:** `pnpm --filter @workspace/face-worker run setup` e depois `pnpm --filter @workspace/face-worker run dev`
-- **Testar um pacote:** `pnpm --filter @workspace/<pacote> run test`
-- **Typecheck:** `pnpm run typecheck`
-- **Build:** `PORT=5000 BASE_PATH=/ pnpm run build`
+- API, com variáveis de servidor exportadas: `PORT=5000 pnpm --filter @workspace/api-server run dev`.
+- Ingest, somente com ambiente autorizado: `PORT=8080 pnpm --filter @workspace/ingest-worker run dev`.
+- Face: `pnpm --filter @workspace/face-worker run setup`; depois `PYTHONPATH=src PORT=8081 pnpm --filter @workspace/face-worker run dev` com ambiente autorizado.
+- Unitários do app: `pnpm --filter @workspace/iaschool-app run test src`.
+- Tipos: `pnpm run typecheck`.
+- Build: `PORT=5000 BASE_PATH=/ pnpm run build`.
 
-Não há script de lint. Variáveis sem valor de exemplo: [.env.example](.env.example).
+**Workers consomem e alteram o banco apontado pelas credenciais.** Não os ligue
+contra produção para testar o setup. O comando `test` sem filtro no app/API
+inclui integração remota. Use o [guia de testes](docs/development/testes.md).
 
-## Mapa de módulos
+## Módulos e entradas
 
-- **app** — cadastro, eventos, upload, galeria, revisão, pasta do aluno, entregas e geração unitária. Entrada: `artifacts/iaschool-app/src/main.tsx` e rotas em `src/App.tsx`. SQL e Edge Functions: `artifacts/iaschool-app/supabase/`.
-- **design-system** — tokens e componentes. Entrada: `artifacts/iaschool-ui/tokens.json`.
-- **api** — geração de imagem, cota e log. Entrada: `artifacts/api-server/src/routes/index.ts`. O `Dockerfile` e o `fly.toml` da raiz são deste módulo.
-- **ingest** — miniatura, derivado desfocado da entrega e apagamento do arquivo no bucket. Entrada: `artifacts/ingest-worker/src/index.ts`.
-- **face** — detecção e embedding. Entrada: `artifacts/face-worker/src/face_worker/__main__.py`.
-- **contrato** — OpenAPI e os clientes gerados. Entrada: `lib/api-spec/openapi.yaml`. Hoje o arquivo só descreve `/healthz`.
-- **geracao-arte** — índice da geração unitária de arte, sem pasta de código. Entrada: `.context/modules/geracao-arte/AGENTS.md`. A tela fica no `app` e a chamada ao modelo fica no `api`.
+| Módulo | Responsabilidade | Entrada |
+| --- | --- | --- |
+| [app](.context/modules/app/AGENTS.md) | Cadastro, turmas/eventos, upload, revisão, pasta/ZIP, wizard, consentimento e álbum | `artifacts/iaschool-app/src/App.tsx` |
+| [design-system](.context/modules/design-system/AGENTS.md) | Tokens e componentes | `artifacts/iaschool-ui/tokens.json` |
+| [api](.context/modules/api/AGENTS.md) | Artes unitárias/por lote, cota, logs e proxy do álbum | `artifacts/api-server/src/routes/index.ts` |
+| [ingest](.context/modules/ingest/AGENTS.md) | Miniaturas, fotos nítidas para entrega, execução dos lotes de arte e expurgo | `artifacts/ingest-worker/src/index.ts` |
+| [face](.context/modules/face/AGENTS.md) | Detecção, comparação e referências de rosto; nunca confirmação automática | `artifacts/face-worker/src/face_worker/__main__.py` |
+| [contrato](.context/modules/contrato/AGENTS.md) | OpenAPI e geração do cliente/Zod; só `/healthz` está no YAML | `lib/api-spec/openapi.yaml` |
+| [geracao-arte](.context/modules/geracao-arte/AGENTS.md) | Índice de domínio entre app, API e ingest, sem pasta de produto | Wizard `/gerar` e `generation-batches.ts` |
 
-Doc de cada um: `.context/modules/<modulo>/AGENTS.md`.
+SQL, ensaios e sete Edge Functions ficam no módulo app, em
+`artifacts/iaschool-app/supabase/`. Leia [SUPABASE.md](artifacts/iaschool-app/SUPABASE.md)
+antes de trabalhar em dados e [docs/api.md](docs/api.md) para os endpoints reais.
+API usa `Dockerfile`/`fly.toml` da raiz; cada worker tem sua configuração.
 
-## Por onde começar uma tarefa
+## Estado e limites
 
-- Tela, aluno, turma, evento, galeria, revisão ou entrega: módulo `app`, a partir de `src/App.tsx`. Componente visual compartilhado: `design-system`.
-- Visual de token ou componente: `design-system`, edite `tokens.json` e rode `pnpm --filter @workspace/iaschool-ui run tokens`.
-- Geração de arte: comece por `.context/modules/geracao-arte/AGENTS.md`. A tela é `/gerar`, no `app`. A chamada ao modelo é `artifacts/api-server/src/routes/generation.ts`. O OpenAPI ainda não descreve essas rotas.
-- Miniatura, fila de arquivo ou desfoque da entrega: `ingest`.
-- Reconhecimento: `face`. O schema que ele consome está no SQL do `app`.
-- Tabela, policy, RPC ou bucket: SQL em `artifacts/iaschool-app/supabase/` e migration pelo servidor `supabase-iaschool` do `.mcp.json`. Quem mexe nisso revisa [artifacts/iaschool-app/SUPABASE.md](artifacts/iaschool-app/SUPABASE.md) e [.context/security.md](.context/security.md).
+- O wizard atual exige modelo da escola; usa perfil, referência facial ou foto individual revisada de evento. Registro de app/API publicados em 16/10/2026.
+- Entregas novas usam fotos nítidas, desde a publicação registrada em 13/10. Desfoque permanece para compatibilidade de entregas antigas.
+- O álbum reutilizável está no código/SQL local de 16/10, sem aplicação remota/publicação registrada. Não presumir esse comportamento no ambiente publicado.
+- O termo `delivery_whatsapp.v1` ainda promete desfoque. É uma pendência de produto e homologação, não resolvida pela documentação.
+- OTP e consentimento direto existem. `controlled_zapi` é o único modo com provedor implementado; `meta_test` é reconhecido, mas não cria adaptador Meta.
 
-Comece a tarefa de produto achando ou criando o item em [BACKLOG.md](BACKLOG.md).
+## Regras para alterações
 
-## Cuidados (o que NÃO quebrar)
+Localize ou crie o item no backlog. Preserve componentes/tokens. Não edite
+clientes, Zod ou tokens gerados. Não use `lib/db` como schema. Schema remoto,
+secret, dependência, PR e publicação exigem autorização conforme `AGENTS.md`.
 
-- Foto real de criança ou adolescente não entra enquanto [docs/pendencias-producao.md](docs/pendencias-producao.md) não estiver implementado e ligado. Só material de teste ou demonstração.
-- WhatsApp comercial fica desligado. A exceção já aprovada é o modo `controlled_zapi`: uma escola, de uma a quatro pessoas allowlisted, teto diário, kill switch, só material sintético ou de adultos. Spec: [docs/spec-whatsapp-api-oficial-entrega-fotos.md](docs/spec-whatsapp-api-oficial-entrega-fotos.md).
-- Cadastro, foto, WhatsApp, data de nascimento, consentimento ou compartilhamento: leia [.context/security.md](.context/security.md) antes de mudar código.
-- `SUPABASE_SERVICE_ROLE_KEY` só na API, no ingest e no face. Não use prefixo `VITE_`.
-- Não rode `pnpm --filter @workspace/db run push`. `lib/db` não é o schema.
-- Não edite à mão `lib/api-client-react/src/generated/`, `lib/api-zod/src/generated/`, nem `src/index.css` e `src/generated/tokens.tsx` do design system.
-- Função nova em `public` que o visitante sem login não deve chamar leva `revoke execute ... from public, anon` na própria migration.
-- Não dê push direto na `main`. Schema não muda pelo SQL Editor do painel.
-- Vocabulário de código novo: aluno, escola, turma, responsável, arte, evento. O de-para da pivotagem está em [docs/pivotagem-iaschool.md](docs/pivotagem-iaschool.md).
-- Check local não prova produção. Separe o que rodou aqui do que foi visto em deploy.
+Siga [.context/security.md](.context/security.md) e a skill local
+[eca-digital](.claude/skills/eca-digital/SKILL.md) para cadastro, fotos,
+responsáveis e compartilhamento. Menores reais e WhatsApp comercial seguem
+bloqueados pelos [gates de produção](docs/pendencias-producao.md).
 
-## Armadilhas conhecidas
+## Serviços e lacunas
 
-Nenhuma lição em `.context/lessons/` ainda. O texto operacional antigo, com pegadinhas de schema, grant e worker, está em [docs/operacao-agentes.md](docs/operacao-agentes.md) e ainda não foi fatiado em lições.
+O `.mcp.json` declara `supabase-iaschool` (projeto travado; credencial local) e
+`ai-context`. Não substituir pelo conector Supabase global. O repositório ainda
+não documenta um fluxo de uso do `ai-context`.
 
-## Decisões que moldam o projeto
+Publicações históricas: app Vercel `iaschool-app`; Fly `iaschool-api`,
+`iaschool-ingest-worker`, `iaschool-face-worker`. Operação e publicação separada
+das funções: [guia operacional](docs/operacao-agentes.md).
 
-Nenhum ADR em `.context/decisions/` ainda. O que já está escrito em outro lugar:
-
-- Camadas, auth, validação e a lista do que nunca fazer: [.context/conventions.md](.context/conventions.md).
-- Vocabulário e modelo alvo: [docs/pivotagem-iaschool.md](docs/pivotagem-iaschool.md).
-- O que entrou em cada fase: [BACKLOG.md](BACKLOG.md). A tabela de fases em `docs/operacao-agentes.md` pode estar atrás do backlog.
-
-## Integrações (MCP/ferramentas)
-
-Só o [.mcp.json](.mcp.json) da raiz.
-
-- `supabase-iaschool` — banco, Auth, Storage e Edge Functions deste produto. Projeto travado, ref `jtyyauivokutperouqyh`. O token fica em `.env.local` (`SUPABASE_ACCESS_TOKEN`).
-- `ai-context` — declarado no mesmo arquivo. O repositório não descreve o uso.
-
-App na Vercel (`https://iaschool-app.vercel.app`). API e os dois workers na Fly (`iaschool-api`, `iaschool-ingest-worker`, `iaschool-face-worker`).
-
-## Lacunas de contexto
-
-- `.context/lessons/` e `.context/decisions/` estão vazios. Decisão e pegadinha históricas moram no backlog, na pivotagem e em `docs/operacao-agentes.md`.
-- A API não tem um tipo único de erro. Está marcado "a definir" nas convenções.
-- A tabela de fases de `docs/operacao-agentes.md` pode estar atrás do [BACKLOG.md](BACKLOG.md). O backlog é a fonte do estado.
-- O servidor `ai-context` não tem doc de uso neste repositório.
-- Não há script de lint.
+Continuam pendentes: CI dos testes de domínio, OpenAPI completo, ensaios de
+recuperação/backup, métricas de aceite e homologação para dados reais.
+`.context/lessons/` e `.context/decisions/` seguem vazios; decisões anteriores
+estão no backlog e nas specs. Não há lint nem tipo único de erro da API.

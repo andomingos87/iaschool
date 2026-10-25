@@ -38,7 +38,7 @@ Fonte de verdade: [AGENTS.md](AGENTS.md). Operação longa: [docs/operacao-agent
 - NUNCA coloque foto real de criança ou adolescente no produto enquanto [docs/pendencias-producao.md](docs/pendencias-producao.md) não estiver implementado e ligado. Só material de teste ou demonstração.
 - NUNCA ligue o fluxo comercial de WhatsApp. A exceção já aprovada é o modo `controlled_zapi`: uma escola, de uma a quatro pessoas allowlisted, teto diário, kill switch, só material sintético ou de adultos.
 - NUNCA use em código novo: atleta, escolinha, clube, brasão, uniforme, posição, métrica, R9, IAsport.
-- NUNCA coloque `SUPABASE_SERVICE_ROLE_KEY` no browser. Ela fica só na API, no ingest e no face-worker.
+- NUNCA coloque `SUPABASE_SERVICE_ROLE_KEY` no browser. Ela fica somente em ambiente de servidor: API, ingest, face-worker e Edge Functions.
 
 Gates completos: skill `aurea-standards`.
 

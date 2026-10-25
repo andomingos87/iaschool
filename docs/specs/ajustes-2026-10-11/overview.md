@@ -1,5 +1,13 @@
 # Ajustes de 11/10/2026 — overview e execução por specs
 
+> **Conciliação de 25/10/2026:** esta spec conserva o lote original de 11/10.
+> Sobre ele prevalecem fotos nítidas de 13/10 (S05), envio pausado de 15/10,
+> wizard com modelo de 16/10 (S08) e álbum reutilizável de 16/10 (S07, somente
+> local). Implementação, publicação histórica e pendências separadas em
+> [status-geral](status-geral.md) e no [BACKLOG](../../../BACKLOG.md).
+> Critérios originais de proteção e composição não descrevem os fluxos atuais.
+
+
 **Atualizado em:** 12/10/2026.
 **Estado:** S01–S07 implementadas; migrations, funções, app/API e workers publicados em 12/10/2026 após autorização do usuário. Ensaio integrado sintético e uma geração real passaram. WhatsApp comercial desligado; fotos reais de menores e demais gates de produção continuam restritos. Aceites externos ainda não exercitados estão indicados em cada spec.
 **Origem:** [Notion — IASCHOOL, Ajustes 11/10](https://app.notion.com/p/3f6a7bf7087d80ec83faefcd183bc0fe).

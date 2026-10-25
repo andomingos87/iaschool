@@ -1,25 +1,22 @@
 # contrato
 
-Contrato HTTP da geração de imagem e os clientes gerados a partir dele.
+Contrato OpenAPI e clientes/Zod gerados. **Estado conferido em 25/10/2026:**
+`lib/api-spec/openapi.yaml` contém somente `GET /healthz`.
 
-## Entrada
-- Fonte: `lib/api-spec/openapi.yaml`. Configuração: `lib/api-spec/orval.config.ts`.
-- Gerados, não editar à mão: `lib/api-client-react/src/generated/`, `lib/api-zod/src/generated/`.
+## Entradas
 
-## Depende de
-- Orval e Zod. Não acessa o banco.
+- Fonte: `lib/api-spec/openapi.yaml`; configuração: `lib/api-spec/orval.config.ts`.
+- Gerados: `lib/api-client-react/src/generated/` e `lib/api-zod/src/generated/`. Não editar à mão.
+- Codegen: `pnpm --filter @workspace/api-spec run codegen`; também confere os tipos das libs.
 
-## Quem depende
-- `api` valida e tipa com `@workspace/api-zod`.
-- `app` chama a API com `@workspace/api-client-react`.
+## Cobertura e lacunas
 
-## Sensível
-- Mudar o YAML sem rodar o codegen deixa app e API em contratos diferentes.
-- O codegen também roda o typecheck das libs.
+A API usa o schema gerado na resposta de saúde. Geração, cota, logs, lotes e
+álbum têm contratos manuais no app/API, descritos em
+[docs/api.md](../../../docs/api.md); não estão cobertos pelo YAML.
+Upload, revisão, consentimento e entregas também usam RPCs/Edge Functions
+Supabase diretamente. Banco e funções: módulo app.
 
-## Comandos
-- `pnpm --filter @workspace/api-spec run codegen`
-
-## Fora deste módulo
-- Upload, evento, biometria e WhatsApp não têm operação neste contrato. Eles falam com o Supabase direto do app.
-- `POST /generation/post-image`, a cota e o log de arte também não estão no `openapi.yaml`. O mapa desses caminhos é `.context/modules/geracao-arte/AGENTS.md`.
+Adicionar esses endpoints ao OpenAPI é trabalho pendente de implementação;
+a revisão documental não altera o YAML nem gera clientes novos. Mudar a fonte
+sem rodar codegen e verificar os consumidores pode deixar contratos divergentes.
