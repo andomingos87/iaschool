@@ -100,6 +100,10 @@ export async function deleteTestUser(id: string): Promise<void> {
  * `ensure_school_on_approval`) e não tem FK para `auth.users`: apagar o
  * usuário nunca leva a escola junto. Por isso os ids de usuário também entram
  * na lista de escolas; para quem não foi aprovado o delete não acha linha.
+ *
+ * Fila de referências antes da escola: o gatilho `review_media_job_deleted`
+ * enfileira o expurgo do arquivo com o `school_id`, e na cascata da escola
+ * essa linha viola `storage_purge_queue_school_id_fkey`.
  */
 export async function cleanupTestData(opts: {
   users: string[];
@@ -108,6 +112,8 @@ export async function cleanupTestData(opts: {
   const failures: string[] = [];
   const schools = new Set([...(opts.schools ?? []), ...opts.users].filter(Boolean));
   for (const id of schools) {
+    const jobs = await adminRest(`student_reference_jobs?school_id=eq.${id}`, { method: "DELETE" });
+    if (!jobs.ok) failures.push(`fila de referências ${id}: ${jobs.status} ${await jobs.text()}`);
     const resp = await adminRest(`schools?id=eq.${id}`, { method: "DELETE" });
     if (!resp.ok) failures.push(`escola ${id}: ${resp.status} ${await resp.text()}`);
   }
