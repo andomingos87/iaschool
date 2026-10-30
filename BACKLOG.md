@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 30/10/2026 — nova marca AIESCOLA registrada; SVGs no `iaschool-ui`.
+**Atualizado em:** 30/10/2026 — nova marca AIESCOLA registrada; SVGs no `iaschool-ui`; refino visual da landing.
 
 ## Leitura do estado atual
 
@@ -54,6 +54,7 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 - [ ] Ligar o domínio `aiescola.com.br` na Vercel e atualizar Site URL e Redirect URLs do Supabase Auth.
 - [ ] Consultar a marca AIESCOLA no INPI antes de registrar.
 - [~] (30/10/2026) Landing pública em `/` para visitante sem sessão, login movido para `/entrar` (`src/pages/landing.tsx`). Verificado local em modo demonstração: desktop e 375 px sem rolagem horizontal, `/entrar` → login → painel; 333 testes em `src` e typecheck verdes. Falta: contato real em `VITE_DEMO_CONTACT_URL`, revisão jurídica do texto sobre ECA Digital e publicação.
+- [x] (30/10/2026) Refino visual da landing (skill `impeccable`, polish + layout, mantendo marca e textos): botão principal em Azul Caderno (Faísca com texto branco dava 3:1), sem rótulos em caixa alta acima dos títulos, passos como linha do tempo, recursos com um destaque e lista, segurança e FAQ em lista, anel de foco azul em todos os links, cartão do álbum sem cobrir as fotos no celular e textos secundários a no mínimo 5:1. Conferido em modo demonstração em 1280 px e 375 px, sem rolagem horizontal nem erro no console; 333 testes em `src` e typecheck verdes. Sem publicação.
 
 ## Álbum do responsável com link reutilizável — 16/10/2026
 
