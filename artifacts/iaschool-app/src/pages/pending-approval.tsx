@@ -42,7 +42,7 @@ export default function PendingApprovalPage() {
             </CardTitle>
             <CardDescription data-testid="text-approval-status">
               {rejected
-                ? "Seu cadastro foi recusado pelo administrador. Se você acredita que houve um engano, entre em contato com a equipe da IAschool."
+                ? "Seu cadastro foi recusado pelo administrador. Se você acredita que houve um engano, entre em contato com a equipe da AIESCOLA."
                 : `Seu cadastro foi recebido! O acesso será liberado assim que um administrador da ${iaschool.brand.name} aprovar sua conta. Volte a entrar mais tarde.`}
             </CardDescription>
           </CardHeader>

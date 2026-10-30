@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 25/10/2026 — documentação conciliada com o código local.
+**Atualizado em:** 30/10/2026 — nova marca AIESCOLA registrada; SVGs no `iaschool-ui`.
 
 ## Leitura do estado atual
 
@@ -44,6 +44,16 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 (marcos W0–W5) e
 [`docs/spec-ajustes-cadastro-arte-escola.md`](docs/spec-ajustes-cadastro-arte-escola.md)
 (ajustes de 07/10/2026; não fecha fase).
+
+## Nova marca AIESCOLA (aiescola.com.br) — 30/10/2026
+
+- [x] (30/10/2026) Identidade escolhida: conceito 1, "A de aula" (A de livro aberto com faísca de IA; pingo do "i" vira faísca). Paleta: Azul Caderno `#2447D6`, Tinta `#0F1A3D`, Faísca `#F26B1D`, Giz `#FFD25A`, Névoa `#E6EAF7`, Papel `#F8F6F1`. Tipos: Bricolage Grotesque (títulos) e Plus Jakarta Sans (interface). SVGs finais com texto em curvas em `artifacts/iaschool-ui/public/brand/` (logo, logotipo, símbolo e favicon; versões clara, escura, mono e branca), conferidos renderizados, favicon legível em 32 px.
+- [x] (30/10/2026) Marca trocada no app: `BrandLogo` com os SVGs de `artifacts/iaschool-app/public/brand/` (claro e escuro), favicon, `<title>` e metas, nome em `src/config/iaschool.ts` e textos visíveis (login, cadastro, aprovação pendente, álbum, mensagem de compartilhamento). Conferido em modo demonstração nos temas claro e escuro, sem erro no console; 333 testes em `src` e typecheck verdes. Sem publicação.
+- [ ] Trocar o nome nos templates do WhatsApp e nos termos de consentimento (`supabase/functions/_shared/whatsapp/`), que pedem revisão do texto jurídico, e nos e-mails do Supabase Auth.
+- [ ] Trocar os tokens de cor e a fonte do `iaschool-ui` pela nova paleta, conferindo contraste nos dois temas.
+- [ ] Ligar o domínio `aiescola.com.br` na Vercel e atualizar Site URL e Redirect URLs do Supabase Auth.
+- [ ] Consultar a marca AIESCOLA no INPI antes de registrar.
+- [~] (30/10/2026) Landing pública em `/` para visitante sem sessão, login movido para `/entrar` (`src/pages/landing.tsx`). Verificado local em modo demonstração: desktop e 375 px sem rolagem horizontal, `/entrar` → login → painel; 333 testes em `src` e typecheck verdes. Falta: contato real em `VITE_DEMO_CONTACT_URL`, revisão jurídica do texto sobre ECA Digital e publicação.
 
 ## Álbum do responsável com link reutilizável — 16/10/2026
 
