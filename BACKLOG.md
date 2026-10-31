@@ -3,7 +3,7 @@
 Fonte única de acompanhamento do projeto. Vive em Markdown, na raiz, e é
 referenciado por [`CLAUDE.md`](CLAUDE.md) e [`AGENTS.md`](AGENTS.md).
 
-**Atualizado em:** 30/10/2026 — nova marca AIESCOLA registrada; SVGs no `iaschool-ui`; refino visual da landing.
+**Atualizado em:** 31/10/2026 — pasta `marketing/` com ICP de redes e oferta; pré-requisitos de produto do ICP; achados de copy da landing.
 
 ## Leitura do estado atual
 
@@ -54,6 +54,7 @@ fases), [`docs/spec-upload-massa-reconhecimento-facial.md`](docs/spec-upload-mas
 - [ ] Ligar o domínio `aiescola.com.br` na Vercel e atualizar Site URL e Redirect URLs do Supabase Auth.
 - [ ] Consultar a marca AIESCOLA no INPI antes de registrar.
 - [~] (30/10/2026) Landing pública em `/` para visitante sem sessão, login movido para `/entrar` (`src/pages/landing.tsx`). Verificado local em modo demonstração: desktop e 375 px sem rolagem horizontal, `/entrar` → login → painel; 333 testes em `src` e typecheck verdes. Falta: contato real em `VITE_DEMO_CONTACT_URL`, revisão jurídica do texto sobre ECA Digital e publicação.
+- [ ] (31/10/2026) Corrigir a copy da landing antes de publicar. "Nunca as de outro aluno" (`landing.tsx:278`) e a FAQ "Uma família pode ver fotos de outro aluno? Não." (`:303-305`) contradizem a entrega com fotos nítidas, em que colegas aparecem em foto de grupo. A frase de conformidade com o ECA Digital (`:490`) não tem homologação. "Toda imagem gerada por IA sai identificada" (`:279`) promete mais que o aviso na mensagem de compartilhamento (`src/config/iaschool.ts:47-48`). Proposta em `marketing/03-canais/landing/copy-landing-v2.md`; achados em `marketing/07-conformidade/regras-de-comunicacao.md`.
 - [x] (30/10/2026) Refino visual da landing (skill `impeccable`, polish + layout, mantendo marca e textos): botão principal em Azul Caderno (Faísca com texto branco dava 3:1), sem rótulos em caixa alta acima dos títulos, passos como linha do tempo, recursos com um destaque e lista, segurança e FAQ em lista, anel de foco azul em todos os links, cartão do álbum sem cobrir as fotos no celular e textos secundários a no mínimo 5:1. Conferido em modo demonstração em 1280 px e 375 px, sem rolagem horizontal nem erro no console; 333 testes em `src` e typecheck verdes. Sem publicação.
 
 ## Álbum do responsável com link reutilizável — 16/10/2026
@@ -249,14 +250,18 @@ Decisão vigente: Meta Cloud API antes do comercial; ponte temporária `controll
 - [ ] Template `guardian_verification_code`, categoria Authentication, `pt_BR`, botão de copiar código
 - [ ] Secrets `WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID` no Supabase
 - [x] (02/10/2026) OTP passou a usar hash e provedor; `demoCode`/`simulated` removidos do contrato atual. Fundação e funções com publicação registrada.
-- [ ] Implementar adaptador Meta. O provedor disponível no código é Z-API; `meta_test` ainda não envia.
+- [ ] Implementar adaptador Meta. O provedor disponível no código é Z-API; `meta_test` ainda não envia. Pré-requisito do ICP de redes desde 31/10/2026: sem ele nenhuma família recebe o pedido de autorização (seção "Comercial e piloto").
 - [ ] Teste ponta a ponta: aluno menor → verificar responsável → compartilhar → linha em `share_logs`
 
 ### Comercial e piloto (`docs/apresentacao-iaschool.md`)
 
 O deck (HTML 16:9 e 9:16, PDFs) está pronto e foi regenerado em 01/09/2026. Faltam decisões de negócio que ele já referencia:
 
-- [ ] Definir preço e modelo de cobrança (slide 10 / anexo). A base de custo já existe: `docs/estimativa-custos-por-aluno.md`, com `scripts/custos-por-aluno.py` e `scripts/custos-por-aluno-xlsx.py`
+- [~] (31/10/2026) Preço e modelo de cobrança definidos em entrevista com a equipe: R$ 6,00 por aluno por mês, pago pela escola ou rede; artes com IA incluídas até uma cota; mensal por no máximo 3 meses, depois trimestral, semestral ou anual com desconto; piloto pago com desconto, negociado caso a caso, só depois de liberar foto real. Registro em `marketing/01-estrategia/oferta-e-preco.md`; base de custo em `docs/estimativa-custos-por-aluno.md`, com `scripts/custos-por-aluno.py` e `scripts/custos-por-aluno-xlsx.py`. Falta: percentuais de desconto, tamanho da cota de artes, mínimo por escola (recomendado na estimativa de custo) e atualizar o slide 10.
+- [x] (31/10/2026) Pasta `marketing/` com posicionamento, ICP, personas, jornada, oferta, marca, canais, roteiro de demo, objeções, calendário, roteiro de entrevista e regras de comunicação (`marketing/README.md`). Só Markdown; links internos conferidos.
+- [ ] ICP definido em 31/10/2026: rede particular de 5 a 20 unidades em Guarulhos e São Paulo, decisor dono ou diretor(a) (`marketing/01-estrategia/publico-e-icp.md`). Para atender esse ICP, sobem de prioridade: a importação CSV de alunos e responsáveis (seção "Fase 1 completa"), o adaptador Meta (seção "WhatsApp oficial + OTP"), porque o link de autorização só sai pelo WhatsApp (`artifacts/iaschool-app/supabase/functions/request-guardian-consent/index.ts:5-6`), e o termo que declara a circulação da imagem entre famílias (seção "Conformidade antes de dado real").
+- [ ] Decidir se o primeiro contrato de rede exige visão da rede. Hoje cada unidade é uma linha em `public.schools`, com `public.schools.plan` por unidade, e a mesma pessoa troca de unidade pelo vínculo em `public.school_members` (`artifacts/iaschool-app/supabase/fase1-min-schools-events.sql`). Não há painel consolidado nem cobrança por rede.
+- [ ] Medir capacidade com volume de rede: unidade de até 2.000 alunos num evento grande, com `ingest-worker` e `face-worker` em uma máquina cada.
 - [ ] Escolher 3 exemplos reais de arte para o slide 7 (material de teste, nunca foto real de menor)
 - [ ] Confirmar prazos do piloto (slide 10)
 - [ ] Obter identidade visual da rede-alvo para personalizar a capa
@@ -311,7 +316,7 @@ Pré-requisito de tudo: `photos` precisa de `event_id`, que precisa de `school_i
 
 ### Fase 1 completa (fora do M1, sem prazo)
 
-- [ ] Importação de lista de alunos e responsáveis (CSV), casando por `enrollment_number`
+- [ ] Importação de lista de alunos e responsáveis (CSV), casando por `enrollment_number`. Pré-requisito do ICP de redes desde 31/10/2026 (seção "Comercial e piloto").
 - [ ] Professor responsável pela turma (`classes.teacher_id`): a coluna e o campo no domínio existem desde o M1, mas a tela não os expõe — falta listar os membros da escola (`school_members`), que hoje não tem repositório no app
 - [ ] Remover a tabela `clubs` depois de um ciclo com `schools` estável (a consolidação em si entrou no M1; `my_school_id()` já morre no M1 com o autocadastro de aluno). O app não consulta mais a tabela (0 linhas no banco), mas o trabalho é maior do que parece: o **bucket** `clubs` ainda guarda o logo da escola (`src/lib/constants.ts:7`, `school-brand-form-dialog.tsx:409`) e `tests/rls.integration.test.ts:35` lista `clubs` entre as tabelas do domínio — apagar a tabela sem mexer nos dois quebra o upload do logo e o teste
 - [~] Papel `dev`: telas de manutenção (`face_recognition_settings`, `prompt_settings`, expurgo manual, logs técnicos) — o papel nasce no M1, as telas podem vir depois. **Parcial** (conferido em 26/09/2026): `/admin/prompt` e `/admin/logs` existem desde a Fase 0 (`App.tsx:71-76`) e o `dev` já os enxerga, mas não são exclusivos dele como pede a decisão #5 (a policy de `prompt_settings` usa `is_super_admin()`, `setup.sql:493-505`). Faltam a tela de `face_recognition_settings` (com os cortes do lote) e o expurgo manual
