@@ -1,5 +1,8 @@
 # face-worker
 
+**Revisado em 25/10/2026.** Publicações/medições abaixo são históricas, não
+checagens remotas desta revisão.
+
 Worker de reconhecimento facial do IAschool (spec §7.3 e §7.4, marco M5).
 Python 3.12 + `onnxruntime` + `insightface`, **um processo por máquina**.
 
@@ -35,9 +38,15 @@ pnpm --filter @workspace/face-worker run test    # pytest
 Para rodar contra o banco:
 
 ```bash
-set -a; . ./.env.local; set +a
-artifacts/face-worker/.venv/bin/python -m face_worker
+# na raiz, com variáveis de servidor exportadas e ambiente autorizado
+PYTHONPATH=src PORT=8081 pnpm --filter @workspace/face-worker run dev
 ```
+
+O layout usa `src/`; `PYTHONPATH=src` é resolvido na pasta do pacote pelo
+comando filtrado. O `pyproject.toml` só configura esse caminho para pytest.
+Executar `python -m face_worker` da raiz sem esse ajuste não encontra o módulo.
+O worker consome/modifica filas do projeto configurado; não iniciar contra
+produção para testar setup.
 
 `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` são obrigatórias. O resto tem
 padrão (`config.py`). Os **limiares não estão aqui**: `tau`, margem e
@@ -47,14 +56,14 @@ recalibrá-los sem deploy. O worker relê a linha a cada minuto.
 Na primeira execução local o `buffalo_l` (~275 MB) é baixado para
 `~/.insightface`. No contêiner ele já vem na imagem.
 
-## Verificação ponta a ponta
+## Verificação ponta a ponta — acesso remoto, exige autorização
 
 `scripts/live_check.py` semeia uma escola de ensaio, sobe material de teste,
 roda **este mesmo binário** e confere o resultado no banco, apagando tudo no
 fim:
 
 ```bash
-set -a; . ./.env.local; set +a
+# com variáveis de servidor exportadas e destino autorizado
 artifacts/face-worker/.venv/bin/python artifacts/face-worker/scripts/live_check.py
 ```
 
@@ -65,7 +74,10 @@ real de criança entra aqui (spec §9.5).
 Executado em 21/09/2026: 20 rostos detectados, 3 sugeridos (os alunos com
 referência), 17 `unassigned` sem vetor, evento movido para `review`.
 
-## Deploy
+## Deploy — somente com autorização
+
+Publicação posterior registrada: face v2 em 12/10/2026, com referências de
+evento revisado. Não foi relida a versão remota nesta revisão.
 
 Implantado em 26/09/2026: app `iaschool-face-worker`, org `personal`, região
 `gru`, uma máquina `shared-cpu-2x` 2 GB, check em `/health` passando; os dois

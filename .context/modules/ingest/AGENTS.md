@@ -1,5 +1,9 @@
 # ingest
 
+Revisado em 25/10/2026 contra o código local. Publicações citadas são registros
+históricos; novas entregas usam fotos nítidas. Variáveis e quatro loops no
+[README do worker](../../../artifacts/ingest-worker/README.md).
+
 Worker Node que processa arquivo depois do upload. Um processo, `/health` na porta 8080.
 
 ## Entregas com fotos nítidas — decisão de 13/10/2026
@@ -25,8 +29,8 @@ Limite do MVP: a reconciliação acompanha o polling de cinco segundos. Antes de
 ## Entrada
 - Pacote `@workspace/ingest-worker`. Arranque: `src/index.ts`.
 - Consome a tabela `public.photo_jobs` (`artifacts/iaschool-app/supabase/fase2-photo-jobs-worker.sql`) com `kind = 'ingest'`: dimensões, miniatura WebP 320px, EXIF de reserva.
-- Consome `public.delivery_render_jobs` (`artifacts/iaschool-app/supabase/fase5-delivery-batches.sql` e `fase5-adjustments-delivery-album.sql`): derivados localizados por responsável no bucket privado `delivery-assets`.
-- S05 **implementada e verificada localmente em 12/10/2026**: `src/localized-delivery-render.ts` mantém a cena nítida, protege a pessoa inteira por máscara retangular/poligonal conferida e faz a proteção prevalecer nas sobreposições. Exige autoria, cobertura dos rostos detectados, dimensões orientadas e atestação de revisão completa corrente; falhas ficam pendentes. Miniatura deriva do mesmo JPEG protegido, sem metadados.
+- Consome `public.delivery_render_jobs` (`artifacts/iaschool-app/supabase/fase5-delivery-batches.sql` e `fase5-adjustments-delivery-album.sql`): fotos nítidas `original_v1` e compatibilidade com versões protegidas legadas no bucket privado `delivery-assets` (complemento `artifacts/iaschool-app/supabase/delivery-original-photos.sql`).
+- Histórico S05, substituído para novas entregas em 13/10/2026: `src/localized-delivery-render.ts` mantém a cena nítida, protege a pessoa inteira por máscara retangular/poligonal conferida e faz a proteção prevalecer nas sobreposições. Exige autoria, cobertura dos rostos detectados, dimensões orientadas e atestação de revisão completa corrente; falhas ficam pendentes. Miniatura deriva do mesmo JPEG protegido, sem metadados.
 - `public.delivery_render_contexts` obtém em uma chamada por lote (reusando `public.delivery_render_context`) o snapshot de `public.photo_person_regions` e `public.photos.regions_version`, `public.photos.regions_reviewed_version`, `public.photos.all_people_reviewed`, `public.photos.regions_reviewed_width`/`public.photos.regions_reviewed_height` (`artifacts/iaschool-app/supabase/fase5-review-media.sql`). `public.complete_delivery_render_job` confere atomicamente versão do rascunho e da região, grava `public.delivery_items.rendered_regions_version` e recusa render atrasado (`artifacts/iaschool-app/supabase/fase5-adjustments-delivery-album.sql`). Caminho inclui versão do rascunho/região e `public.delivery_render_jobs.lease_version`, contador monotônico que não zera no retry; trabalhador atrasado não sobrescreve outra versão/lease. Falha parcial agenda ambos os caminhos no expurgo.
 - S06/S07 guardam texto/seleção/ordem e aprovação imutável em `public.delivery_approvals`/`public.delivery_item_students`, acesso com hash de token em `public.delivery_album_tokens` e sessão fixa em `public.delivery_access_sessions` (`artifacts/iaschool-app/supabase/fase5-adjustments-delivery-album.sql`). Reemissão preserva sessões anteriores e revogação fecha acesso; SQL e publicações foram autorizados separadamente; validação integrada de fotos/álbum deve ser conferida no estado do produto.
 - Varre a tabela `public.storage_purge_queue` (`artifacts/iaschool-app/supabase/fase3-review-audit-purge.sql`): apagar a linha no banco não apaga o objeto; este laço remove o arquivo.
@@ -41,12 +45,12 @@ Limite do MVP: a reconciliação acompanha o polling de cinco segundos. Antes de
 - A entrega espera o derivado gerado aqui.
 
 ## Sensível
-- Service role só neste processo.
+- Service role somente no servidor (este processo, API, face-worker e Edge Functions), nunca no browser.
 - Teste sem rede, com imagem sintética do `sharp`. Não usar foto real de criança.
 
 ## Diagnóstico do render — publicado em 13/10/2026
 
-`render-handler.ts` grava códigos seguros por etapa: `render_revisao_pendente`, `render_download_falhou`, `render_imagem_invalida`, `render_upload_falhou`, `render_timeout`; contexto ausente usa `render_contexto_indisponivel`, falha inesperada do processamento usa `render_processamento_falhou`. Antes do download, `assertDeliveryReviewReady` recusa revisão incompleta, versão desatualizada, dimensões ausentes ou falta de regiões. Erros nativos de decodificação são substituídos por tipo seguro. O laço e a conclusão não registram mensagens cruas de Storage/SQL/sharp. Caminhos tentados continuam apenas na conclusão da RPC para o expurgo, com as versões do rascunho/regiões/lease preservadas.
+`render-handler.ts` grava códigos seguros por etapa: `render_revisao_pendente`, `render_download_falhou`, `render_imagem_invalida`, `render_upload_falhou`, `render_timeout`; contexto ausente usa `render_contexto_indisponivel`, falha inesperada do processamento usa `render_processamento_falhou`. No caminho protegido legado, antes do download, `assertDeliveryReviewReady` recusa revisão incompleta, versão desatualizada, dimensões ausentes ou falta de regiões. Erros nativos de decodificação são substituídos por tipo seguro. O laço e a conclusão não registram mensagens cruas de Storage/SQL/sharp. Caminhos tentados continuam apenas na conclusão da RPC para o expurgo, com as versões do rascunho/regiões/lease preservadas.
 
 O sinal de timeout é conferido entre operações e após cada upload, impedindo concluir com sucesso quando o prazo já expirou. Ele não interrompe por si só uma operação de Storage/sharp que já está em curso. Jobs antigos com `public.delivery_render_jobs.last_error = 'render_indisponivel'` (`artifacts/iaschool-app/supabase/fase5-delivery-batches.sql` e `fase5-adjustments-delivery-album.sql`) não permitem recuperar retrospectivamente qual etapa falhou: o código anterior agrupava todas elas. Correção publicada na release ingest `v5`, imagem `deployment-01M4TCRTQSJ09MPMT63S3NE8X3`, em 13/10/2026, preservando a mesma máquina/configuração de 1 CPU compartilhada/1 GB. Health real 200, tick recente e check Fly passaram. Os 64 testes locais e o typecheck passaram; não foi criado lote nem reenfileirada foto real para validar esta publicação. Saúde do processo não comprova resolução de um job histórico.
 

@@ -1,141 +1,83 @@
 # Pendências para produção — IAschool
 
-Registrado em 2026-08-30, após o provisionamento do banco Supabase do zero
-(projeto `jtyyauivokutperouqyh`, 7 migrations aplicadas).
+**Revisado em 25/10/2026 contra o código local.** Publicações abaixo são
+registros do [BACKLOG](../BACKLOG.md), sem consulta remota nesta revisão.
 
-## Regra desta fase (MVP)
+## Regra de uso
 
-Enquanto as pendências abaixo não estiverem **implementadas e ligadas**:
+Enquanto os gates não estiverem implementados, configurados e validados:
 
-- **Nenhuma foto real de criança ou adolescente entra no produto.** Só material
-  de teste/demonstração.
-- **O fluxo comercial de WhatsApp não é ligado.** A exceção controlada é a
-  ponte Z-API de 29/09/2026: uma escola, até quatro pessoas allowlisted, teto
-  diário, kill switch e material sintético/adulto. Ela não libera foto real de
-  menor nem substitui a migração para Meta antes do primeiro contrato.
+- Nenhuma foto real de criança ou adolescente entra no produto; somente material de teste/demonstração.
+- WhatsApp comercial permanece desligado. A exceção aprovada é `controlled_zapi`, uma escola, 1–4 pessoas allowlisted, teto diário, kill switch e material sintético/adulto.
 
-Essa regra é a barreira técnica de privacidade desta fase: o banco já tem parte
-da estrutura de proteção (autorização por escopo, canal verificável e trilhas),
-mas o aceite direto do responsável, a entrega protegida e a comprovação do
-resultado ainda não existem. O art. 35 do Decreto nº 12.880/2026 trata de
-conteúdo violador, vexatório ou degradante; a verificação do canal é um controle
-de produto baseado em privacidade por padrão, minimização e melhor interesse,
-não uma exigência literal desse artigo.
+São controles do projeto. A existência de código, testes ou publicação não
+constitui homologação jurídica nem autorização para ativar o fluxo.
 
-## Pendências
+## Implementado e com publicação registrada
 
-| # | Pendência | Tipo | Bloqueia |
-| --- | --- | --- | --- |
-| 1 | Comprar domínio | Infra | 2, 3 |
-| 2 | Assinar o Resend | Infra | 3 |
-| 3 | Confirmar o domínio no Resend (SPF + DKIM, DMARC recomendado) | Infra | 5 |
-| 4 | Criar os templates HTML de e-mail | Código | 5 |
-| 5 | Ligar "Confirm email" no Supabase | Config | 6 |
-| 6 | Testar o fluxo de cadastro ponta a ponta | QA | Uso real |
-| 7 | Implementar WhatsApp oficial para OTP, consentimento e entrega privada de fotos | Código + Meta | Foto real de menor |
-
-### Detalhamento
-
-**1–3. Domínio + Resend**
-
-Sem SMTP próprio o Supabase mantém o limite padrão de 2–3 e-mails por hora, o
-que quebra tanto a confirmação de cadastro quanto o "esqueci minha senha".
-
-Configuração no Supabase → Authentication → SMTP Settings:
-`smtp.resend.com`, porta `587`, usuário `resend`, senha = API key do Resend.
-
-Depois de ativar, **subir os rate limits** em Authentication → Rate Limits — eles
-não sobem sozinhos — e cadastrar as Redirect URLs (produção e desenvolvimento),
-senão o `redirectTo` do reset de senha é ignorado.
-
-**4. Templates de e-mail**
-
-Ficam em `artifacts/iaschool-app/supabase/email-templates/`.
-
-| Template no painel | Arquivo | Status |
+| Área | Implementação atual | Registro anterior |
 | --- | --- | --- |
-| Confirm signup | — | **falta criar** (pt-BR, marca IAschool) |
-| Reset Password | `reset-password.html` | pronto |
-| Invite user | `invite.html` | pronto |
+| Identidade e autorização | Aprovação de conta, vínculo escolar, responsável, data de nascimento e autorização por escopo | Fundação/M1–M6 em agosto/setembro |
+| OTP | Código aleatório, hash, TTL, antiflood, limite de tentativas e trilha de envio; nenhuma resposta `demoCode` | Fundação/funções em 02/10; OTP adulto via Z-API em 03/10/2026 |
+| Consentimento direto | Pedido por link opaco, página pública, aceite/recusa/revogação e versão em evidência | Migration/funções em 05/10; frontend publicado em 12/10/2026 |
+| Entregas | Preparo por família, prévia/seleção, aprovação, sessão privada, download e revogação | Primeiro preparo em 05/10; álbum em 12/10; fotos nítidas em 13/10/2026 |
+| Trava de envio | `school-delivery` informa capacidade; botão só aparece quando `sending: ready` | App e função v5 em 15/10/2026 |
 
-Magic Link, Change Email e Reauthentication o app não usa.
+O provedor implementado é Z-API, criado somente em `controlled_zapi` com
+configuração válida. `paused` falha fechado; `meta_test` é reconhecido como
+modo, mas não possui adaptador Meta. Resposta `accepted` não comprova entrega:
+`sent`, `delivered`, `read` e `failed` dependem de retorno correlacionado.
 
-**5–6. Confirmação de e-mail**
+Fontes: `artifacts/iaschool-app/supabase/functions/` e
+[mapa SQL](../artifacts/iaschool-app/SUPABASE.md). OTP usa
+`public.guardian_verification_codes` e `public.whatsapp_messages`
+(`artifacts/iaschool-app/supabase/fase4-whatsapp-foundation.sql`);
+aceite usa `public.guardian_action_tokens` e `public.authorizations`
+(`artifacts/iaschool-app/supabase/fase5-guardian-consent.sql`).
 
-Authentication → Sign In / Up → Email → "Confirm email".
+## Bloqueios e pendências
 
-O acesso a dado nunca dependeu do e-mail: `handle_new_user` cria o perfil como
-`pending` e a RLS (`is_approved()`) bloqueia qualquer leitura até o super_admin
-aprovar. A confirmação soma uma segunda barreira e garante que o endereço de
-contato é real — o que importa quando esse endereço é o canal com a escola
-responsável por um menor.
+1. **Termo incompatível com a entrega atual.** `delivery_whatsapp.v1` promete
+   desfoque de terceiros, mas novas entregas usam fotos nítidas (`original_v1`).
+   O texto servido em `_shared/whatsapp/consent-terms.ts` continua assim.
+   Homologar uma nova versão e definir o tratamento dos aceites anteriores antes
+   de uso real; não alterar silenciosamente o significado de v1. O
+   [rascunho do termo](termos/delivery-whatsapp-v1.md) registra essa divergência.
+2. **Segredos e webhook Z-API.** O histórico de 03/10 aponta três segredos
+   expostos na depuração e rotação pendente antes de novo envio. Também aponta
+   falta de retorno do webhook pelo provedor. A revisão não consultou segredos
+   nem comprovou correção. Validar rotação e correlação ponta a ponta antes do
+   próximo canário autorizado.
+3. **Meta e uso comercial.** Implementar adaptador, configurar WABA/número,
+   templates e webhook; repetir E2E controlado. A ponte Z-API não libera uso
+   comercial. Ver [plano da ponte](plano-implementacao-zapi.md) e W0–W5 no backlog.
+4. **Domínio, e-mail e primeiro acesso.** Não há encerramento registrado para
+   domínio próprio/SMTP, templates e confirmação de e-mail. Há arquivos
+   `reset-password.html` e `invite.html` em
+   `artifacts/iaschool-app/supabase/email-templates/`; falta Confirm signup.
+   Confirmar provedor/plano, domínio autenticado, limites, redirects e instalação
+   dos templates. Testar cadastro → e-mail → confirmação → aprovação → vínculo
+   escolar → primeiro login, além de reset. O registro de 07/10 tinha confirmação
+   automática ligada; isso não foi relido hoje. Aprovação fica em `/aprovacoes`.
+5. **Conformidade e operação.** Homologar termos/política, finalidade,
+   operadores/transferências, retenção, canal de atendimento/remoção e avaliação
+   de impacto. Concluir medições de reconhecimento, revogação/expurgo, controle
+   de acesso e ensaio completo com adultos. Completar alertas, suporte, backup e
+   restauração; roteiro em [operação](operacao-agentes.md). A revisão de código
+   não substitui validação jurídica nem comprova configuração remota.
 
-Teste esperado: cadastro de escola → e-mail chega → confirma → cai em
-"Aguardando aprovação" → super_admin aprova em /admin.
+## Implementado apenas localmente
 
-**7. WhatsApp: ponte controlada e integração oficial**
+Álbum com link reutilizável e fotos disponíveis da família agrupadas por evento:
+`artifacts/iaschool-app/supabase/fase5-album-open-link.sql`, app e funções.
+O histórico de 16/10 registra **migration não aplicada e publicação pendente**.
+O código local deixa `public.delivery_album_tokens.used_at` como primeira
+abertura, cria sessões separadas em `public.delivery_access_sessions` e mantém
+prazos/revogação. Não tratar esse fluxo como disponível no ambiente publicado.
 
-Decisão final de 27/09/2026: **Meta WhatsApp Cloud API direta** para OTP e
-entrega das fotos em uso comercial. Decisão temporária de 29/09/2026: usar
-**Z-API** somente para validar o fluxo antes do contrato, em uma escola, com
-até quatro destinatários allowlisted, teto diário e kill switch. UAZAPI,
-Evolution e outras automações continuam fora. A especificação completa é
-[`spec-whatsapp-api-oficial-entrega-fotos.md`](spec-whatsapp-api-oficial-entrega-fotos.md).
+## Critério para fechar os gates
 
-Ela cobre a fronteira de provedor, Z-API temporária, migração para WABA,
-templates, secrets, OTP sem vazamento, aceite direto do responsável, versão
-desfocada, fila, webhook de status, acesso privado, revogação, expurgo,
-observabilidade, rollout e gates de produção.
-
-A Z-API usa sessão do WhatsApp Web e envia mensagens externas reais. O modo
-controlado não é sandbox e não libera atividade comercial. Até os gates gerais
-fecharem, o ensaio usa material sintético ou de adultos; foto real de menor
-continua bloqueada.
-
-#### Estado atual: stub de simulação no ar
-
-A edge function `send-guardian-code` já está implantada, mas **em modo
-simulação**: ela gera o código, grava em `guardian_verification_codes` e
-devolve o código à própria tela, que o exibe com o aviso "Modo demonstração".
-Nenhuma mensagem sai para o WhatsApp.
-
-Isso existe para que a demo do MVP exercite o fluxo atual
-(TTL → antiflood → RPC `confirm_guardian_code` →
-`guardians.whatsapp_verified_at` → liberação do compartilhamento manual →
-`share_logs`) sem tocar em canal de verdade. O aceite direto do responsável e
-a entrega automática ainda não fazem parte desse ensaio.
-
-Fonte: `artifacts/iaschool-app/supabase/functions/send-guardian-code/index.ts`.
-
-Ligar qualquer envio externo exige mais do que substituir o bloco `SIMULAÇÃO`: o código
-deve deixar de ser armazenado em texto, limites adicionais precisam ser
-aplicados, a resposta deve parar de devolver `demoCode`, o webhook precisa
-acompanhar o resultado e o consentimento deve ser aceito diretamente pelo
-responsável. A sequência está dividida em W0 a W5 na nova spec. A Z-API entra
-atrás de `WhatsAppProvider`; após o contrato, a Meta substitui o adaptador e o
-E2E é repetido antes do uso comercial.
-
-Três coisas sinalizam que o stub está ativo, para ninguém achar que o OTP está
-no ar: a resposta carrega `simulated: true`, cada chamada emite um warn no log
-da função, e a tela mostra o código com o aviso de demonstração.
-
-Cobertura: `tests/guardian-verification.integration.test.ts` valida o fluxo
-inteiro contra o Supabase real (7 testes). Os casos que dependem do código
-visível se pulam sozinhos quando `simulated` deixar de vir na resposta.
-
-## O que já está pronto
-
-O banco já possui bases reutilizáveis:
-
-- `guardian_verification_codes` + RPC `confirm_guardian_code` (security definer,
-  RLS sem policy — só a edge function e a RPC acessam);
-- `share_logs` append-only (policies de insert e select, nenhuma de update/delete);
-- `guardians` + `students.primary_guardian_id`, com verificação por responsável
-  e invalidação do carimbo quando o número muda;
-- `authorizations`, inclusive o escopo `delivery_whatsapp`, ainda alimentado
-  pela declaração da escola;
-- super admin provisionado e aprovado.
-
-Para a entrega automática, ainda faltam migrations de segurança do OTP,
-consentimento direto, lote, destinatários, ativos temporários, sessões, webhook
-e auditoria. O inventário completo está na nova spec.
+Cada pendência precisa de implementação quando aplicável, configuração
+verificada no destino e ensaio autorizado. Registrar data, versão, alcance do
+ensaio e limite da evidência no backlog. Saúde HTTP ou teste local não fecha
+entrega WhatsApp, consentimento real, restauração ou geração paga.
