@@ -72,7 +72,7 @@ export function SignupCard({ onBack }: { onBack: () => void }) {
           </CardTitle>
           <CardDescription>
             Sua conta foi criada e está aguardando aprovação. O administrador
-            da IAschool vai liberar seu acesso — depois disso é só entrar com seu
+            da AIESCOLA vai liberar seu acesso — depois disso é só entrar com seu
             e-mail e senha.
           </CardDescription>
         </CardHeader>

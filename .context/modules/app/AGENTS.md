@@ -35,6 +35,10 @@ Revisado em 25/10/2026 contra o código local. Publicações citadas são regist
 
 - A revisão por aluno oferece selecionar/desmarcar todas somente no cartão e evento atuais. Selecionar todas inclui fotos ambíguas com aviso; confirmar continua sendo ato separado. A seleção é conciliada por IDs: novas sugestões ficam desmarcadas, IDs removidos são esquecidos e troca de evento/aluno reinicia o contexto. Durante confirmação, seleção e repetição do lote ficam bloqueadas. A confirmação e sua trilha continuam nas RPCs existentes (`artifacts/iaschool-app/supabase/fase3-review-audit-purge.sql`).
 
+- Marca AIESCOLA (30/10/2026, código local, sem publicação): `src/components/brand-logo.tsx` usa os SVGs de `public/brand/` (`aiescola-logo.svg` no tema claro, `aiescola-logo-escuro.svg` no escuro, `aiescola-simbolo.svg` no modo compacto); favicon, `<title>` e metas do `index.html` e o nome em `src/config/iaschool.ts` passaram para AIESCOLA. Os originais de todas as variações ficam em `artifacts/iaschool-ui/public/brand/`. Identificadores de código (`iaschool`, `@workspace/iaschool-*`), templates do WhatsApp e termos de consentimento das Edge Functions continuam com o nome antigo.
+
+- Landing pública (30/10/2026, código local, sem publicação): visitante sem sessão em `/` vê `src/pages/landing.tsx`; o login mora em `/entrar` e qualquer outra rota sem sessão continua caindo no login. Logado em `/entrar` volta para `/`. A landing usa a paleta e as fontes da marca AIESCOLA direto (sem os tokens do tema) e nenhuma foto de pessoa. Botão primário em Azul Caderno; Faísca só em ícone ou título grande, porque com texto branco dá 3:1. O botão principal vem de `VITE_DEMO_CONTACT_URL` (só `https:` ou `mailto:`, regra em `src/lib/landing.ts`); sem valor, vira "Acessar a plataforma" e leva ao login.
+
 ## Fora deste módulo
 - `lib/db` não representa estas tabelas.
 - `artifacts/mockup-sandbox` é protótipo, não este app.

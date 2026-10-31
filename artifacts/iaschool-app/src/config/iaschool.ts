@@ -1,5 +1,5 @@
 /**
- * Configuração pública da instalação IAschool.
+ * Configuração pública da instalação AIESCOLA.
  *
  * Esta é a única fonte de textos e identidade que pertencem ao produto.
  * Credenciais, URLs privadas, chaves e limites operacionais ficam somente no
@@ -7,14 +7,14 @@
  */
 export const iaschool = {
   brand: {
-    name: "IAschool",
-    shortName: "IAS",
+    name: "AIESCOLA",
+    shortName: "AI",
     description:
       "Organize as fotos dos alunos e entregue aos responsáveis em minutos.",
     colors: {
-      primary: "#2563eb",
-      accent: "#be123c",
-      surface: "#f8fafc",
+      primary: "#2447D6",
+      accent: "#F26B1D",
+      surface: "#F8F6F1",
     },
   },
   modules: {
@@ -45,7 +45,7 @@ export const iaschool = {
      * (Decreto nº 12.880/2026, art. 11, I).
      */
     shareMessage: (studentName: string) =>
-      `Olá! Segue a arte de ${studentName} feita pela escola no IAschool. A imagem foi gerada por inteligência artificial a partir de uma foto real. Baixe a imagem e mande junto com esta mensagem.`,
+      `Olá! Segue a arte de ${studentName} feita pela escola na AIESCOLA. A imagem foi gerada por inteligência artificial a partir de uma foto real. Baixe a imagem e mande junto com esta mensagem.`,
   },
 } as const;
 

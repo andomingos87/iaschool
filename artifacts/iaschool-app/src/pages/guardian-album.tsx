@@ -8,6 +8,7 @@ import { buildGuardianAlbumZip, getAlbumPhotoBytes } from "@/lib/album-download"
 import { startBlobDownload } from "@/lib/student-folder";
 import { safeZipName } from "@/lib/zip";
 import { ImageLightbox } from "@/components/image-lightbox";
+import { iaschool } from "@/config/iaschool";
 
 const service = createAlbumService();
 function downloadBlob(blob: Blob, filename: string) {
@@ -83,7 +84,7 @@ export default function GuardianAlbumPage() {
   }
   useEffect(() => () => { if (zoom) URL.revokeObjectURL(zoom); }, [zoom]);
   return <main className="mx-auto min-h-dvh max-w-5xl space-y-6 px-4 py-8 sm:px-6">
-    <header className="space-y-2"><p className="text-sm font-medium text-primary">IAschool · Álbum privado</p>
+    <header className="space-y-2"><p className="text-sm font-medium text-primary">{iaschool.brand.name} · Álbum privado</p>
       <h1 className="text-2xl font-semibold">{title}</h1>
       <p className="text-sm text-muted-foreground">{album?.signature ?? "As fotos autorizadas pela escola aparecem somente neste acesso."}</p>
     </header>

@@ -5,6 +5,7 @@ import { Toaster } from '@workspace/iaschool-ui/components/ui/toaster';
 import { TooltipProvider } from '@workspace/iaschool-ui/components/ui/tooltip';
 import { Spinner } from '@workspace/iaschool-ui/components/ui/spinner';
 import {
+  Redirect,
   Route,
   Switch,
   useLocation,
@@ -14,6 +15,7 @@ import { AuthProvider, useAuth } from '@/hooks/use-auth';
 import { ThemeProvider } from '@/hooks/use-theme';
 import { AppShell } from '@/components/app-shell';
 import LoginPage from '@/pages/login';
+import LandingPage from '@/pages/landing';
 import ResetPasswordPage from '@/pages/reset-password';
 import { isRecoveryPending } from '@/lib/recovery';
 import DashboardPage from '@/pages/dashboard';
@@ -61,6 +63,7 @@ function Pages() {
   return (
     <Switch>
       <Route path="/" component={DashboardPage} />
+      <Route path="/entrar"><Redirect to="/" /></Route>
       <Route path="/gerar" component={GeneratePage} />
       <Route path="/alunos" component={StudentsPage} />
       <Route path="/alunos/:id" component={StudentDetailPage} />
@@ -118,8 +121,10 @@ function AuthGate() {
     );
   }
 
+  // Visitante sem sessão: landing em `/`, login em `/entrar`. Outras rotas
+  // continuam caindo no login para não quebrar links antigos do painel.
   if (!session) {
-    return <LoginPage />;
+    return location === '/' ? <LandingPage /> : <LoginPage />;
   }
 
   // Conta cadastrada mas ainda não aprovada (ou recusada): sem acesso ao app.

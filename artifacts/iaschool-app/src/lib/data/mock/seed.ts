@@ -16,7 +16,7 @@ export const MOCK_USERS: AppUser[] = [
   {
     id: "user-admin",
     email: "admin@iaschool.demo",
-    name: "Administrador IAschool",
+    name: "Administrador AIESCOLA",
     role: "super_admin",
     approvalStatus: "approved",
     schools: [],

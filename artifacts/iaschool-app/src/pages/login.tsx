@@ -43,7 +43,7 @@ const forgotSchema = z.object({
 type ForgotValues = z.infer<typeof forgotSchema>;
 
 const DEMO_USERS = [
-  { email: "admin@iaschool.demo", role: "Administrador IAschool" },
+  { email: "admin@iaschool.demo", role: "Administrador AIESCOLA" },
   { email: "professor@iaschool.demo", role: "Administrador da Escola Horizonte" },
 ];
 
@@ -171,7 +171,7 @@ export default function LoginPage() {
                         <FormControl>
                           <Input
                             type="email"
-                            placeholder="voce@iaschool.com.br"
+                            placeholder="voce@escola.com.br"
                             autoComplete="email"
                             data-testid="input-forgot-email"
                             {...field}
@@ -275,7 +275,7 @@ export default function LoginPage() {
                       <FormControl>
                         <Input
                           type="email"
-                          placeholder="voce@iaschool.com.br"
+                          placeholder="voce@escola.com.br"
                           autoComplete="email"
                           data-testid="input-email"
                           {...field}
