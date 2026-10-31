@@ -1,128 +1,48 @@
-# Aplicação ao IAschool (este repositório)
+# Aplicação ao IAschool — mapa técnico atual
 
-Recorte do produto deste workspace: plataforma em que escolas e professores
-geram, por IA, cards de desempenho com **foto de alunos** e compartilham o
-resultado por **WhatsApp**. Alunos também se cadastram sozinhos e acessam a
-própria área.
+**Revisado em 25/10/2026 contra o código local.** Este mapa substitui o
+diagnóstico antigo de autocadastro de aluno, campos esportivos e ausência de
+consentimento. Não é parecer jurídico nem declaração de conformidade.
+Referências legais da skill exigem validação própria quando usadas para uma
+decisão; esta revisão não atualizou legislação nem consultou serviços remotos.
 
-> Este arquivo lista **pontos de contato e lacunas prováveis** verificados no
-> código em 23/08/2026. Confirme cada um antes de citar em parecer — o código
-> muda.
+## Produto e acesso
 
-## 1. Enquadramento
+A escola cadastra alunos, organiza fotos de eventos, revisa o reconhecimento,
+prepara entregas ao responsável e gera artes. Conta pública é de escola;
+aluno é registro, sem conta própria. `signup.tsx` e `student-area.tsx` não
+fazem parte do app atual. As rotas públicas são login/cadastro, recuperação,
+consentimento e álbum; não equivalem a portal autenticado completo de família.
 
-| Pergunta | Resposta |
-| --- | --- |
-| Produto/serviço de TI? | Sim — aplicação de internet (Lei, art. 2º, I) |
-| Direcionado a menores ou de acesso provável? | **Sim.** Público-alvo são alunos de escolas: probabilidade e atratividade de uso e facilidade de acesso (Lei, art. 1º, p. único, I e II) |
-| É rede social? | Não — não há compartilhamento entre usuários na plataforma (Lei, art. 2º, III). A ANPD pode reenquadrar (Dec., art. 19, § 2º) |
-| Tem conteúdo proibido (art. 15, § 1º do Decreto)? | Não |
-| Tem loot box, apostas, publicidade direcionada? | Não |
-| Modulação do art. 39 | Porte pequeno **reduz intensidade**, mas o fornecedor tem **interferência total** sobre o conteúdo (ele o gera), o que puxa as obrigações para cima |
+## Mapa de controles presentes
 
-Conclusão: não incide o regime de verificação de idade a cada acesso (Lei,
-art. 9º). Incide o **núcleo**: arts. 3º, 5º a 8º, 10, 13, 14, 16 a 18, 22, 23,
-25, 28 a 30 e 40 da Lei; arts. 9º a 11, 24, 41, 43 e 47 do Decreto.
-
-## 2. Mapa código → obrigação
-
-| Ponto no código | O que existe hoje | Obrigação tocada |
+| Área | Código/SQL | O que existe |
 | --- | --- | --- |
-| `artifacts/iaschool-app/src/pages/signup.tsx` | Autocadastro de aluno: nome, e-mail, senha, escola. **Sem data de nascimento e sem responsável legal** | Lei, arts. 10, 14, 24; LGPD, art. 14 |
-| `artifacts/iaschool-app/src/lib/data/types.ts` (`Student`) | `whatsapp`, `birthDate?`, `heightCm`, `weightKg`, `position`, `notes`, `photos[]` | Lei, art. 7º, § 2º (minimização); LGPD, art. 14, § 3º |
-| `artifacts/iaschool-app/src/pages/generate.tsx` | Fluxo de geração com foto do aluno, prompt auxiliar em texto livre, métricas | Dec., art. 11; Lei, arts. 6º, 23; Dec., arts. 16, § 4º e 35 |
-| `artifacts/iaschool-app/src/pages/generate.tsx:410` | Compartilhamento via `wa.me` com nome do aluno e imagem | Lei, arts. 6º, V e 7º, § 2º; Dec., art. 35 |
-| `artifacts/iaschool-app/src/lib/data/openai-generation.ts` | Envio das fotos ao backend → OpenAI (`gpt-image-2`) | Lei, art. 7º, § 2º; Dec., art. 11, III |
-| `artifacts/iaschool-app/src/pages/admin-prompt.tsx`, `lib/prompt-template.ts` | Prompt de sistema configurável por admin | Dec., art. 11, II e IV |
-| `artifacts/iaschool-app/src/pages/approvals.tsx`, `pending-approval.tsx` | Aprovação de cadastro **pela escola** | Não substitui responsável legal (Lei, art. 24) |
-| `artifacts/iaschool-app/src/pages/student-area.tsx`, `gallery.tsx` | Aluno vê e baixa os próprios cards | Lei, arts. 16 a 18 (acesso do responsável) |
-| `artifacts/iaschool-app/src/lib/data/supabase/` | Camada real de dados | Confirmar RLS por escola e por aluno |
-| Repositório inteiro | **Nenhum texto de termos de uso, política de privacidade, consentimento, faixa etária ou canal de denúncia** | Lei, arts. 8º, V, 16, 28, 29; Dec., arts. 12, § 4º e 41 |
+| Escola e aprovação | `artifacts/iaschool-app/src/App.tsx`, `src/lib/data/supabase/`; `artifacts/iaschool-app/supabase/fase1-min-schools-events.sql` | `public.profiles`, `public.school_members`, `public.students`, `public.guardians`: aprovação, vínculo escolar, data e responsável |
+| Autorização e biometria | `artifacts/iaschool-app/supabase/fase3-authorizations-reference-faces.sql` e `fase3-face-recognition.sql` | `public.authorizations`, `public.student_reference_faces`, `public.photo_faces`: escopos, referência consentida, vetores restritos, confirmação humana |
+| Revogação e expurgo | `artifacts/iaschool-app/supabase/fase3-review-audit-purge.sql` | `public.biometric_events` e `public.storage_purge_queue`: trilha e remoção assíncrona dos arquivos |
+| OTP e mensagens | `artifacts/iaschool-app/supabase/fase4-whatsapp-foundation.sql`, `supabase/functions/send-guardian-code/` | `public.guardian_verification_codes`, `public.whatsapp_messages`: código com hash, limites, provedor controlado; sem código na resposta |
+| Aceite direto | `artifacts/iaschool-app/supabase/fase5-guardian-consent.sql`, funções `request-guardian-consent`/`guardian-consent` | `public.guardian_action_tokens` e evidência versionada em `public.authorizations`; escola não aceita pelo responsável |
+| Entrega | `artifacts/iaschool-app/supabase/fase5-adjustments-delivery-album.sql` e `delivery-original-photos.sql` | `public.delivery_approvals`, `public.delivery_items`, `public.delivery_access_sessions`: seleção/aprovação, sessão privada, prazo e revogação; novas fotos são nítidas |
+| Artes em lote | `artifacts/api-server/src/lib/generation-batch-process.ts`; `artifacts/iaschool-app/supabase/generation-batches.sql` | `public.generation_batches` e `public.generation_batch_items`: revalidação de autorização/foto, modelo + foto enviados à IA, cota e tentativa explícita |
 
-## 3. Achados prioritários (rascunho a validar)
+Caminhos `src/` e `supabase/functions/` na tabela são relativos ao app quando
+não precedidos de outro pacote. O inventário completo está em
+`artifacts/iaschool-app/SUPABASE.md` e os contratos em `docs/api.md`.
 
-**BLOQUEIA — geração de imagem de menor com prompt livre sem salvaguarda**
-Base: Lei 15.211/2025, arts. 6º e 23; Decreto 12.880/2026, arts. 11, IV, 16, § 4º e 35.
-Evidência: `artifacts/iaschool-app/src/pages/generate.tsx` (prompt auxiliar livre) +
-`lib/data/openai-generation.ts`.
-Risco: gerar imagem sexualizada, vexatória ou degradante a partir da foto real de
-um aluno menor de idade.
-Correção mínima: moderação do prompt auxiliar e da imagem de saída, lista de
-termos vedados, bloqueio de geração quando o aluno é menor e o prompt toca
-corpo/roupa/contexto adulto, e registro auditável de cada geração.
+## Divergências e limites
 
-**BLOQUEIA — ausência de consentimento e de vínculo com responsável legal**
-Base: Lei, arts. 24 e 12, § 2º; LGPD, art. 14, § 1º.
-Evidência: `pages/signup.tsx`, `pages/approvals.tsx`.
-Risco: tratamento de foto e dados de criança sem autorização de quem pode dar.
-Correção mínima: campo de data de nascimento no cadastro; para menores de 16,
-vínculo obrigatório a um responsável legal com registro do consentimento e da
-autorização de uso de imagem; aprovação da escola não substitui o responsável.
-Nota interpretativa: o art. 24 está no capítulo "Das redes sociais", mas seu
-*caput* alcança "produtos ou serviços direcionados a crianças e adolescentes ou
-de acesso provável por eles". Leitura conservadora: aplicar. Registre a escolha.
+- **Termo:** `_shared/whatsapp/consent-terms.ts` ainda promete terceiros desfocados em `delivery_whatsapp.v1`; novas entregas usam `original_v1`, sem desfoque. Homologação de nova versão/tratamento de aceites anteriores permanece aberta. Não reescrever v1 como se consentimentos passados cobrissem a mudança.
+- **Publicação:** há registros de OTP/consentimento/álbum e fotos nítidas em outubro. O álbum reutilizável em `fase5-album-open-link.sql` segue apenas local. Publicação antiga não prova configuração ou comportamento remoto hoje.
+- **IA:** wizard atual usa modelo da escola e foto do aluno, sem garantia de pixels originais. O caminho determinístico antigo não representa o fluxo vigente. Controles presentes não comprovam moderação completa nem adequação de saídas para menores.
+- **Compartilhamento:** canal verificado, aceite, autorização e trilha são controles distintos. `accepted` no provedor não prova entrega. Revogação impede acessos futuros conforme implementação/prazos, mas não recolhe cópias baixadas.
+- **Gates:** homologação jurídica, operadores/transferências, retenção, transparência, canal de atendimento/remoção, e-mail, Meta, webhook, segredos e E2E operacional continuam no backlog. Não inferir ausência total de consentimento ou de auditoria a partir do diagnóstico antigo.
 
-**BLOQUEIA — compartilhamento de imagem de menor por canal não verificado**
-Base: Lei, arts. 6º, V e 7º, § 2º; Decreto, art. 35.
-Evidência: `pages/generate.tsx:410` (`wa.me`).
-Risco: envio da imagem e do nome do aluno a número não verificado, sem prova de
-autorização e sem trilha de auditoria.
-Correção mínima: só permitir envio a número do responsável registrado e
-confirmado; log de quem enviou, para quem e quando; revogação com exclusão do
-material.
+## Regra operacional vigente
 
-**CORRIGIR — dados excessivos sobre o aluno**
-Base: Lei, art. 7º, § 2º; LGPD, art. 6º, III e art. 14, § 3º.
-Evidência: `lib/data/types.ts` (`heightCm`, `weightKg`, `notes`).
-Risco: peso e altura de criança são dados de saúde adjacentes, sem finalidade
-declarada no produto.
-Correção mínima: remover, ou declarar finalidade, restringir visibilidade ao
-professor responsável e excluir por padrão ao fim do ciclo escolar.
-
-**CORRIGIR — falta transparência do caráter sintético**
-Base: Decreto, art. 11, I.
-Evidência: `pages/generate.tsx`, `components/generation-details.tsx`.
-Risco: card com foto real do aluno em cena gerada, sem indicação de que é
-imagem sintética.
-Correção mínima: marca visível de "imagem gerada por IA" na imagem exportada e
-na mensagem de compartilhamento.
-
-**CORRIGIR — sem canal de denúncia nem fluxo de remoção**
-Base: Lei, arts. 28 a 30; Decreto, arts. 41 e 43.
-Evidência: ausente no repositório.
-Correção mínima: canal público, gratuito e divulgado; fila com tratamento
-prioritário para vítima, representante, MP, polícia e entidade habilitada;
-remoção imediata com notificação motivada ao autor e recurso.
-
-**CORRIGIR — sem termos, política, faixa etária e informação de risco**
-Base: Lei, arts. 8º, V e 16; Decreto, art. 12, § 4º.
-Evidência: ausente no repositório.
-Correção mínima: termos de uso e política de privacidade em português com faixa
-etária declarada, riscos, dados tratados e canal de contato do responsável.
-
-**OBSERVAR — cards de desempenho e exposição comparativa**
-Base: Lei, art. 6º, II; Decreto, art. 35.
-Risco: ranking ou métrica de desempenho exposta pode se tornar constrangimento
-entre pares.
-Ação: decidir se métricas comparativas são visíveis fora do par
-professor–responsável.
-
-**OBSERVAR — avaliação de impacto e gestão de risco**
-Base: Lei, arts. 8º, I e 16, p. único; Decreto, art. 47.
-Ação: produzir avaliação de impacto à segurança e saúde de crianças, com versão
-resumida pública. Exigível porque o tratamento (foto + IA) excede o
-estritamente necessário à operação.
-
-## 4. O que não se aplica hoje
-
-| Obrigação | Motivo |
-| --- | --- |
-| Verificação de idade a cada acesso (Lei, art. 9º) | Não há conteúdo proibido para menores de 18 |
-| Loot box (Lei, art. 20) | Não há jogo nem caixa de recompensa |
-| Relatório semestral de transparência (Lei, art. 31) | Depende de mais de 1 milhão de usuários menores de 18 |
-| Sinal de idade via API (Lei, art. 12) | Obrigação de lojas de apps e sistemas operacionais; aqui só o dever de **receber** (art. 14) |
-| Adesivo em embalagem (Lei, art. 38) | Não há hardware |
-| Representante legal (Lei, art. 40) | Operação brasileira — apenas documentar |
-
-Reavalie esta seção se o produto ganhar interação entre alunos, chat, feed,
-monetização, publicidade ou distribuição em loja de aplicativos.
+Nenhuma foto real de criança/adolescente e nenhum WhatsApp comercial até os
+gates de `docs/pendencias-producao.md`. Exceção: ensaio `controlled_zapi` com
+uma escola, 1–4 pessoas allowlisted, teto, kill switch e material sintético/adulto.
+Não converter uma revisão documental em ativação, envio, geração paga ou
+mudança de schema. Relatar separadamente código, testes locais, publicação
+registrada e evidência remota; homologação não foi realizada por esta revisão.

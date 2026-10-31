@@ -38,7 +38,7 @@ A escola sobe as fotos de um evento; o sistema separa por aluno e entrega ao res
 - NUNCA coloque foto real de criança ou adolescente no produto enquanto [docs/pendencias-producao.md](docs/pendencias-producao.md) não estiver implementado e ligado. Só material de teste ou demonstração.
 - NUNCA ligue o fluxo comercial de WhatsApp. A exceção já aprovada é o modo `controlled_zapi`: uma escola, de uma a quatro pessoas allowlisted, teto diário, kill switch, só material sintético ou de adultos.
 - NUNCA use em código novo: atleta, escolinha, clube, brasão, uniforme, posição, métrica, R9, IAsport.
-- NUNCA coloque `SUPABASE_SERVICE_ROLE_KEY` no browser. Ela fica só na API, no ingest e no face-worker.
+- NUNCA coloque `SUPABASE_SERVICE_ROLE_KEY` no browser. Ela fica somente em ambiente de servidor: API, ingest, face-worker e Edge Functions.
 
 Gates completos: skill `aurea-standards`.
 
@@ -53,12 +53,13 @@ Gates completos: skill `aurea-standards`.
 - Instalar: `corepack pnpm install --frozen-lockfile`
 - Typecheck: `pnpm run typecheck`
 - Build: `PORT=5000 BASE_PATH=/ pnpm run build`
-- Testes do pacote: `pnpm --filter @workspace/<pacote> run test`
+- Testes locais: app `pnpm --filter @workspace/iaschool-app run test src`; API com a lista de unitários em [docs/development/testes.md](docs/development/testes.md). `run test` sem filtro no app/API inclui integração real.
+- Demais pacotes: `pnpm --filter @workspace/<pacote> run test` (face requer `.venv`).
 - Compatibilidade: `pnpm run test:compat`
-- Dev: `pnpm --filter @workspace/<pacote> run dev`
+- Dev app: `PORT=5174 BASE_PATH=/ pnpm --filter @workspace/iaschool-app run dev`. API: `PORT=5000 pnpm --filter @workspace/api-server run dev`, com variáveis de servidor exportadas. Vite não tem proxy local de `/api`; [setup](docs/development/cross-platform-web.md).
 - Setup do face-worker: `pnpm --filter @workspace/face-worker run setup`
 - Tokens do design system: `pnpm --filter @workspace/iaschool-ui run tokens`
-- Contrato (cliente e Zod): `pnpm --filter @workspace/api-spec run codegen`
+- Contrato (cliente e Zod; OpenAPI cobre somente `/healthz`): `pnpm --filter @workspace/api-spec run codegen`
 - Migration: `apply_migration` no MCP `supabase-iaschool`. Não há comando de CLI. O SQL de referência entra no mesmo commit.
 
 ## Stack

@@ -4,165 +4,116 @@
 
 # IAschool
 
-Plataforma de gestão e distribuição de fotos escolares — a escola sobe as fotos
-de um evento, o sistema separa por aluno e entrega ao responsável, com
-autorização e trilha de auditoria.
+A escola sobe fotos de um evento, revisa a separação por aluno e prepara a
+entrega ao responsável, com autorização e trilha de auditoria.
 
 </div>
 
-Este repositório reúne a base técnica do IAschool: aplicação web em React/Vite,
-design system compartilhado, API Express, contrato OpenAPI, validações Zod,
-banco Supabase (PostgreSQL gerenciado, com Auth, RLS e Storage) e ferramentas
-para desenvolvimento local em macOS, Linux e Windows.
+**Documentação revisada em 25/10/2026 contra o código local.** Publicações
+citadas são registros anteriores do repositório; não houve consulta ou deploy
+remoto nesta revisão. O [BACKLOG.md](BACKLOG.md) separa implementação,
+publicação registrada e pendências por fluxo.
+
+## Estado do produto
+
+| Fluxo | Implementado no código | Publicação registrada | Ainda pendente |
+| --- | --- | --- | --- |
+| Fundação escolar | Cadastro com aprovação, escolas, membros, turmas, alunos e responsáveis; isolamento por escola | Fundação em 20/09 e app em 26/09/2026 | CSV, telas administrativas restantes e configuração de e-mail |
+| Fotos e reconhecimento | Eventos, upload em massa, deduplicação, miniaturas, referências, reconhecimento, revisão humana, pasta do aluno e ZIP | M1–M6 em setembro; referências de evento em 12/10/2026 | Medições de aceite e autorização para dados reais |
+| Artes por aluno/turma | Wizard com modelo da escola, uma foto por aluno, fila persistente, cota e repetição manual | App e API v7 em 16/10/2026 | Aceite completo do wizard atual com geração real; templates de evento |
+| Entregas e álbum | Seleção por família, fotos nítidas, aprovação, envio explícito condicionado e acesso privado | Fotos nítidas em 13/10; indicação de envio pausado em 15/10/2026 | Transporte ponta a ponta e liberação comercial |
+| Link reutilizável do álbum | Código e SQL locais; fotos disponíveis agrupadas por evento | Sem publicação registrada para essa alteração | Migration, publicação coordenada e validação remota |
+| WhatsApp e consentimento | OTP sem código na resposta, provedor Z-API, limites, webhook e aceite direto por link | Fundação em 02/10; ensaio adulto em 03/10; consentimento em 05/10/2026 | Rotação de segredos registrada como pendente, webhook operacional, Meta e homologação do termo |
 
 > [!IMPORTANT]
-> **Regra de conformidade desta fase:** enquanto as pendências de
-> [`docs/pendencias-producao.md`](docs/pendencias-producao.md) não estiverem
-> ligadas, **nenhuma foto real de criança ou adolescente entra no produto** e o
-> **fluxo de WhatsApp não é acionado de verdade**. O banco já tem a estrutura de
-> proteção do ECA Digital; os mecanismos que a alimentam (e-mail transacional e
-> OTP do responsável) ainda não existem.
+> **Foto real de criança ou adolescente e WhatsApp comercial continuam
+> bloqueados pelas regras do projeto.** A exceção é o ensaio `controlled_zapi`
+> com uma escola, 1–4 destinatários autorizados e material sintético/adulto.
+> Código implementado e publicação anterior não fecham os
+> [gates de produção](docs/pendencias-producao.md). O termo `delivery_whatsapp.v1`
+> ainda promete desfoque e precisa de revisão antes de uso real com fotos nítidas.
 
-## Estado do projeto
+## Desenvolvimento local
 
-O produto passou por uma **pivotagem** em 30/08/2026: de gerador de cards de
-desempenho para escolinha de futebol (R9 / IAsport) para plataforma de fotos
-escolares. O plano completo está em
-[`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md).
-
-| Fase | Escopo | Estado |
-| --- | --- | --- |
-| 0 — Descontaminação | Vocabulário, entidades de futebol, marca, nomes de pacote | ✅ concluída |
-| 1 — Fundação escolar | `schools`, `classes`, `events`, papéis, RLS por escola | ⏳ próxima |
-| 2 — Upload em massa | Tabela `photos`, fila, workers, thumbnails | ❌ |
-| 3 — Reconhecimento facial | Embeddings, pgvector, fila de revisão | ❌ |
-| 4 — Autorização granular | Escopos, revogação, portal do responsável | ❌ |
-| 5 — Lote e WhatsApp | Templates de evento, geração e envio em lote | ❌ |
-
-**Funciona hoje:** cadastro de escola com aprovação pelo admin, autenticação,
-conformidade ECA (consentimento do responsável, trilha de compartilhamento),
-cota de geração e criação **unitária** de arte — um aluno por vez.
-
-**Não existe ainda:** upload em massa, reconhecimento facial, turmas, eventos e
-envio em lote.
-
-## Comece por aqui
-
-Requisitos: Node.js 24 e pnpm 11.17.0 via Corepack.
+Requisitos do projeto: Node.js 24, pnpm 11.17.0 e Corepack no PATH; Python 3.12 para o face-worker.
 
 ```bash
 corepack pnpm install --frozen-lockfile
-pnpm run typecheck
-PORT=5000 BASE_PATH=/ pnpm run build
+PORT=5174 BASE_PATH=/ pnpm --filter @workspace/iaschool-app run dev
 ```
 
-Copie [`.env.example`](.env.example) para `.env.local` e preencha os valores no
-ambiente local. Sem `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` a aplicação
-cai em modo demonstração (mock em localStorage, com indicador na UI).
+Sem as duas variáveis públicas `VITE_SUPABASE_URL` e
+`VITE_SUPABASE_ANON_KEY`, o app usa dados de demonstração. Para conectar o app,
+configure somente essas variáveis em `artifacts/iaschool-app/.env.local`.
+O `.env.local` da raiz não é carregado automaticamente pelo servidor Vite.
+`PORT` e `BASE_PATH` precisam estar no ambiente do processo, como no comando.
 
-Para iniciar a aplicação web:
+Em outro terminal, com as variáveis de servidor já exportadas:
 
 ```bash
-pnpm --filter @workspace/iaschool-app run dev
+PORT=5000 pnpm --filter @workspace/api-server run dev
 ```
 
-Para iniciar a API:
+O Vite local **não configura proxy de `/api`**. Subir os dois processos não
+conecta automaticamente o wizard ou o álbum; o rewrite existente é da Vercel.
+Setup, limites do ambiente local e comandos para Windows:
+[desenvolvimento multiplataforma](docs/development/cross-platform-web.md).
+Nomes de variáveis: [`.env.example`](.env.example); nunca versionar valores reais.
+
+## Verificação
 
 ```bash
-pnpm --filter @workspace/api-server run dev
-```
-
-## O que existe no workspace
-
-| Diretório | Responsabilidade |
-| --- | --- |
-| `artifacts/iaschool-app` | Aplicação web principal em Vite/React e os scripts SQL do Supabase |
-| `artifacts/iaschool-ui` | Tokens, componentes e preview do design system |
-| `artifacts/api-server` | API Express e processamento no servidor |
-| `artifacts/mockup-sandbox` | Prototipação visual com o design system |
-| `lib/api-spec` | Contrato OpenAPI e geração de código |
-| `lib/api-client-react` | Cliente React gerado |
-| `lib/api-zod` | Schemas e tipos Zod gerados |
-| `lib/db` | Pacote Drizzle inerte — **não é o schema deste produto** (ver abaixo) |
-| `scripts` | Automação e gates locais de compatibilidade |
-
-## Desenvolvimento
-
-Comandos de validação disponíveis na raiz:
-
-```bash
-pnpm run verify:native
-pnpm run smoke:web
+pnpm --filter @workspace/iaschool-app run test src
+pnpm --filter @workspace/ingest-worker run test
 pnpm run test:compat
 pnpm run typecheck
 PORT=5000 BASE_PATH=/ pnpm run build
 ```
 
-O contrato da API vive em `lib/api-spec/openapi.yaml`. Após mudanças no
-contrato, regenere os artefatos:
+**Não use `run test` sem filtro no app/API como verificação sem rede.** Essas
+suítes também incluem integração com banco real; o app lê o `.env.local` da
+raiz. Comandos separados para unitários, Python, Edge Functions e integrações:
+[guia de testes](docs/development/testes.md). Não há script de lint.
 
-```bash
-pnpm --filter @workspace/api-spec run codegen
-```
+## Workspace
 
-O design system usa `artifacts/iaschool-ui/tokens.json` como fonte de verdade:
+| Diretório | Responsabilidade |
+| --- | --- |
+| `artifacts/iaschool-app` | UI, SQL de referência, Edge Functions e testes de integração |
+| `artifacts/iaschool-ui` | Tokens, componentes e preview do design system |
+| `artifacts/api-server` | Geração, cota, logs e proxy do álbum |
+| `artifacts/ingest-worker` | Miniaturas, preparo das entregas, execução de artes em lote e expurgo |
+| `artifacts/face-worker` | Detecção e reconhecimento facial em Python |
+| `lib/api-spec`, `lib/api-client-react`, `lib/api-zod` | OpenAPI e código gerado; hoje cobrem somente `/healthz` |
+| `artifacts/mockup-sandbox` | Protótipo visual |
+| `lib/db` | Pacote Drizzle inerte; não representa o schema |
+| `scripts` | Compatibilidade, apresentação, custos e experimentos |
 
-```bash
-pnpm --filter @workspace/iaschool-ui run tokens
-```
+Os contratos HTTP implementados estão em [docs/api.md](docs/api.md).
+Não edite os clientes gerados à mão. Para alterações futuras no OpenAPI:
+`pnpm --filter @workspace/api-spec run codegen`.
 
-Leia os guias de consumo antes de alterar uma interface:
+Os tokens vêm de `artifacts/iaschool-ui/tokens.json`; regenere com
+`pnpm --filter @workspace/iaschool-ui run tokens`.
 
-- [Desenvolvimento web multiplataforma](docs/development/cross-platform-web.md)
-- [Consumo web do design system](artifacts/iaschool-ui/docs/consuming-web.md)
-- [Consumo Expo do design system](artifacts/iaschool-ui/docs/consuming-expo.md)
-- [Referências visuais e de marca](artifacts/iaschool-ui/docs/references/README.md)
+## Banco e segurança
 
-## Banco de dados
-
-O banco é um projeto **Supabase** provisionado do zero em 30/08/2026 por 7
-migrations. Autenticação, RLS e Storage fazem parte do banco, não da aplicação.
-
-Tabelas em `public`: `profiles`, `students`, `clubs`, `reference_posts`,
-`generated_posts`, `prompt_settings`, `prompt_template_versions`,
-`generation_usage`, `generation_logs`, `guardian_verification_codes`,
-`share_logs` — todas com RLS habilitada.
-
-Mudanças de schema são aplicadas **por migration**, através do servidor MCP
-`supabase-iaschool` declarado em [`.mcp.json`](.mcp.json) — não pelo SQL Editor
-do painel. Os scripts em `artifacts/iaschool-app/supabase/*.sql` são a
-referência legível do schema e devem acompanhar cada migration.
-
-Detalhes de variáveis, buckets e políticas:
-[`artifacts/iaschool-app/SUPABASE.md`](artifacts/iaschool-app/SUPABASE.md).
-
-> [!WARNING]
-> `lib/db` é um pacote Drizzle **inerte**: `lib/db/src/schema/index.ts` é um stub
-> vazio e não representa nenhuma tabela deste produto. Não rode
-> `pnpm --filter @workspace/db run push` — ele apontaria o `drizzle-kit` para a
-> `DATABASE_URL` tentando alinhar o banco real a um schema vazio.
-
-Mantenha variáveis e credenciais em arquivos locais não versionados. Nenhuma
-implantação, migration remota ou integração de produção é presumida apenas por
-existir um script local.
+Supabase fornece Postgres, Auth, RLS, Storage, Realtime, pgvector e cron.
+O [inventário SQL](artifacts/iaschool-app/SUPABASE.md) identifica os arquivos
+de referência e diferencia o histórico aplicado do complemento ainda local.
+Schema remoto muda somente por `apply_migration` no MCP `supabase-iaschool`
+da raiz, com autorização explícita. Nunca execute `@workspace/db push` ou
+`push-force`: o schema Drizzle está vazio.
 
 ## Documentação
 
-| Documento | Para quê |
-| --- | --- |
-| [`AGENTS.md`](AGENTS.md) | Regras de colaboração, fronteiras de segurança, comandos e critérios de validação |
-| [`docs/pivotagem-iaschool.md`](docs/pivotagem-iaschool.md) | Plano da pivotagem, roadmap por fases, decisões em aberto |
-| [`docs/pendencias-producao.md`](docs/pendencias-producao.md) | O que falta para rodar com dado real |
-| [`docs/diagnostico-geracao-imagens.md`](docs/diagnostico-geracao-imagens.md) | Diagnóstico da falha de geração de imagens |
-| [`artifacts/iaschool-app/SUPABASE.md`](artifacts/iaschool-app/SUPABASE.md) | Integração Supabase |
-| `.claude/skills/eca-digital/` | ECA Digital (Lei nº 15.211/2025, Decreto nº 12.880/2026) aplicado ao produto |
-
-## Próximos passos
-
-1. Fechar as pendências de produção 1–6 (domínio, Resend, confirmação de
-   e-mail) — habilita cadastro real de escola.
-2. Iniciar a **Fase 1**: entidades `schools`, `classes` e `events`, papéis
-   novos e RLS por escola em vez de por usuário.
-3. Decidir os pontos em aberto de `docs/pivotagem-iaschool.md` §9 — motor de
-   reconhecimento facial, consolidação de `clubs` em `schools` e regra da foto
-   com várias crianças.
+- [ONBOARDING.md](ONBOARDING.md): onde mexer e como começar.
+- [AGENTS.md](AGENTS.md): regras de colaboração e segurança.
+- [BACKLOG.md](BACKLOG.md): estado e trabalho restante.
+- [Operação](docs/operacao-agentes.md): serviços, publicação, recuperação e lacunas.
+- [Pendências de produção](docs/pendencias-producao.md): bloqueios para uso real.
+- [API](docs/api.md) e [Supabase](artifacts/iaschool-app/SUPABASE.md): interfaces e dados.
+- [Módulos](.context/modules/) e [convenções](.context/conventions.md): fronteiras do código.
+- [Specs de outubro](docs/specs/ajustes-2026-10-11/overview.md): decisões por fluxo.
+- [Pivotagem](docs/pivotagem-iaschool.md): plano histórico de 30/08/2026.
+- [Consumo web](artifacts/iaschool-ui/docs/consuming-web.md) e [Expo](artifacts/iaschool-ui/docs/consuming-expo.md): design system.

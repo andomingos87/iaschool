@@ -1,6 +1,6 @@
 # geracao-arte
 
-Índice de domínio, sem pasta própria. UI e SQL no `app`, geração na `api`, execução persistente no `ingest`. Atualizado em 16/10/2026.
+Índice de domínio, sem pasta própria. UI e SQL no `app`, geração na `api`, execução persistente no `ingest`. Revisado em 25/10/2026. Publicações abaixo são registros históricos, sem consulta remota nesta revisão.
 
 ## Fluxo vigente — wizard com modelo
 

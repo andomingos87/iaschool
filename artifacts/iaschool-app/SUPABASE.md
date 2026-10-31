@@ -1,5 +1,9 @@
 # Integração com Supabase
 
+**Revisado em 25/10/2026 contra o código local.** As datas/versões aplicadas
+abaixo são registros anteriores do repositório, não leitura remota atual.
+O complemento `fase5-album-open-link.sql` continua somente local.
+
 O app IAschool usa um projeto Supabase externo para autenticação, banco
 de dados e Storage. A implementação real vive em `src/lib/data/supabase/` e é
 ativada automaticamente quando as variáveis de ambiente existem; sem elas, o
@@ -11,7 +15,7 @@ app volta ao modo demonstração (mock em localStorage, com indicador na UI).
 | --- | --- | --- |
 | `VITE_SUPABASE_URL` | frontend + api-server | URL do projeto (Settings → API) |
 | `VITE_SUPABASE_ANON_KEY` | frontend + api-server | Chave anônima pública (Settings → API Keys) |
-| `SUPABASE_SERVICE_ROLE_KEY` | api-server (somente) | Chave service_role (Settings → API Keys) — usada para persistir a cota diária de gerações no banco. Nunca exponha no frontend. |
+| `SUPABASE_SERVICE_ROLE_KEY` | API, workers e Edge Functions | Credencial privilegiada apenas de servidor: filas, Storage e operações internas. Nunca no frontend. |
 
 O api-server também aceita `SUPABASE_URL`/`SUPABASE_ANON_KEY` (têm prioridade)
 para validar o token do usuário na rota de geração de imagem.
@@ -20,9 +24,10 @@ para validar o token do usuário na rota de geração de imagem.
 e com `OPENAI_API_KEY` presente, a rota de geração retorna 503 — isso é
 intencional para evitar abuso da chave sem autenticação.
 
-## Schema do banco
+## Schema do banco — histórico da fundação
 
-O banco atual foi provisionado do zero em **30/08/2026** por 7 migrations
+O histórico inicial abaixo cobre agosto/setembro; não é a lista completa
+de migrations de outubro nem prova do estado remoto atual. O banco foi provisionado do zero em **30/08/2026** por 7 migrations
 aplicadas via MCP; as duas do M1 subiram em **20/09/2026**:
 
 | Versão | Migration |
@@ -59,7 +64,7 @@ aplicadas via MCP; as duas do M1 subiram em **20/09/2026**:
 > **Não use o SQL Editor do painel para mudar schema** — o que não passa por
 > migration não fica no histórico e o próximo ambiente nasce diferente.
 
-O fluxo é:
+O fluxo, com autorização explícita e validação prévia em ambiente isolado, é:
 
 1. Aplicar a migration por `apply_migration`, com nome descritivo em
    `snake_case` (prefixo `iaschool_`).
@@ -67,14 +72,15 @@ O fluxo é:
    [`supabase/`](./supabase/).
 3. Confirmar com `list_migrations` / `list_tables`.
 
-O SQL Editor continua válido para **consulta** e para operações pontuais de
-dado (não de schema), como rodar
-[`supabase/create-super-admin.sql`](./supabase/create-super-admin.sql).
+Operações de dado, inclusive promoção de admin, também exigem autorização
+explícita e execução pelo MCP local. `create-super-admin.sql` é referência
+para uma operação privilegiada; não é passo automático de onboarding.
 
 ### Arquivos SQL de referência
 
 Os scripts em [`supabase/`](./supabase/) são a **leitura humana** do schema, não
-o mecanismo de aplicação. Mantenha-os fiéis ao banco.
+o mecanismo de aplicação. Podem incluir mudanças locais ainda não aplicadas;
+confira o estado de cada complemento antes de usar.
 
 | Arquivo | O que descreve |
 | --- | --- |
@@ -95,9 +101,48 @@ o mecanismo de aplicação. Mantenha-os fiéis ao banco.
 | [`create-super-admin.sql`](./supabase/create-super-admin.sql) | Operação de dado: promove um usuário a `super_admin` aprovado |
 | [`pivot-fase0.sql`](./supabase/pivot-fase0.sql) | Migration da pivotagem para bases anteriores a 30/08/2026 (remove posição, altura, peso, uniformes e métricas). ⚠️ Apaga dados. Bases novas já nascem limpas |
 
+### Complementos de outubro e estado de publicação
+
+| SQL de referência | Conteúdo | Registro de aplicação |
+| --- | --- | --- |
+| [fase5-person-regions.sql](supabase/fase5-person-regions.sql) | `public.photo_person_regions` e versão de revisão em `public.photos` | Incorporado ao ciclo de ajustes publicado em 12/10/2026 |
+| [fase5-review-media.sql](supabase/fase5-review-media.sql) | Referência a partir de evento e revisão de regiões | `iaschool_adjustments_review_media`, 12/10/2026 |
+| [fase5-adjustments-delivery-album.sql](supabase/fase5-adjustments-delivery-album.sql) | `public.delivery_approvals`, `public.delivery_item_students`, `public.delivery_album_tokens`, sessões e acesso | `iaschool_adjustments_delivery_album`, 12/10/2026 |
+| [generation-batches.sql](supabase/generation-batches.sql) | `public.generation_batches`, `public.generation_batch_items`, `public.generation_batch_retries`; modelo em `public.generation_batches.reference_post_id`/`public.generation_batches.reference_path` | Lotes em 12/10; complemento `iaschool_generation_batch_reference` (20261016192755), 16/10/2026 |
+| [delivery-original-photos.sql](supabase/delivery-original-photos.sql) | Novas entregas `original_v1`; mantém versões aprovadas legadas | `iaschool_delivery_original_photos` (20261013113430), 13/10/2026 |
+| [fase5-album-open-link.sql](supabase/fase5-album-open-link.sql) | `public.consume_delivery_album_token` reutilizável e `public.delivery_album_session` com fotos por evento | **Local; migration remota não aplicada, publicação pendente no histórico** |
+
+Arquivos são referências cumulativas; a existência de SQL não confirma sua
+aplicação, nem representa um instalador idempotente para executar todos em
+sequência. Confirmar histórico remoto pelo MCP local antes de planejar uma
+migration. Outros registros estão no [BACKLOG](../../BACKLOG.md).
+
+### Edge Functions presentes (sete)
+
+Todas em `supabase/functions/`. A coluna JWT descreve o requisito do endpoint;
+não confirma a configuração atual no gateway.
+
+| Função | Autenticação/entrada | Publicação registrada |
+| --- | --- | --- |
+| `send-guardian-code` | JWT escolar + papel e limites; envia OTP via provedor | v4, 02/10/2026 |
+| `provider-webhook` | Provedor externo, segredo de rota; sem JWT de usuário | v2, 02/10/2026; retorno operacional pendente no registro de 03/10 |
+| `request-guardian-consent` | JWT escolar, número verificado e papel autorizado | v1, 05/10/2026 |
+| `guardian-consent` | Token opaco público; JWT de gateway desligado | v1, 05/10/2026 |
+| `delivery-preview` | JWT escolar e autorização por lote | v9, 13/10/2026 |
+| `school-delivery` | JWT escolar; ações `capability`, `dispatch`, `resend`, `revoke` | v5, 15/10/2026; mensagem local posterior ainda não publicada |
+| `guardian-album` | Token/cookie próprio; JWT de gateway desligado | v1, 12/10/2026; reutilização do link ainda local |
+
+`supabase/config.toml` só declara `guardian-album` (`false`), `school-delivery`
+(`true`) e `delivery-preview` (`true`) para `verify_jwt`. As outras quatro
+exigem conferência explícita no processo de publicação. Não supor que um
+comando genérico reproduz toda a configuração. Funções e schema publicam à
+parte do app; esta revisão não publica nem aplica nada.
+
 ### Tabelas em `public`
 
-Todas com RLS habilitada.
+Tabelas da fundação listadas abaixo; tabelas de outubro e respectivos SQLs
+estão nos complementos acima. RLS/grants devem ser conferidos no destino
+antes de liberação.
 
 | Tabela | Papel |
 | --- | --- |
@@ -150,8 +195,9 @@ Pontos de RLS e retenção que importam:
   justamente para que `school_user` não contorne a retenção via `DELETE` direto
   no PostgREST. O expurgo (registro + arquivos no Storage) é oportunista.
 - Buckets **privados** `students`, `clubs`, `references`, `generated` e
-  `generation-logs` — imagens servidas por URLs assinadas (TTL 1 ano), nunca
-  públicas.
+  `generation-logs` — imagens servidas por URLs assinadas, nunca públicas. Caminhos legados
+  mantêm TTL/cache longo (até 1 ano); artes novas de lote usam até 300 s,
+  sem reaproveitar assinatura antiga, e entregas também são limitadas a 5 min.
 - Buckets do evento (M2, spec §6), também privados e com o id da escola como
   primeiro segmento: `event-photos` (`{school_id}/{event_id}/{photo_id}.jpg`,
   só `image/jpeg`, até 20 MB), `event-thumbs` (só `image/webp`, preenchido pelo
@@ -212,15 +258,15 @@ Pontos de RLS e retenção que importam:
   `service_role`. `stalled_batch_jobs` é `security_invoker`: herda a RLS de
   `batch_jobs`, então cada escola vê só os próprios lotes parados.
 
-### Configuração do projeto (uma vez, no painel)
+### Configuração do projeto (referência; alterações exigem autorização)
 
 1. **Habilite o cadastro por e-mail**: Authentication → Sign In / Up → Email →
    "Enable email signups". O cadastro público do app depende disso; a segurança
    fica no fluxo de aprovação (contas novas nascem `pending` e não leem dado).
 2. Crie o super admin em Authentication → Users → "Add user" (marque
    *Auto confirm user*).
-3. Rode [`supabase/create-super-admin.sql`](./supabase/create-super-admin.sql)
-   no SQL Editor. Ele localiza o usuário pelo e-mail e insere/atualiza o perfil
+3. Com autorização explícita, use o MCP local para a operação de dado
+   descrita em [`supabase/create-super-admin.sql`](./supabase/create-super-admin.sql). Ele localiza o usuário pelo e-mail e insere/atualiza o perfil
    com `role = 'super_admin'` e `approval_status = 'approved'`.
    ⚠️ Troque a senha após o primeiro login.
 
@@ -230,8 +276,7 @@ rate limits) estão em
 
 ## Cadastro público e aprovação
 
-- Na tela de login há "Criar conta": **só escola**. Menor de 16 não tem conta
-  própria (Lei 15.211/2025, art. 24); o aluno é um registro em `students`
+- Na tela de login há "Criar conta": **só escola**. Não há conta de aluno no produto atual; o aluno é um registro em `public.students`
   feito pela escola. O autocadastro de aluno foi aposentado no M1.
 - O `signUp` envia metadados (`signup_role = 'school'`, `signup_name`,
   `signup_school_name`); o trigger `handle_new_user` cria a linha em

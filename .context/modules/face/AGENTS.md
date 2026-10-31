@@ -1,9 +1,9 @@
 # face
 
-Worker Python de reconhecimento. Um processo por máquina.
+Worker Python de reconhecimento. Um processo por máquina. Revisado em 25/10/2026; publicações abaixo são registros históricos, sem nova consulta remota.
 
 ## Entrada
-- Pacote `@workspace/face-worker`. Arranque: `python -m face_worker` (`src/face_worker/__main__.py`).
+- Pacote `@workspace/face-worker`. Arranque: `PYTHONPATH=src pnpm --filter @workspace/face-worker run dev` (da raiz; `src/face_worker/__main__.py`).
 - Consome a tabela `public.photo_jobs` (`artifacts/iaschool-app/supabase/fase2-photo-jobs-worker.sql`) com `kind = 'recognize'` e a tabela `public.student_reference_jobs` (`artifacts/iaschool-app/supabase/fase3-authorizations-reference-faces.sql`).
 - Detecção SCRFD, embedding ArcFace 512-d, atribuição por limiar em `src/face_worker/matcher.py`.
 - `Dockerfile` e `fly.toml` próprios. App na Fly: `iaschool-face-worker`.
@@ -23,7 +23,7 @@ Worker Python de reconhecimento. Um processo por máquina.
 
 ## Comandos
 - Setup: `pnpm --filter @workspace/face-worker run setup`
-- Dev: `pnpm --filter @workspace/face-worker run dev`
+- Dev: `PYTHONPATH=src PORT=8081 pnpm --filter @workspace/face-worker run dev`
 - Teste: `pnpm --filter @workspace/face-worker run test`
 
 ## Referência de evento (S04)

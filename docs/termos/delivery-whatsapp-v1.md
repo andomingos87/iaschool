@@ -1,17 +1,24 @@
 # Termo — Autorização para envio das fotos por WhatsApp (`delivery_whatsapp.v1`)
 
+> **Pendência identificada em 25/10/2026:** o item 3 abaixo é o texto que ainda
+> está no código, mas contradiz a entrega de fotos nítidas publicada em
+> 13/10/2026. Esta revisão preserva v1 como registro do texto servido; não o
+> homologa nem altera consentimentos. Antes do uso real, aprovar nova versão e
+> definir como tratar os aceites anteriores. O código do termo não foi alterado.
+
 **Rascunho para homologação jurídica.** Não publicar o convite de consentimento
 antes da revisão (spec §18.1; `BACKLOG.md`, Transversal). Enquanto o texto não
 for homologado, este documento e o texto exibido na página pública são a mesma
 versão — `delivery_whatsapp.v1`.
 
 O texto que o responsável lê na página `/consentimento/:token` vive em
-[`artifacts/iaschool-app/supabase/functions/_shared/whatsapp/consent-terms.ts`](../artifacts/iaschool-app/supabase/functions/_shared/whatsapp/consent-terms.ts)
-e a versão aceita fica gravada em `authorizations.evidence.termsVersion`.
+[consent-terms.ts](../../artifacts/iaschool-app/supabase/functions/_shared/whatsapp/consent-terms.ts)
+e a versão aceita fica gravada em `public.authorizations.evidence.termsVersion` (campo JSON; SQL em
+`artifacts/iaschool-app/supabase/fase5-guardian-consent.sql`).
 **Mudar o texto exige nova versão** (`delivery_whatsapp.v2`): o aceite antigo
 continua provando o texto que a pessoa leu.
 
-## Texto exibido (versão atual)
+## Texto ainda servido pelo código (v1, incompatibilidade aberta)
 
 1. O IAschool é a plataforma que a escola usa para organizar e guardar as fotos
    dos eventos escolares.
@@ -45,7 +52,7 @@ A mensagem não contém nome de aluno, escola, código nem anexo. O link é de u
 - [ ] Retenções homologadas (spec §11.3): link 24 h, derivados até 7 dias, trilha de eventos — **prazos provisórios** (5 anos de trilha e 15 dias de resposta ao titular seguem em revisão)
 - [ ] Provedores envolvidos no modo ativo (hoje Z-API como ponte controlada; Meta Cloud API como destino) e o que muda quando o provedor trocar
 - [ ] Limite da revogação: o que já foi baixado não volta
-- [ ] Circulação restrita: o desfoque de terceiros nos derivados (regra da spec §6.4, implementação no W3) precisa estar refletido no texto
+- [ ] Conciliar circulação entre famílias e fotos nítidas com a decisão de 13/10/2026; a promessa de desfoque de v1 não corresponde ao render atual
 - [ ] Base legal e controlador/operador definidos na avaliação de impacto
 
 > Este checklist é técnico, não jurídico. A redação final, a base legal e a

@@ -1,47 +1,39 @@
-# gpt-image-2.5
+# Edição de imagem no código atual
 
-Submódulo de `geracao-arte`. Documenta a chamada de edição de imagem. Não tem pasta de código. A chamada mora em `artifacts/api-server/src/routes/generation.ts`.
+Submódulo de `geracao-arte`, sem pasta de produto. **Revisado em 25/10/2026.**
+Este arquivo descreve o payload do repositório, não a disponibilidade,
+capacidades máximas ou preços atuais do provedor.
 
-Não existe id `gpt-image-2.5` na API. A família 2.5 tem dois ids, lidos na referência da OpenAI em 09/10/2026:
+## Wizard em lote
 
-| Id | Uso |
-| --- | --- |
-| `gpt-image-2.5-flare` | Geração do dia a dia. É o id que o código envia. Snapshot datado: `gpt-image-2.5-flare-2026-09-08`. |
-| `gpt-image-2.5-sunburst` | Edição com mais controle e mais tempo. Snapshot: `gpt-image-2.5-sunburst-2026-09-08`. |
+Fonte: `artifacts/api-server/src/lib/generation-batch-process.ts`.
+`client.images.edit` recebe `model: "gpt-image-2.5-flare"`, `size: "1024x1024"`,
+`image: [modeloDeEstilo, fotoDoAluno]` e prompt composto pelo servidor.
+As duas imagens são PNG normalizado; resposta usa `data[0].b64_json`.
+Não envia `quality`, `background`, `n`, `output_format` ou `input_fidelity`.
+`OPENAI_API_KEY` só no servidor; SDK sem retry automático, timeout de 150 s.
 
-O Flare é o sucessor do `gpt-image-2` para o caso geral. O código usa o alias sem data, então a OpenAI pode mover o comportamento quando publicar outro snapshot.
+Modelo pertence à escola, foto vem de ID validado (perfil, evento individual
+revisado ou referência facial). Identidade é orientação ao modelo, sem
+promessa de pixels idênticos. Texto livre até 3000 caracteres; prompt composto
+até 3500; lote de 1–50 alunos. Contrato em `docs/api.md` e no módulo `api`.
 
-## Chamada
+## Caminhos legados
 
-`POST /v1/images/edits`, pelo SDK `openai` (`client.images.edit`). A chave `OPENAI_API_KEY` fica só no servidor.
+`artifacts/api-server/src/routes/generation.ts` mantém:
 
-O código envia só isto:
+- `photo_prompt`: uma foto inteira + prompt, enviada à IA.
+- `original-pixels-v1`: dois anexos; só o modelo de estilo vai à IA para gerar fundo. A pessoa é composta no servidor, com verificação dos pixels protegidos.
 
-- `model`: `gpt-image-2.5-flare`
-- `image`: somente o modelo de estilo; a foto original do aluno fica no servidor para composição determinística
-- `prompt`: instruções somente para fundo/elementos, com dimensões reais e regra fixa do servidor
-- `size`: `1024x1024`
+Esses caminhos têm parser multipart próprio (até seis imagens, 8 MiB por
+arquivo, 24 MiB total, prompt até 4000); cada modo exige sua quantidade exata.
+Não são o fluxo atual do wizard. O template administrativo legado não entra
+na geração em lote.
 
-Não envia `quality`, `background`, `n`, `output_format` nem `input_fidelity`. A resposta usada é `data[0].b64_json`. O log guarda metadados, não o base64.
+## Estado e manutenção
 
-A chamada usa `maxRetries: 0` e timeout de 150 segundos: falha do provedor não dispara outra geração automaticamente. A escola pode corrigir e decidir uma nova tentativa.
-
-O pacote `openai` em `^7.4.0` ainda lista só até `gpt-image-2` no tipo `ImageModel`. O campo `model` também aceita string, e é assim que o Flare passa.
-
-## Limites desta chamada e limites nossos
-
-A referência do endpoint, para os modelos GPT Image, aceita até 16 imagens, cada uma png, webp ou jpg com menos de 50 MB, e prompt de até 32000 caracteres. `quality` aceita `low`, `medium`, `high`, `xhigh`, `max` e `auto` no Flare e no Sunburst.
-
-O IAschool corta antes: 6 imagens, 8 MB cada, 24 MB no total, prompt de 4000 caracteres, MIME `image/png`, `image/jpeg` ou `image/webp`.
-
-## Preço
-
-Na página do Flare, em 09/10/2026: texto de entrada US$ 5 / 1M tokens; imagem de entrada US$ 8 / 1M; imagem de saída US$ 30 / 1M no processamento padrão. O Sunburst publica a mesma faixa de texto e saída na página do modelo. A calculadora do GPT Image 2 não estima o consumo de tokens do 2.5.
-
-## Fora daqui
-
-Cota, rajada, log e o portão do menor estão no índice `geracao-arte`. Este arquivo não autoriza trocar o id sem mudar `IMAGE_MODEL` no servidor e `GENERATION_MODEL` no app no mesmo commit.
-
-## Fluxo simples — 12/10/2026
-
-O pedido vigente envia uma foto de referência e prompt, `mode=photo_prompt`. A foto entra em `images.edit`; identidade é uma instrução, sem garantia de pixels originais. O caminho antigo de fundo + composição existe apenas para clientes já abertos.
+Registro de publicação API v7/app em 16/10/2026, sem geração paga do novo
+fluxo com modelo. O ensaio real de 12/10 corresponde à versão anterior.
+Uma troca de modelo ou avaliação de preço exige consultar a documentação
+atual do provedor e atualizar os consumidores, com autorização de custo para
+ensaio real. Esta revisão não mudou código nem fez chamada paga.
