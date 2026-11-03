@@ -1,7 +1,14 @@
 # Copy da landing, versão 2 (rascunho)
 
-**Status:** Rascunho de 31/10/2026, ainda não aplicado ao código. Base: a
-landing atual em [`landing.tsx`](../../../artifacts/iaschool-app/src/pages/landing.tsx).
+**Status:** Rascunho de 31/10/2026, aplicado ao código em 03/11/2026 na branch
+`fix/landing-copy`, sem publicação. Ficaram fora a FAQ 4 (revisão jurídica), a 6
+(confirmar com produto) e a 9 (preço a definir). Ajustes na aplicação: o
+subtítulo do hero e a frase sobre famílias falam em "fotos em que o filho foi
+confirmado" em vez de "só as fotos do filho"; o apoio de Segurança diz que o
+reconhecimento e a entrega dependem da autorização, porque o upload não
+depende; o item de IA da Segurança cita a mensagem de compartilhamento; e a meta
+description usa "sugere" no lugar de "separa". Base: a landing em
+[`landing.tsx`](../../../artifacts/iaschool-app/src/pages/landing.tsx).
 A estrutura das seções continua a mesma. Mudam os textos que prometem mais do
 que o produto entrega ou que dependem de revisão jurídica. Os achados estão em
 [regras de comunicação](../../07-conformidade/regras-de-comunicacao.md).

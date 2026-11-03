@@ -23,7 +23,9 @@ publicar.
 
 Revisão de 31/10/2026 em [`landing.tsx`](../../artifacts/iaschool-app/src/pages/landing.tsx),
 pela skill `eca-digital`. Proposta de texto em
-[copy da landing v2](../03-canais/landing/copy-landing-v2.md).
+[copy da landing v2](../03-canais/landing/copy-landing-v2.md). Corrigidos no
+código em 03/11/2026 (branch `fix/landing-copy`, sem publicação); as linhas
+citadas abaixo são da versão de 31/10.
 
 ```
 [BLOQUEIA] "Nunca as de outro aluno" contradiz a entrega com fotos nítidas
