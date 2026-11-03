@@ -1,7 +1,7 @@
 # Copy da landing, versão 2 (rascunho)
 
-**Status:** Rascunho de 31/10/2026, aplicado ao código em 03/11/2026 na branch
-`fix/landing-copy`, sem publicação. Ficaram fora a FAQ 4 (revisão jurídica), a 6
+**Status:** Rascunho de 31/10/2026, aplicado e publicado em 03/11/2026 pelo
+merge da PR #36. Ficaram fora a FAQ 4 (revisão jurídica), a 6
 (confirmar com produto) e a 9 (preço a definir). Ajustes na aplicação: o
 subtítulo do hero e a frase sobre famílias falam em "fotos em que o filho foi
 confirmado" em vez de "só as fotos do filho"; o apoio de Segurança diz que o
