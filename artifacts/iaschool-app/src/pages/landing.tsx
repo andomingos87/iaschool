@@ -332,7 +332,7 @@ const PROBLEMS = [
 const STEPS = [
   {
     title: "Cadastro e autorização",
-    text: "A escola cadastra turmas e alunos. O responsável autoriza o reconhecimento e o recebimento das fotos.",
+    text: "A escola cadastra turmas e alunos. O responsável autoriza o reconhecimento facial e o recebimento das fotos, cada um separado.",
   },
   {
     title: "Upload do evento",
@@ -344,58 +344,59 @@ const STEPS = [
   },
   {
     title: "Entrega à família",
-    text: "Cada responsável recebe um link com as fotos aprovadas do seu filho, agrupadas por evento.",
+    text: "Cada responsável recebe um link com as fotos aprovadas do seu filho.",
   },
 ];
 
 const LEAD_FEATURE = {
   icon: ScanFace,
   title: "Reconhecimento com revisão humana",
-  text: "A IA faz o trabalho pesado de separar milhares de fotos. Nada sai da escola sem alguém conferir.",
+  text: "A IA sugere quem está em cada foto do evento. Nada vai para a família sem uma pessoa da escola conferir.",
 };
 
 const FEATURES = [
   {
     icon: FolderHeart,
     title: "Álbum por link",
-    text: "Sem aplicativo para instalar. A família abre o link, filtra por evento e baixa tudo em ZIP.",
+    text: "Sem aplicativo para instalar. A família abre o link no celular e baixa as fotos uma a uma ou todas em ZIP.",
   },
   {
     icon: Sparkles,
     title: "Artes com IA por aluno",
-    text: "Gere artes personalizadas por aluno e turma a partir do modelo da escola, sempre sinalizadas como imagem de IA.",
+    text: "Gere artes por aluno e turma a partir do modelo da escola. A mensagem de compartilhamento avisa que a imagem foi feita por inteligência artificial.",
   },
   {
     icon: Users,
     title: "Turmas e eventos organizados",
-    text: "Pasta de cada aluno com o histórico de fotos confirmadas, separadas por evento.",
+    text: "Pasta de cada aluno com as fotos confirmadas, separadas por evento.",
   },
   {
     icon: History,
-    title: "Trilha de auditoria",
+    title: "Registro de tudo",
     text: "Quem aprovou, o que foi enviado e quando o álbum foi aberto ficam registrados.",
   },
 ];
 
+/* Sem promessa de que outra criança nunca aparece: as entregas usam fotos nítidas e há foto de grupo. */
 const TRUST = [
-  { icon: FileCheck2, text: "Autorização do responsável separada por finalidade: reconhecimento e recebimento das fotos." },
-  { icon: ShieldCheck, text: "Autorização revogada interrompe o acesso e o uso das referências do aluno." },
-  { icon: Link2, text: "Link exclusivo por família, com sessão de prazo curto e possibilidade de revogação pela escola." },
-  { icon: UserCheck, text: "Cada família vê só as fotos aprovadas do próprio filho, nunca as de outro aluno." },
-  { icon: Sparkles, text: "Toda imagem gerada por IA sai identificada como tal." },
+  { icon: FileCheck2, text: "Autorização do responsável separada por finalidade: reconhecimento facial e recebimento das fotos." },
+  { icon: ShieldCheck, text: "Se a autorização for retirada, o reconhecimento para e o acesso pelo link é interrompido." },
+  { icon: Link2, text: "Link exclusivo por família, com acesso de prazo curto que a escola pode cancelar." },
+  { icon: UserCheck, text: "Cada família recebe só as fotos em que o próprio filho foi confirmado pela escola." },
+  { icon: Sparkles, text: "Ao compartilhar uma arte gerada por IA, a mensagem avisa que ela foi feita por inteligência artificial." },
   { icon: History, text: "Registro de aprovações, envios e aberturas para a escola prestar contas." },
 ];
 
 const AUDIENCES = [
-  { icon: CalendarDays, who: "Direção e coordenação", what: "Visão de eventos, entregas e autorizações num só lugar, com registro de tudo." },
+  { icon: CalendarDays, who: "Direção e coordenação", what: "Eventos, entregas e autorizações num só lugar, com registro de tudo." },
   { icon: CloudUpload, who: "Equipe da escola", what: "Sobe o evento inteiro de uma vez e só revisa as sugestões, sem separar foto à mão." },
-  { icon: FolderHeart, who: "Famílias", what: "Recebem só as fotos do filho, num link que abre no celular, e baixam quando quiserem." },
+  { icon: FolderHeart, who: "Famílias", what: "Recebem as fotos em que o filho foi confirmado, num link que abre no celular." },
 ];
 
 const FAQ = [
   {
     q: "A família precisa instalar algum aplicativo?",
-    a: "Não. O responsável recebe um link e abre no navegador do celular ou do computador. Dali dá para ver, filtrar por evento e baixar as fotos.",
+    a: "Não. O responsável recebe um link e abre no navegador do celular ou do computador. Dali dá para ver e baixar as fotos.",
   },
   {
     q: "O reconhecimento facial decide sozinho quem está na foto?",
@@ -406,12 +407,16 @@ const FAQ = [
     a: "Sem a autorização, o aluno não entra no reconhecimento e a família não recebe fotos pela plataforma. A autorização pode ser retirada depois.",
   },
   {
-    q: "Uma família pode ver fotos de outro aluno?",
-    a: "Não. Cada link mostra só as fotos aprovadas para aquele responsável e aquela escola.",
+    q: "Se a autorização for retirada, o que acontece com as fotos já baixadas?",
+    a: "O acesso pela plataforma é interrompido. As fotos que a família já baixou ficam com ela, como qualquer arquivo salvo no celular.",
   },
   {
     q: "Serve para qualquer etapa de ensino?",
     a: "Sim. Educação infantil, fundamental e médio: festas, formaturas, passeios e qualquer evento com fotos.",
+  },
+  {
+    q: "Funciona para rede com várias unidades?",
+    a: "Sim. Cada unidade tem seus eventos e sua equipe, e a mesma pessoa pode alternar entre as unidades.",
   },
 ];
 
@@ -423,7 +428,7 @@ export default function LandingPage() {
       className="min-h-[100dvh] bg-[var(--lp-papel)] font-[Plus_Jakarta_Sans,ui-sans-serif,sans-serif] text-[var(--lp-tinta)] antialiased selection:bg-[var(--lp-giz)]"
     >
       <link rel="stylesheet" href={FONTS_HREF} precedence="default" />
-      <title>{`${iaschool.brand.name} — fotos da escola, entregues a cada família`}</title>
+      <title>{`${iaschool.brand.name} | Fotos da escola entregues a cada família`}</title>
 
       <a
         href="#conteudo"
@@ -482,9 +487,9 @@ export default function LandingPage() {
                 .
               </h1>
               <p className="mt-6 max-w-xl text-pretty text-[17px] leading-relaxed text-[var(--lp-tinta)]/72 sm:text-lg">
-                A escola sobe as fotos do evento, a {iaschool.brand.name} separa por aluno com reconhecimento
-                facial, a equipe confere e cada responsável recebe um álbum só com as fotos do seu filho.
-                Sem planilha, sem pasta compartilhada, sem foto no grupo errado.
+                A escola sobe as fotos do evento, a {iaschool.brand.name} sugere quem está em cada uma e a
+                equipe confere. Cada responsável recebe um álbum com as fotos em que o próprio filho foi
+                confirmado, com a autorização registrada.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <PrimaryCta />
@@ -496,7 +501,7 @@ export default function LandingPage() {
                 </a>
               </div>
               <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[14px] text-[var(--lp-tinta)]/70">
-                {["Revisão humana antes de enviar", "Sem app para a família", "Autorização registrada"].map((t) => (
+                {["Revisão humana antes de enviar", "Sem app para a família", "Autorização por finalidade"].map((t) => (
                   <li key={t} className="flex items-center gap-1.5">
                     <Check className="size-4 text-[var(--lp-azul)]" aria-hidden /> {t}
                   </li>
@@ -535,7 +540,7 @@ export default function LandingPage() {
         {/* Como funciona: a sequência importa, por isso os números ficam. */}
         <section id="como-funciona" aria-labelledby="como-funciona-titulo" className="scroll-mt-20 px-4 py-24 sm:px-6">
           <SectionHeader id="como-funciona-titulo" title="Do upload ao álbum da família em quatro passos">
-            A escola mantém o controle de cada etapa. A IA faz a parte repetitiva.
+            A escola controla cada etapa. A IA faz a parte repetitiva.
           </SectionHeader>
           <ol className="mx-auto mt-14 grid max-w-6xl gap-10 md:grid-cols-4 md:gap-8">
             {STEPS.map(({ title, text }, i) => {
@@ -601,8 +606,8 @@ export default function LandingPage() {
                 Feita para quem cuida de imagem de criança e adolescente.
               </h2>
               <p className="mt-4 max-w-xl text-pretty text-[17px] leading-relaxed text-[var(--lp-tinta)]/70">
-                A plataforma foi construída em torno da autorização do responsável e das regras do ECA Digital.
-                A escola sabe quem autorizou, o que foi enviado e para quem.
+                O reconhecimento facial e a entrega das fotos dependem da autorização do responsável. A escola
+                sabe quem autorizou, o que foi enviado e para quem.
               </p>
             </div>
             <ul className="grid gap-x-10 sm:grid-cols-2">
@@ -660,7 +665,7 @@ export default function LandingPage() {
             <Spark className="absolute -left-10 -top-10 size-48 text-white/[0.08]" />
             <Spark className="absolute -bottom-12 -right-6 size-56 text-[var(--lp-giz)]/25" />
             <h2 id="cta-titulo" className={`${display} relative mx-auto max-w-2xl text-balance text-3xl font-extrabold leading-tight sm:text-5xl`}>
-              Leve o próximo evento da sua escola para a {iaschool.brand.name}.
+              Veja o fluxo completo antes do próximo evento.
             </h2>
             <p className="relative mx-auto mt-4 max-w-xl text-pretty text-[17px] text-white/85">
               {cta.kind === "demo"
