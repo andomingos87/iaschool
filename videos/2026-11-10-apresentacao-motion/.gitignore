@@ -1,0 +1,12 @@
+# Saídas, tomadas brutas e caches: pesados ou só desta máquina
+renders/
+motion/renders/
+motion/.hyperframes/
+motion/.thumbnails/
+audio/falas/
+audio/amostras/
+__pycache__/
+
+# Música de terceiro (Mixkit): o repositório é público e a licença cobre usar a faixa
+# dentro do vídeo, não publicar o arquivo solto. Baixe pelo link em motion/assets/musica/LICENCA.md
+motion/assets/musica/*.mp3

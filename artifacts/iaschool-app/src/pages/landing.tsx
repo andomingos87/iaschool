@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "wouter";
 import {
   ArrowRight,
@@ -10,10 +10,14 @@ import {
   FolderHeart,
   History,
   Link2,
+  LoaderCircle,
+  Play,
   Plus,
+  RotateCcw,
   ScanFace,
   ShieldCheck,
   Sparkles,
+  TriangleAlert,
   UserCheck,
   Users,
 } from "lucide-react";
@@ -83,6 +87,108 @@ function Spark({ className = "" }: { className?: string }) {
     <svg viewBox="0 0 24 24" className={className} aria-hidden>
       <path fill="currentColor" d="M12 2Q13.2 10.8 22 12Q13.2 13.2 12 22Q10.8 13.2 2 12Q10.8 10.8 12 2Z" />
     </svg>
+  );
+}
+
+/*
+ * Vídeo de apresentação (videos/2026-11-10-apresentacao-motion). Só carrega e toca no
+ * clique, com som; telas recriadas e pessoas ilustradas, sem foto real.
+ */
+const VIDEO = {
+  src: "/video/apresentacao-aiescola.mp4",
+  poster: "/video/apresentacao-aiescola-capa.jpg",
+  captions: "/video/apresentacao-aiescola.pt-BR.vtt",
+};
+
+type VideoState = "idle" | "loading" | "playing" | "error";
+
+function LandingVideo() {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [state, setState] = useState<VideoState>("idle");
+
+  // O botão de play some no clique: o foco passa para o vídeo, já com controles.
+  useEffect(() => {
+    if (state === "loading") ref.current?.focus();
+  }, [state]);
+
+  const start = () => {
+    const video = ref.current;
+    if (!video) return;
+    setState("loading");
+    video.play().catch(() => setState("error"));
+  };
+  const retry = () => {
+    ref.current?.load();
+    start();
+  };
+
+  return (
+    <figure className="mx-auto mt-12 max-w-5xl">
+      <div className="relative overflow-hidden rounded-[28px] bg-[var(--lp-tinta)] shadow-[0_30px_80px_-40px_rgba(15,26,61,0.55)] ring-1 ring-[var(--lp-tinta)]/10">
+        <video
+          ref={ref}
+          className="block aspect-video w-full"
+          poster={VIDEO.poster}
+          preload="none"
+          playsInline
+          controls={state !== "idle"}
+          aria-label={`Vídeo de apresentação da ${iaschool.brand.name}, 34 segundos, com narração`}
+          onPlaying={() => setState("playing")}
+          onError={() => setState("error")}
+          data-testid="landing-video"
+        >
+          <source src={VIDEO.src} type="video/mp4" onError={() => setState("error")} />
+          <track kind="captions" src={VIDEO.captions} srcLang="pt-BR" label="Português" />
+        </video>
+
+        {state === "idle" && (
+          <button
+            type="button"
+            onClick={start}
+            className={`group absolute inset-0 flex items-center justify-center bg-[var(--lp-tinta)]/10 transition hover:bg-[var(--lp-tinta)]/20 ${focusRing}`}
+            data-testid="landing-video-play"
+          >
+            <span className="inline-flex items-center gap-3 rounded-full bg-[var(--lp-azul)] py-3.5 pl-4 pr-6 text-[15px] font-semibold text-white shadow-[0_10px_28px_-10px_rgba(36,71,214,0.75)] transition group-hover:-translate-y-0.5 motion-reduce:group-hover:translate-y-0">
+              <span className="grid size-9 place-items-center rounded-full bg-white text-[var(--lp-azul)]">
+                <Play className="size-4 translate-x-px fill-current" aria-hidden />
+              </span>
+              <span>
+                Assistir ao vídeo<span className="sr-only sm:not-sr-only"> (34 s, com som)</span>
+              </span>
+            </span>
+          </button>
+        )}
+
+        {state === "loading" && (
+          <div role="status" className="pointer-events-none absolute inset-0 grid place-items-center bg-[var(--lp-tinta)]/25">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-medium text-[var(--lp-tinta)]">
+              <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
+              Carregando o vídeo…
+            </span>
+          </div>
+        )}
+
+        {state === "error" && (
+          <div role="alert" className="absolute inset-0 grid place-items-center bg-[var(--lp-tinta)]/85 px-6 text-center text-white">
+            <div>
+              <TriangleAlert className="mx-auto size-6 text-[var(--lp-giz)]" aria-hidden />
+              <p className="mt-3 text-[15px]">Não foi possível carregar o vídeo agora.</p>
+              <button
+                type="button"
+                onClick={retry}
+                className={`mt-4 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--lp-tinta)] transition hover:bg-[var(--lp-giz)] focus-visible:outline-white ${focusRing}`}
+              >
+                <RotateCcw className="size-4" aria-hidden />
+                Tentar de novo
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      <figcaption className="mt-4 text-[14px] leading-relaxed text-[var(--lp-tinta)]/70">
+        Narração gerada por inteligência artificial. Telas, nomes e pessoas são de demonstração.
+      </figcaption>
+    </figure>
   );
 }
 
@@ -404,6 +510,14 @@ export default function LandingPage() {
             </div>
             <ProductMock />
           </div>
+        </section>
+
+        {/* Vídeo de apresentação */}
+        <section id="video" aria-labelledby="video-titulo" className="scroll-mt-20 px-4 pb-24 sm:px-6">
+          <SectionHeader id="video-titulo" title="Veja o fluxo em 34 segundos">
+            Da autorização do responsável ao álbum da família, com telas e dados de demonstração.
+          </SectionHeader>
+          <LandingVideo />
         </section>
 
         {/* Problema */}
